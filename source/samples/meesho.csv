@@ -1,0 +1,6 @@
+Sub_Order_ID,Order_Date,SKU,Product_Name,Quantity,Order_Status,Customer_State,Gross_Sale_Amount,Shipping_Fee,Meesho_Commission,Fixed_Fee,RTO_Penalty,TCS_0_5_Percent,TDS_0_1_Percent,Net_Payout,Payment_Settlement_Date
+MEESHO-1002931,2026-08-20,MEE-KUR-L,Cotton Straight Kurti L,1,DELIVERED,Gujarat,499.00,0.00,0.00,0.00,0.00,2.50,0.50,496.00,2026-08-27
+MEESHO-1002932,2026-08-21,MEE-TOP-M,Floral Printed Top M,1,DELIVERED,Maharashtra,350.00,0.00,0.00,0.00,0.00,1.75,0.35,347.90,2026-08-28
+MEESHO-1002933,2026-08-22,MEE-SAREE-RED,Silk Blend Saree,1,RTO_RETURN,Uttar Pradesh,0.00,-65.00,0.00,0.00,-40.00,0.00,0.00,-105.00,2026-08-29
+MEESHO-1002934,2026-08-23,MEE-KUR-XL,Cotton Straight Kurti XL,2,DELIVERED,Rajasthan,998.00,0.00,0.00,0.00,0.00,4.99,1.00,992.01,2026-08-30
+MEESHO-1002935,2026-08-24,MEE-JEAN-32,Denim Slim Jeans 32,1,CUSTOMER_RETURN,Karnataka,699.00,-50.00,0.00,0.00,0.00,0.00,0.00,-50.00,2026-08-31

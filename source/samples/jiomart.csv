@@ -1,0 +1,6 @@
+Jio_Transaction_ID,Order_Date,Merchant_Ref_No,SKU_Code,Item_Description,Quantity,Order_Value,Jio_Commission,PG_Charges,Logistic_Fees,GST_On_Fees,TCS_Deduction,TDS_Deduction,Net_Payout_Amount,Payment_Mode,Payout_Status
+JIO-TXN-882910,2026-08-22,ORD-JM-001,JM-GROC-OIL-1L,Refined Sunflower Oil 1L,3,435.00,-13.05,-8.70,-30.00,-9.32,-4.35,-0.44,369.14,UPI,PAID
+JIO-TXN-882911,2026-08-22,ORD-JM-002,JM-ELEC-TRIMMER,Men Cordless Trimmer,1,899.00,-71.92,-17.98,-50.00,-25.18,-8.99,-0.90,724.03,NetBanking,PAID
+JIO-TXN-882912,2026-08-23,ORD-JM-003,JM-HOME-MUG-SET,Ceramic Coffee Mugs Set of 6,1,349.00,-34.90,-6.98,-40.00,-14.74,-3.49,-0.35,248.54,COD,PAID
+JIO-TXN-882913,2026-08-23,ORD-JM-004,JM-GROC-RICE-5K,Basmati Rice 5kg,1,550.00,-16.50,-11.00,-45.00,-13.05,-5.50,-0.55,458.40,CreditCard,PROCESSING
+JIO-TXN-882914,2026-08-24,ORD-JM-005,JM-ELEC-POWERBANK,10000mAh Power Bank,1,999.00,-79.92,-19.98,-50.00,-26.98,-9.99,-1.00,811.13,UPI,PAID
