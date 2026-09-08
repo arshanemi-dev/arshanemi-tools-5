@@ -1,0 +1,39 @@
+{
+  "name": "barmeto-profit-loss",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --webpack --port 3005",
+    "build": "next build --webpack",
+    "start": "next start --port 3005",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.12.0",
+    "@vercel/blob": "^2.4.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
+    "framer-motion": "^12.40.0",
+    "jose": "^6.2.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "lucide-react": "^1.17.0",
+    "nanoid": "^5.1.11",
+    "next": "16.2.9",
+    "nodemailer": "^9.0.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-redux": "^9.3.0",
+    "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "node-html-parser": "^7.1.0",
+    "tailwindcss": "^4"
+  }
+}
