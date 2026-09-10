@@ -1,24 +1,30 @@
 'use client';
 
 import KpiCard from './KpiCard';
-import { KPI_CARDS } from '@/data/platforms/canonical';
 
-// The 7-card band. One row on xl; wraps to a scrollable grid below that.
-export default function KpiCardRow({ summary, onEditAds }) {
+// The KPI band = the active tab's Title Cards. `cards` = ordered title-card
+// defs (config.titleCards, filtered to the tab); `values` =
+// resolveTemplate().titleCardValues keyed by card id. Cards share width on a
+// wide screen and scroll sideways below that — matching the reference, where
+// the last card clips at the viewport edge.
+export default function KpiCardRow({ cards = [], values = {} }) {
+  if (!cards.length) return null;
+
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7">
-      {KPI_CARDS.map((c) => {
-        const stat = summary[c.key] || {};
-        const metaVal = c.meta === 'pct' ? `${stat.pct ?? 0}${c.metaSuffix ?? ''}` : (stat.count ?? 0);
+    <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-divider-light">
+      {cards.map((card) => {
+        const v = values[card.id] || {};
         return (
-          <KpiCard
-            key={c.key}
-            label={c.label}
-            meta={metaVal}
-            value={stat.value ?? 0}
-            signed={c.signed}
-            onClick={c.key === 'ads' ? onEditAds : undefined}
-          />
+          <div key={card.id} className="min-w-[180px] flex-1">
+            <KpiCard
+              name={card.name}
+              mainDisplay={v.main?.display}
+              mainRaw={v.main?.raw}
+              subDisplay={v.sub?.display}
+              format={card.mainValue?.format || 'money'}
+              signed={!!card.mainValue?.signed}
+            />
+          </div>
         );
       })}
     </div>

@@ -1,29 +1,32 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getStoredUser, clearAuthTokens, isLoggedIn } from '@/lib/tokenStore';
+import { getStoredUser, clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
+import { getMyTemplateAccess } from '@/lib/profitLoss/templatesApi';
 import DashboardTopbar from './DashboardTopbar';
-import ProfitLossView from './ProfitLossView';
+import DashboardWorkspace from './DashboardWorkspace';
 
-// Client shell: owns the topbar's user/session, renders the dashboard.
-// The page itself is fully usable signed-out (see lib/authGate.js) — the
-// topbar just shows "Log in" then.
+// Client shell: owns the topbar session + the mobile nav drawer state, then
+// hands off to <DashboardWorkspace/> (the template-driven dashboard). The page
+// works fully signed-out — sign-in only unlocks My Details + History, and
+// master_admin / granted users additionally get the Template Settings entry.
 export default function ProfitLossShell() {
-  const [user, setUser] = useState(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [user, setUser] = useState(() => (isLoggedIn() ? getStoredUser() : null));
+  const [canManageTemplates, setCanManageTemplates] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn()) return;
-    setUser(getStoredUser());
-    // Refresh with the live profile (name/role can change server-side).
-    fetch('/api/auth/me', { headers: authHeader() })
+    authFetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
       .then((p) => p && setUser((u) => ({ ...u, ...p })))
+      .catch(() => {});
+    getMyTemplateAccess()
+      .then(({ ok, data }) => { if (ok) setCanManageTemplates(!!data.allowed); })
       .catch(() => {});
   }, []);
 
   async function handleLogout() {
-    setLoggingOut(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } finally {
@@ -33,15 +36,15 @@ export default function ProfitLossShell() {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
-      <DashboardTopbar user={user} onLogout={handleLogout} loggingOut={loggingOut} />
-      <ProfitLossView />
+    <div className="flex h-screen flex-col overflow-hidden bg-surface">
+      <DashboardTopbar user={user} onLogout={handleLogout} onMenuClick={() => setNavOpen(true)} />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <DashboardWorkspace
+          canManageTemplates={canManageTemplates}
+          mobileNavOpen={navOpen}
+          onCloseMobileNav={() => setNavOpen(false)}
+        />
+      </div>
     </div>
   );
-}
-
-function authHeader() {
-  if (typeof window === 'undefined') return {};
-  const t = localStorage.getItem('access_token');
-  return t ? { Authorization: `Bearer ${t}` } : {};
 }

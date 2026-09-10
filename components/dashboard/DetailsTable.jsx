@@ -2,28 +2,32 @@
 
 import { useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
-import { SKU_COLUMNS } from '@/data/platforms/canonical';
-import { fmtCell } from '@/lib/profitLoss/fmt';
 
-// The per-SKU table. Checkbox column + sortable/filterable headers, exactly the
-// column set + order from the reference. Body scrolls sideways inside its own
-// container; header stays put vertically (sticky).
-export default function DetailsTable({ rows, columnKeys }) {
-  const columns = SKU_COLUMNS.filter((c) => c.sticky || columnKeys.includes(c.key));
+// Template-driven details table. `columns` = resolved header defs
+// ({ id, name, format, signed }) in display order; `rows` =
+// resolveTemplate().tableRows ({ key, cells: { [headerId]: { raw, display } } }).
+// First column is sticky/linked, rest sortable + per-column filterable.
+export default function DetailsTable({ columns = [], rows = [] }) {
+  const cols = columns.map((h, i) => ({
+    id: h.id,
+    key: h.id,
+    label: h.name,
+    type: h.format === 'text' ? 'text' : 'num',
+    sticky: i === 0,
+    signed: !!h.signed,
+  }));
 
-  const [sort, setSort] = useState({ key: 'profitLoss', dir: 'desc' });
-  const [filters, setFilters] = useState({}); // key -> filter object
+  const [sort, setSort] = useState(null); // { key, dir }
+  const [filters, setFilters] = useState({});
   const [selected, setSelected] = useState(() => new Set());
 
   const view = useMemo(() => {
     let out = rows.filter((r) =>
       Object.entries(filters).every(([key, f]) => {
         if (!f) return true;
-        const val = r[key];
-        if (f.op === 'contains') {
-          return String(val ?? '').toLowerCase().includes(String(f.a).toLowerCase());
-        }
-        const n = Number(val) || 0;
+        const raw = r.cells[key]?.raw;
+        if (f.op === 'contains') return String(raw ?? '').toLowerCase().includes(String(f.a).toLowerCase());
+        const n = Number(raw) || 0;
         if (f.a != null && n < f.a) return false;
         if (f.b != null && n > f.b) return false;
         return true;
@@ -32,33 +36,37 @@ export default function DetailsTable({ rows, columnKeys }) {
     if (sort?.key) {
       const dir = sort.dir === 'asc' ? 1 : -1;
       out = [...out].sort((a, b) => {
-        const av = a[sort.key];
-        const bv = b[sort.key];
-        if (typeof av === 'string' || typeof bv === 'string') {
-          return String(av).localeCompare(String(bv)) * dir;
-        }
+        const av = a.cells[sort.key]?.raw;
+        const bv = b.cells[sort.key]?.raw;
+        if (typeof av === 'string' || typeof bv === 'string') return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
         return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
       });
     }
     return out;
   }, [rows, filters, sort]);
 
-  const allChecked = view.length > 0 && view.every((r) => selected.has(r.sku));
-  const toggleAll = () => {
+  const allChecked = view.length > 0 && view.every((r) => selected.has(r.key));
+  const toggleAll = () =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (allChecked) view.forEach((r) => next.delete(r.sku));
-      else view.forEach((r) => next.add(r.sku));
+      if (allChecked) view.forEach((r) => next.delete(r.key));
+      else view.forEach((r) => next.add(r.key));
       return next;
     });
-  };
-  const toggleOne = (sku) => {
+  const toggleOne = (k) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(sku) ? next.delete(sku) : next.add(sku);
+      if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
-  };
+
+  if (!cols.length) {
+    return (
+      <div className="rounded-xl border border-divider bg-background px-4 py-10 text-center text-sm text-muted">
+        This tab has no columns yet — add headers to it in Template Settings.
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-divider bg-background">
@@ -67,19 +75,10 @@ export default function DetailsTable({ rows, columnKeys }) {
           <thead>
             <tr className="border-b border-divider bg-th">
               <th className="w-10 px-3 py-2.5">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  onChange={toggleAll}
-                  className="accent-[var(--color-action)]"
-                  aria-label="Select all rows"
-                />
+                <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap"
-                >
+              {cols.map((col) => (
+                <th key={col.key} className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
                   <ColumnHeaderCell
                     col={col}
                     sort={sort}
@@ -94,25 +93,19 @@ export default function DetailsTable({ rows, columnKeys }) {
           <tbody>
             {view.length === 0 && (
               <tr>
-                <td colSpan={columns.length + 1} className="px-4 py-10 text-center text-sm text-muted">
+                <td colSpan={cols.length + 1} className="px-4 py-10 text-center text-sm text-muted">
                   No rows match the current filters.
                 </td>
               </tr>
             )}
             {view.map((r) => (
-              <tr key={r.sku} className="border-t border-divider transition-colors hover:bg-card-hover">
+              <tr key={r.key} className="border-t border-divider transition-colors hover:bg-card-hover">
                 <td className="px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(r.sku)}
-                    onChange={() => toggleOne(r.sku)}
-                    className="accent-[var(--color-action)]"
-                    aria-label={`Select ${r.sku}`}
-                  />
+                  <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
                 </td>
-                {columns.map((col) => {
-                  const raw = r[col.key];
-                  const neg = col.signed && Number(raw) < 0;
+                {cols.map((col) => {
+                  const cell = r.cells[col.key] || {};
+                  const neg = col.signed && Number(cell.raw) < 0;
                   return (
                     <td
                       key={col.key}
@@ -124,7 +117,7 @@ export default function DetailsTable({ rows, columnKeys }) {
                           : 'text-foreground'
                       }`}
                     >
-                      {col.sticky ? raw : fmtCell(raw, col.type)}
+                      {cell.display ?? ''}
                     </td>
                   );
                 })}
@@ -135,7 +128,7 @@ export default function DetailsTable({ rows, columnKeys }) {
       </div>
       <div className="flex items-center justify-between border-t border-divider px-3 py-2 text-xs text-subtle">
         <span>
-          {view.length} SKU{view.length === 1 ? '' : 's'}
+          {view.length} row{view.length === 1 ? '' : 's'}
           {selected.size > 0 && ` · ${selected.size} selected`}
         </span>
       </div>

@@ -1,5 +1,4 @@
 import { ToastProvider } from '@/components/admin/Toast';
-import StoreProvider from '@/components/StoreProvider';
 import ProfitLossShell from '@/components/dashboard/ProfitLossShell';
 
 export const metadata = {
@@ -7,15 +6,14 @@ export const metadata = {
 };
 
 // Thin shell. Everything real lives in <ProfitLossShell/> (client) — the page
-// works with no account; sign-in only unlocks My Details + History. The Redux
-// store (StoreProvider) holds the per-marketplace sheet-parsing settings,
-// mirrored to localStorage.
+// works with no account; sign-in only unlocks My Details + History and, for
+// master_admin / granted users, the Template Settings entry. The dashboard is
+// rendered from the active marketplace template (data/templateSchema shape),
+// falling back to data/defaultTemplate.js when none is live.
 export default function ProfitLossPage() {
   return (
-    <StoreProvider>
-      <ToastProvider>
-        <ProfitLossShell />
-      </ToastProvider>
-    </StoreProvider>
+    <ToastProvider>
+      <ProfitLossShell />
+    </ToastProvider>
   );
 }

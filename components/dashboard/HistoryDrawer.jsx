@@ -15,9 +15,12 @@ export default function HistoryDrawer({ open, onClose, onOpenRun }) {
   const loggedIn = isLoggedIn();
 
   useEffect(() => {
-    if (!open || !loggedIn) return;
-    setRows(null);
-    listHistory({ limit: 30 }).then(({ ok, data }) => setRows(ok ? data.history || [] : []));
+    if (!open || !loggedIn) return undefined;
+    let alive = true;
+    listHistory({ limit: 30 }).then(({ ok, data }) => {
+      if (alive) setRows(ok ? data.history || [] : []);
+    });
+    return () => { alive = false; };
   }, [open, loggedIn]);
 
   if (!open) return null;

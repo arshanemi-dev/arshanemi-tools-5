@@ -1,871 +1,1027 @@
 # Feature Development Plan — Profit & Loss Tool (`tools/arshanemi-tools-5`)
 
-> Single source of truth for **arshanemi-tools-5**, a standalone Next.js app
-> whose one product is a multi-marketplace **Profit & Loss dashboard** for
-> ecommerce sellers. Cloned from `tools/arshanemi-tools-4` with every
-> listing surface removed; keeps that app's login / OTP / profile /
-> coin-wallet / SSO / theme plumbing.
+> Single source of truth for **arshanemi-tools-5**, a standalone Next.js 16 (App
+> Router, **JavaScript only**, Tailwind v4) app whose one product is a
+> multi‑marketplace **Profit & Loss dashboard** for ecommerce sellers.
 >
-> Author role: **Senior Full-Stack Developer**. Status: **NEW** —
-> `tools/arshanemi-tools-5` currently holds only an empty `.git` (remote
-> `github.com/arshanemi-dev/arshanemi-tools-5.git`, no commits).
+> Author role: **Senior Full‑Stack Developer + UI/UX**. 
 >
-> **Rev 2 (2026-09-08)** — incorporates the user's 5 sample CSVs (one per
-> marketplace) and the clarifications: single-product navbar; "All Compay" =
-> **ecommerce-platform filter** (there is no company entity); **no login to
-> use**; logged-in users get their files/data saved and are charged **1 coin
-> per 100 rows saved**, deducted on the admin-panel side.
+> ---
+>
+> ## Rev 3 (2026‑09‑10) — Template‑driven dashboard + Template Settings builder
+>
+> Rev 1–2 shipped a fixed‑layout P&L dashboard (browser sheet parsing, canonical
+> platform mappers, a hard‑coded 7‑KPI / 14‑column layout, hub‑owned
+> `profit_loss_settings` + `profit_loss_history`). **That stays as the fallback
+> engine.** Rev 3 adds the two things the user asked for:
+>
+> - **Task 1 — Home page (image 1):** a pixel‑match of the reference dashboard —
+>   a **persistent left sidebar** (tabs + Overview + a *Template Settings* entry
+>   shown only to `master_admin` / granted users), a green data‑I/O toolbar, a `Dashboard` header
+>   bar (`Reset` · `Setting` · brand filter · `Date` · `Apply`), a KPI card
+>   band, `My Details` / `All Details` column pills, and a filterable/sortable
+>   details table. Every region is **driven by the active marketplace
+>   template** — no more hard‑coded cards/columns — with the Rev‑2 layout as the
+>   built‑in default when no template is live.
+> - **Task 2 — Template Settings (image 2):** a builder
+>   (`/profit-loss/template-settings`) reachable by **`master_admin`, or any user
+>   a `master_admin` has explicitly granted** (per‑user grant flag, mirroring
+>   tools‑4's `listing_template_access`), where an admin uploads a marketplace's
+>   sheet(s), defines default headers + file/column mappings, extracts &
+>   maps sheet headers, writes formulas, builds Title Cards, Graph Designs,
+>   Graph Data, Tabs, an Overview tab, and **saves a versioned template with a
+>   unique id**. Backed by 3 new hub tables (`marketplace_templates`,
+>   `marketplace_template_details`, `marketplace_template_logs`) + a per‑owner
+>   counter + a `user_settings.marketplace_template_access` grant column, thin
+>   proxy routes in tools‑5, and a full change log.
+>
+> **Decisions locked (2026‑09‑10):** ① navbar **matches image 1 exactly**
+> (data‑driven multi‑tool bar; CLAUDE.md "single‑product navbar" rule is
+> retired). ② **one template = one marketplace** (v1). ③ Template Settings is
+> **`master_admin` + individually grantable**. ④ **Company** and **Brand** are
+> **two independent filters** (`config.marketplace.companyHeaderId` +
+> `brandHeaderId`), AND‑applied.
 
 ---
 
-## Source studied
+## 0. What already exists (Rev 1–2 — do not rebuild)
 
-| File / area | Contribution |
-|---|---|
-| [.claude/commands/feature-plan.md](../.claude/commands/feature-plan.md) | The 11-step skeleton, adapted from the AI-Job-Applier/Mongo stack to this repo's Next 16 + JS + Supabase/Postgres + Vercel Blob + JWT-SSO stack. |
-| [tools/TOOLS-API-BILLING-GUIDE.md](../tools/TOOLS-API-BILLING-GUIDE.md) | `runBillingGate()` waterfall; `NEXT_PUBLIC_IS_CONNECT` / `NEXT_PUBLIC_IS_PAID` switches; "admin panel is the bank". |
-| tools-4 `app/layout.js`, `app/page.js`, `proxy.js`, `.env.example`, `next.config.mjs` | Clone base: anti-FOUC theme script, SSO token forwarding (`lt_at/lt_rt/lt_u`), middleware matcher, env contract. |
-| tools-4 `lib/{auth,authGate,connect,db,tokenStore,tokenHandoff,profile,serverBilling,toolBilling,tools}.js` | Every auth/session/billing helper carried over. `serverBilling.js` `runServerBillingGate(req, { toolSlug, featureApiIdentifier, quantity })` → `POST /api/wallet/deduct`. |
-| tools-4 `app/api/auth/{login,me,refresh,logout}/route.js` | `if (IS_CONNECT) return proxyAuthCall(...)` branch on every auth route. JWT payload `{ userId, email, role, name, companyId }`. |
-| tools-4 `app/api/listing-tools/{history,product-details-history}/route.js` | The "thin proxy to the hub, forward the caller's own token via `authHeaderFrom(req)`" idiom the new `/api/profit-loss/*` routes copy. |
-| tools-4 `components/dashboard/{DashboardTopbar,BottomMenu,UserMenu}.jsx`, `context/ThemeContext.jsx`, `components/auth/AuthGateProvider.jsx`, `app/{login,profile,forgot-password,reset-password}/page.js` | Single-product navbar, theme provider, global login modal, account screens — reused. |
-| `tools/arshanemi-tools-2/lib/platformDetector.js` | Keyword-fingerprint marketplace detection — model for sheet-header detection here. |
-| [app/api/wallet/deduct/route.js](../app/api/wallet/deduct/route.js) | **Confirmed: `quantity` is honoured** — `amount = feature.coinCost * qty`; idempotent on `idempotencyKey`; `master_admin` never charged; checks `tools_access.includes(toolSlug)`. This is what the "1 coin / 100 rows" charge rides on (`coinCost: 1`, `quantity = ceil(rows/100)`). |
-| `scripts/{listing_product_prefill_history,sku_mapping,customer_dashboard,listing_template_access}_migration.sql` | Per-user Postgres table pattern (`user_id UUID REFERENCES users(id) ON DELETE CASCADE`, `UNIQUE` business key, RLS "service role manages" policy). |
-| `app/api/listing-tools/{history,product-details-history,prefill-details-history}/route.js`, `lib/db.js` (`recordListingTemplateHistory`, `upsertProductDetailsHistory`, …), `lib/auth.js`, `lib/profile.js` | Hub contract: guard with `getAuthPayload(req)` → `payload.userId`; camelCase on the wire; snake_case + explicit mapper only inside `lib/db.js`. |
-| `data/tools.js`, `scripts/schema.sql`, `scripts/grant_all_tools_to_all_users.mjs`, `next.config.mjs`, `app/tools/[slug]/page.js` | Catalog-entry shape; `users.id = UUID`; `npm run db:grant-all-tools`; trailing-slash + `redirects()`; the public marketing landing route. |
-| **5 user-supplied sample CSVs** — Meesho, Amazon, Flipkart, Myntra, JioMart | The authoritative column schema per marketplace. Fully transcribed in Step 8. |
+| Area | Files | Status |
+|---|---|---|
+| Auth / OTP / profile / forgot‑reset / SSO handoff / theme / billing modals | `lib/{auth,connect,serverBilling,toolBilling,tokenStore,tokenHandoff}.js`, `components/{admin,auth,billing,profile}/*`, `app/{login,profile,forgot-password,reset-password}` | Cloned from tools‑4, working |
+| Middleware + SSO | `proxy.js` (matcher `['/profit-loss/:path*','/api/:path*','/login',…]`), `app/page.js` (forwards `lt_at/lt_rt/lt_u` → `/profit-loss`) | working |
+| Browser sheet parsing | `lib/sheet/{readAnyFile,parseWorkbook,parsePdf,exportRaw,skuCostTemplate}.js` | working |
+| Canonical platform layer | `data/platforms/{canonical,detect,index,aliases,manual,amazon,flipkart,meesho,myntra,jiomart}.js` | working |
+| P&L engine | `lib/profitLoss/{engine,dateRanges,exportDashboard,fmt}.js` | working — **becomes the "base‑metrics" provider for template formulas** |
+| Fixed dashboard | `components/dashboard/{ProfitLossView,ProfitLossShell,DashboardTopbar,DashboardToolbar,DashboardHeaderBar,KpiCard,KpiCardRow,DetailsTable,ColumnHeaderCell,DetailsViewPills,DateRangeFilter,PlatformFilter,AdsCostControl,HistoryDrawer,SaveRunButton,RawRowsTable,SheetSettingsPanel,MarketplacePicker,PlatformBadge}.jsx`; Redux `store/sheetSettingsSlice.js` | working — **refactored into a template‑aware renderer in Task 1** |
+| Per‑user persistence | hub `scripts/profit_loss_migration.sql`, `app/api/profit-loss/{settings,history,history/[id]}` on both sides, `lib/db.js` `*ProfitLoss*` fns | working — unchanged |
 
-**Reference design:** the uploaded dashboard screenshot. **Action required:**
-save it to `tools/arshanemi-tools-5/source/profit-loss-dashboard.png` and the
-5 CSVs to `tools/arshanemi-tools-5/source/samples/{meesho,amazon,flipkart,myntra,jiomart}.csv`
-before implementation.
+**Reference material studied for Rev 3:** tools‑4's whole template system —
+`components/listing/{TemplateSettingsWizard,NewTemplateDesign,GroupTabsStep,SheetGrid,formula,linkedHeaders,TemplateHistoryPanel,ListingToolsSidebar,ListingToolsShell}.jsx`,
+`app/listing-tools/{layout,template-settings/**,template-access}`,
+`lib/{listingTemplateAccess,connect}.js`; hub
+`scripts/{listing_templates,listing_tools,listing_template_access,settings_access}_migration.sql`,
+`app/api/listing-tools/templates/**`, `lib/db.js` `*ListingTemplate*` fns,
+`lib/permissions.js`, `app/settings/layout.js`. The Rev‑3 builder is the P&L
+analogue of that flow.
 
 ---
 
-## Rules (hard constraints)
+## 1. Rules (hard constraints — carried from CLAUDE.md, extended for Rev 3)
 
-1. **JavaScript only** — `.jsx` / `.js`, no TS (repo rule).
-2. **Tailwind only** — tokens in `app/globals.css` `@theme {}` (v4, no config file). Reuse tools-4's `globals.css` verbatim.
-3. **Clone, don't reinvent auth** — every file marked "carried over" in Step 11(c) is copied byte-for-byte from tools-4 except the listed string edits.
-4. **The tool app never touches Postgres** — no `@supabase/supabase-js`. All per-user persistence goes over HTTP to the admin panel via `proxyAdminCall(path, { authHeader: authHeaderFrom(req) })`, exactly like tools-4's `/api/listing-tools/history`. The hub's `lib/db.js` + Supabase service-role client is the only DB writer.
-5. **camelCase on the wire, snake_case in the DB** — mapping happens **only** inside admin-pannels `lib/db.js`.
-6. **No login to use.** `/profit-loss` fully works with no session: upload sheets, compute, view dashboard, export — 100% client-side, nothing leaves the browser. **Login unlocks persistence:** the user's uploaded files + computed data are saved (History), and column/preference choices are saved (My Details).
-7. **Metered save.** For a logged-in user, **saving** costs **1 coin per 100 rows** of parsed data (`Math.ceil(totalRows / 100)` coins), deducted by the admin panel via `POST /api/wallet/deduct` (`coinCost: 1`, `quantity`). Browsing / computing / exporting is always free. Anonymous users can't save and are never charged. App ships `NEXT_PUBLIC_IS_PAID=true`.
-8. **Single-product navbar.** The top bar shows only this product — logo, "Profit & Loss", and Log in / account. No links to other tools. (tools-4's `DashboardTopbar` already is this; only the centre label changes.)
-9. **Platform-agnostic engine.** `lib/profitLoss/engine.js` only ever sees a **canonical row schema**. Every marketplace quirk lives in one module under `data/platforms/`. A 6th marketplace = one new file, zero engine changes.
-10. **400 LOC ceiling; one concern per file** — `page.js` is a thin shell; `components/dashboard/` gets one file per region.
-11. **Mobile-first Tailwind** — the details table scrolls inside its own `overflow-x-auto` box; the page body never scrolls sideways.
-12. **`export const runtime = 'nodejs'`** on every new API route.
-
----
-
-### Step 1 — What is the feature
-
-**a. Plain-language description.**
-Sellers who list on Flipkart, Meesho, Amazon, Myntra and JioMart each
-download a differently-shaped settlement/payment spreadsheet from that
-marketplace every payout cycle. Working out *"did I actually make money this
-month, and on which SKU?"* means reconciling each of those files against
-your own cost sheet by hand. **Profit & Loss** does it automatically: pick
-(or let it detect) the marketplace, upload the payment sheet (and optionally
-an order sheet), upload a one-time SKU-cost sheet, choose a date range, and
-it renders a dashboard — headline numbers (Orders, Returns, Cancellations,
-RTO, Ad spend, COGS, net Profit/Loss) and a sortable/filterable per-SKU
-table. You can load several marketplaces at once and filter the view by
-platform. No account is needed to use it. If you sign in, your uploaded
-files and results are saved to a history and your column preferences stick —
-saving costs 1 coin per 100 rows.
-
-**b. Source citation.** No `docs/` brief exists. Spec = the user's numbered
-brief + the uploaded screenshot + 5 sample CSVs. Verbatim requirements:
-
-> - "same use payments coins login screens and profile everything same just remove listing realted everythings create a base projects"
-> - "Navbar for only this products"
-> - "In this login no required if user login then uploaded sheets just see all process infrontend sides if users login then he is stored his files and every 100+ data cuts 1 coins saved cut 1 coins in arshanemi admin paneels sides"
-> - "All comnpanyt typo erros means exccomerce platforms no compnay creations"
-> - "automatic platform detaiections from sheets if possibles"
-> - "Create a product page default urls profit-loss/"
-> - "In Date filter click open 1 months 6 months 1 years and cuatom custom click from date and to date selectioions"
-> - "two tables only one my datils just in thus userId and one json for my heasders list save and 2nd is all history of my data user wise"
-
-**c. Status.** **NEW.**
+1. **JavaScript only** — `.jsx` / `.js`. No TypeScript.
+2. **Tailwind v4 only** — tokens in `app/globals.css` `@theme {}`. No `style={{}}`, no CSS Modules. Use the existing token set (`bg-surface`, `bg-card`, `bg-footer`, `text-muted`, `text-accent`, `text-action`, `border-divider`, `text-pos`/`text-neg`, `--radius-*`). No off‑token hex.
+3. **The tool app never touches Postgres.** Every template read/write proxies to the admin panel via `proxyAdminCall(path, { authHeader: authHeaderFrom(req) })`, exactly like `/api/profit-loss/settings`. The hub's `lib/db.js` + Supabase service‑role client is the only DB writer.
+4. **camelCase on the wire, snake_case in the DB** — mapping only inside hub `lib/db.js`.
+5. **`export const runtime = 'nodejs'`** on every new route handler.
+6. **Never `eval()` / `new Function()` on template formulas** — reuse the recursive‑descent parser from tools‑4 `components/listing/formula.js` (ported to `lib/profitLoss/formula.js`).
+7. **400 LOC ceiling per file; one concern per file.** Split the builder into one component per section (`components/templateSettings/*`).
+8. **No login to *use* the dashboard.** `/profit-loss` renders for anonymous visitors against live templates (or the built‑in default). Login unlocks `My Details` + `History`. **Template Settings is reachable by `master_admin` or a granted user** (`user_settings.marketplace_template_access`) — server‑gated layout + hidden nav, same double gate as tools‑4's `listing_template_access`.
+9. **Mobile‑first.** Sidebar collapses to an off‑canvas drawer < `lg`; the details table and graph strip scroll inside their own `overflow-x-auto` boxes; the page body never scrolls sideways.
+10. **A missing template must never break the page** — the dashboard always has a working fallback config (`data/defaultTemplate.js`).
+11. **The top navbar matches image 1** — a data‑driven multi‑tool bar (`data/nav.js`). CLAUDE.md's "single‑product navbar" rule is superseded; update it during milestone 10.
 
 ---
 
-### Step 2 — Pages
-
-App is `robots: { index: false }` (like tools-4).
-
-| Route | File | New / cloned | Type | Purpose |
-|---|---|---|---|---|
-| `/` | `app/page.js` | modified clone | server | SSO handoff — forward `lt_at/lt_rt/lt_u`, then `redirect('/profit-loss')`. |
-| `/profit-loss` | `app/profit-loss/page.js` | **NEW** | thin server shell → client `<ProfitLossView/>` | The whole tool: toolbar (marketplace picker + 4 upload/download buttons), KPI card row, per-SKU details table, date-range filter, platform filter, "My Details" / "All Details" column pills, History drawer, Save. Pixel-matched to `source/profit-loss-dashboard.png`. |
-| `/login` | `app/login/page.js` | cloned (copy tweaks) | client | Email/mobile + password, OTP 2nd step for `master_admin` / `otp_enabled`. `next` defaults to `/profit-loss`. |
-| `/profile` | `app/profile/page.js` | cloned verbatim | client | Self-service account + wallet balance. |
-| `/forgot-password`, `/reset-password` | cloned verbatim | client | OTP password reset. |
-| `robots.js`, `sitemap.js` | cloned | — | `disallow: '/'`. |
-
-No `error.tsx`/`loading.tsx` triad — tools-4 has none (no shared primitives);
-`<ProfitLossView/>` renders its own inline skeleton.
-
-**b. Public marketing page (separate repo).**
-`barmeto.com/tools/profit-loss` is served by the existing
-[app/tools/[slug]/page.js](../app/tools/%5Bslug%5D/page.js) once a
-`profit-loss` object is added to [data/tools.js](../data/tools.js) and the
-seeds run (Step 8(c)). Data-driven, no new page file.
-
-**c. Verbatim copy (from the screenshot).**
-Toolbar: **"Market Place"**, **"Upload Payment Sheet"**, **"Upload Order Sheet"**, **"Download SKU Cost"**, **"Upload SKU Cost"**.
-Header row: **"Dashboard"**, platform filter labelled **"All Platforms"** *(the screenshot's "All Compay" is a typo — it means ecommerce platform, per the user)*, **"Date"**, **"Apply"**.
-Pills: **"My Details"**, **"All Details"**.
-KPI cards: **"Order"**, **"Return"**, **"Canceled"**, **"RTO"**, **"Ads Cost"**, **"Profit/Loss"**, **"COGS"**.
-Table headers: **"Sku Name"**, **"Total Order"**, **"Settle Order"**, **"Product Cost"**, **"Profit/Loss"**, **"Return %"**, **"COGS"**, **"Bank Statement"**, **"Ads Cost"**, **"Deliver"**, **"Return"**, **"RTO"**, **"Exchange"**, **"Canceled"**.
-
----
-
-### Step 3 — User journey (Mermaid)
+## 2. Architecture at a glance
 
 ```mermaid
 flowchart TD
-    A[Open Profit and Loss] --> B[Pick or auto-detect marketplace]
-    B --> C[Upload Payment Sheet]
-    C --> D[Header row fingerprinted - marketplace confirmed]
-    D --> E{Upload another marketplace sheet?}
-    E -- yes --> B
-    E -- no --> F{Have a SKU cost sheet?}
-    F -- no --> G[Download blank SKU Cost template - pre-filled with seen SKUs]
-    G --> H[Fill cost per SKU] --> I[Upload SKU Cost]
-    F -- yes --> I
-    I --> J[Set Ads cost - percent or flat rupees]
-    J --> K[Choose date range - 1 month, 6 months, 1 year, or custom from and to]
-    K --> L[Press Apply]
-    L --> M[Dashboard: 7 KPI cards + per-SKU table]
-    M --> N[Filter by platform / sort / column filter / switch My vs All Details]
-    N --> O{Signed in?}
-    O -- no --> P[Save prompts sign-in; dashboard stays fully usable]
-    O -- yes --> Q[Press Save: costs ceil rows / 100 coins]
-    Q --> R[Files + computed data stored to History; open later to compare]
+    subgraph Admin["Template Settings — master_admin or granted (tools-5)"]
+      TS[/profit-loss/template-settings/] --> TSNew[Builder: /new or /[id]]
+      TSNew -->|"POST/PUT/PATCH proxy"| HubTpl
+    end
+    subgraph Hub["admin-pannels (Postgres / Supabase)"]
+      HubTpl[["/api/marketplace-templates/**"]] --> DB[(marketplace_templates<br/>marketplace_template_details<br/>marketplace_template_logs)]
+    end
+    subgraph Dash["Dashboard — anyone (tools-5)"]
+      D[/profit-loss/] -->|"GET /api/marketplace-templates/live (proxy, no auth)"| HubTpl
+      D --> Cfg{live template<br/>for picked marketplace?}
+      Cfg -- yes --> Render[Sidebar = config.tabs + Overview<br/>KPI band = tab.titleCards<br/>Graph strip = tab.graphs<br/>Table = tab.headers]
+      Cfg -- no --> Fallback[data/defaultTemplate.js<br/>= Rev-2 fixed layout]
+      Render --> Engine[lib/profitLoss/engine.js base metrics<br/>+ formula.js evaluates every header/card/graph value]
+      Fallback --> Engine
+      Engine --> Export[Export current tab → Excel / PDF]
+    end
 ```
+
+**Core idea:** a *marketplace template* is a JSON `config` (stored version‑wise
+in `marketplace_template_details.config`) that fully describes one marketplace's
+dashboard: its upload slots, its column→field mappings, its header list &
+formulas, its Title Cards, its Graphs, and its Tabs. The dashboard is a **pure
+renderer** of that config; the Rev‑2 engine only supplies the **base numeric
+metrics** every formula is written against.
 
 ---
 
-### Step 4 — Database schema (Postgres / Supabase — admin-pannels)
+## 3. The `config` schema (the heart of Rev 3)
 
-> Two per-user tables in the **admin panel's** Supabase project, matching
-> [scripts/listing_product_prefill_history_migration.sql](../scripts/listing_product_prefill_history_migration.sql).
-> The tool app stores nothing in Postgres (Rule 4).
+Stored at `marketplace_template_details.config` (JSONB). Every id is a short
+nanoid string generated client‑side. Authored in `data/templateSchema.js`
+(shape + `makeEmptyConfig()` + `validateConfig()` + `CONFIG_VERSION`).
 
-**a. New migration:** `scripts/profit_loss_migration.sql` (safe to re-run; additive).
+```jsonc
+{
+  "schemaVersion": 1,
+  "marketplace": {
+    "name": "Meesho",
+    "companyHeaderId": "hdr_company",       // feeds the header-bar "All Companies ▾" filter (nullable)
+    "brandHeaderId": "hdr_brand",           // feeds the toolbar "Select Brand ▾" filter (nullable)
+    "groupByHeaderId": "hdr_sku"            // table row granularity — defaults to the SKU header
+  },
 
-```sql
--- Migration: Profit & Loss tool (tools/arshanemi-tools-5) — per-user saved
--- settings + run history. Backs GET/PUT /api/profit-loss/settings and
--- GET/POST/DELETE /api/profit-loss/history, used only when tools-5 runs
--- with NEXT_PUBLIC_IS_CONNECT=true. Same "hub owns bookkeeping" split as
--- listing_product_details_history.
+  // ── "Market Place" section — the green upload buttons + column mapping ──
+  "fileSlots": [
+    {
+      "id": "slot_payment", "label": "Upload Payment Sheet", "kind": "payment",
+      "required": true, "accept": ".csv,.xlsx,.xls,.pdf", "multiple": true,
+      "headerRowIndex": 1,                 // 1-based, user-set in the builder
+      "sheetNameHint": "Sheet1",
+      "extractedHeaders": ["Sub_Order_ID","SKU","Net_Payout", "..."],   // snapshot from the uploaded sample
+      "sampleValues": { "SKU": ["MEE-001","MEE-002"] },
+      "mappings": [                        // sheet header  ->  our default header
+        { "sheetHeader": "SKU",        "headerId": "hdr_sku" },
+        { "sheetHeader": "Net_Payout", "headerId": "hdr_settlement" }
+      ]
+    },
+    { "id": "slot_order",  "label": "Upload Order Sheet", "kind": "order",  "required": false, "...": "..." },
+    { "id": "slot_h1", "label": "Header 1", "kind": "aux", "...": "..." },
+    { "id": "slot_h2", "label": "Header 2", "kind": "aux", "...": "..." },
+    { "id": "slot_h3", "label": "Header 3", "kind": "aux", "...": "..." }
+  ],
 
--- 1. profit_loss_settings — ONE row per user ("my details" + saved header list)
-CREATE TABLE IF NOT EXISTS profit_loss_settings (
-  user_id      UUID         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  headers      JSONB        NOT NULL DEFAULT '[]',   -- the "My Details" column list: order + which are shown/hidden
-  preferences  JSONB        NOT NULL DEFAULT '{}',   -- { defaultPlatform, defaultDatePreset, adsMode:'percent'|'flat', adsPct, adsFlat, columnWidths, ... }
-  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-ALTER TABLE profit_loss_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Service role manages profit_loss_settings"
-  ON profit_loss_settings FOR ALL USING (auth.role() = 'service_role');
+  // ── "Header" section — default (canonical) headers + extracted + manual ──
+  "headers": [
+    {
+      "id": "hdr_settlement", "name": "Bank Statement",
+      "type": "number",                   // formula | number | text | alphanumeric
+      "formula": "",                      // when type = formula, references others by [Name]
+      "source": "default",                // default | extracted | manual
+      "mappedFrom": { "slot": "slot_payment", "sheetHeader": "Net_Payout" },  // or null
+      "primitive": "settlementAmt",       // default headers bind to an engine base metric
+      "note": "Amount actually credited to your bank",
+      "format": "money",                  // money | int | pct | text
+      "showInTable": true
+    },
+    {
+      "id": "hdr_pl", "name": "Profit/Loss", "type": "formula",
+      "formula": "[Bank Statement] - [Product Cost] - [Ads Cost]",
+      "source": "default", "format": "money", "signed": true, "showInTable": true
+    }
+    // extracted-but-unmapped sheet headers are appended here with source:"extracted";
+    // a sheet header that IS mapped to a default header is NOT added (union rule, §5.2)
+  ],
 
--- 2. profit_loss_history — MANY rows per user ("all history of my data")
-CREATE TABLE IF NOT EXISTS profit_loss_history (
-  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  label         VARCHAR(255),                        -- user-editable, e.g. "Aug 2026"
-  platforms     JSONB        NOT NULL DEFAULT '[]',   -- e.g. ["flipkart","meesho"] — a run can span marketplaces
-  date_from     DATE,
-  date_to       DATE,
-  ads_mode      VARCHAR(16),                         -- 'percent' | 'flat'
-  ads_value     NUMERIC(12,2),                       -- the % or the ₹ used for this run
-  row_count     INTEGER      NOT NULL DEFAULT 0,     -- parsed rows across all uploaded sheets — the billing basis
-  coins_charged INTEGER      NOT NULL DEFAULT 0,     -- ceil(row_count/100), recorded for audit
-  summary       JSONB        NOT NULL DEFAULT '{}',   -- the 7 KPI totals
-  sku_rows      JSONB        NOT NULL DEFAULT '[]',   -- the computed per-SKU table
-  source_files  JSONB        NOT NULL DEFAULT '[]',   -- [{ kind:'payment'|'order'|'skuCost', platform, name, sizeBytes, rowCount, blobUrl }]
-  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_profit_loss_history_user        ON profit_loss_history(user_id);
-CREATE INDEX IF NOT EXISTS idx_profit_loss_history_user_created ON profit_loss_history(user_id, created_at DESC);
-ALTER TABLE profit_loss_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Service role manages profit_loss_history"
-  ON profit_loss_history FOR ALL USING (auth.role() = 'service_role');
+  // ── "Title Card" section — one name + two independently-formula'd values ──
+  "titleCards": [
+    {
+      "id": "tc_order", "name": "Order",
+      "mainValue": { "type": "formula", "formula": "[Total Order]",     "format": "money" },
+      "subValue":  { "type": "formula", "formula": "[Total Order Qty]",  "format": "int" }
+    }
+  ],
+
+  // ── "Graph Design" section — reusable chart shells ──
+  "graphDesigns": [
+    { "id": "gd_line", "name": "Trend", "chartType": "line" },   // line | bar | area | pie
+    { "id": "gd_pie",  "name": "Split", "chartType": "pie" }
+  ],
+
+  // ── "Graph Data" section — binds data to a Graph Design ──
+  "graphData": [
+    {
+      "id": "g_pl_trend", "name": "P/L over time",
+      "type": "formula",                  // formula | number | text | graphDesign
+      "graphDesignId": "gd_line",
+      "series": [
+        // non-pie: exactly ONE series; series[0].value is the measure,
+        // series[0].category ("times") is always the x-axis bucket
+        { "title": "Profit/Loss", "value": { "type": "formula", "formula": "[Profit/Loss]" },
+          "category": { "type": "times", "unit": "day" } }
+      ]
+    },
+    {
+      "id": "g_status_split", "name": "Status split",
+      "type": "formula", "graphDesignId": "gd_pie",
+      "series": [                          // pie: MIN 2 title/value pairs, each formula-driven
+        { "title": "Delivered", "value": { "type": "formula", "formula": "[Deliver]" } },
+        { "title": "Return",    "value": { "type": "formula", "formula": "[Return]" } },
+        { "title": "RTO",       "value": { "type": "formula", "formula": "[RTO]" } }
+      ]
+    }
+  ],
+
+  // ── "Tab" section — the sidebar entries + per-tab layout ──
+  "tabs": [
+    {
+      "id": "tab_home", "name": "Home", "order": 0, "icon": "LayoutDashboard",
+      "titleCardIds": ["tc_order","tc_return","tc_canceled","tc_rto","tc_ads","tc_pl","tc_cogs"],
+      "graphIds": ["g_pl_trend","g_status_split"],
+      "headerIds": ["hdr_sku","hdr_total_order","hdr_settle_order","hdr_product_cost",
+                    "hdr_pl","hdr_return_pct","hdr_cogs","hdr_settlement","hdr_ads",
+                    "hdr_deliver","hdr_return","hdr_rto","hdr_exchange","hdr_canceled"],
+      "layout": {
+        "titleCards": { "columns": 7 },   // grid width; ids order = titleCardIds order
+        "graphs": [ { "id": "g_pl_trend", "span": 2 }, { "id": "g_status_split", "span": 1 } ],
+        "tableDefaultView": "all"         // "all" | "my"
+      }
+    }
+    // Order, Return, Ads ROI, Profit/Loss, Product Cost, State, Order Reconciliation …
+  ],
+
+  // ── "Overview Tab" section — the "Header Wise Overview" cross-tab summary ──
+  "overviewTab": {
+    "enabled": true, "name": "Overview",
+    "headerIds": ["hdr_total_order","hdr_settlement","hdr_pl","hdr_cogs","hdr_ads","hdr_return_pct"]
+  },
+
+  // ── show/hide toggles (the "add" buttons at the bottom of image 2) ──
+  "visibility": {
+    "marketplaceInSidebar": true,         // hide the whole marketplace from users
+    "tabs": { "tab_home": true, "tab_order": true }   // per-tab show/hide in the user sidebar
+  }
+}
 ```
 
-**b. Modifications to existing tables.** None. `users.id` is already `UUID`.
+**Built‑in fallback** (`data/defaultTemplate.js`) is exactly this shape,
+pre‑filled to reproduce image 1: 8 tabs (`Home, Order, Return, Ads ROI,
+Profit/Loss, Product Cost, State, Order Reconciliation`), 7 Title Cards
+(`Order, Return, Canceled, RTO, Ads Cost, Profit/Loss, COGS`), the 14 table
+headers from `data/platforms/canonical.js` `SKU_COLUMNS`, and 2 sample graphs.
+It is used whenever no live template exists for the picked marketplace.
 
-**c. References / cleanup.**
-- `profit_loss_settings.user_id → users.id` — one row/user, `ON DELETE CASCADE`.
-- `profit_loss_history.user_id → users.id` — many rows/user, `ON DELETE CASCADE`.
-- `source_files[].blobUrl` points at Vercel Blob objects (raw uploaded files, stored by the hub on save — Step 10). The DELETE handler best-effort removes those blobs before deleting the row.
+---
 
-**d. Indexes.** `profit_loss_settings` — PK on `user_id`. `profit_loss_history`
-— `(user_id)` and `(user_id, created_at DESC)` for the paginated newest-first list.
+## 4. Task 1 — Home page & sidebar (pixel‑match of image 1)
 
-**e. Constraints.** `profit_loss_settings.user_id` PK = natural upsert key
-(`onConflict: 'user_id'`). All JSONB columns default to `'[]'`/`'{}'`. Row
-ownership enforced in the route (`user_id = payload.userId` on every read/write).
+### 4.1 Layout anatomy (top → bottom, left → right)
 
-**f. `sku_rows` / raw-file size.** The user pays per 100 rows to save, so the
-**full** computed `sku_rows` is persisted (no cap). Raw uploaded files go to
-**Vercel Blob** (the hub already has `BLOB_STORE_ID` / `BLOB_READ_WRITE_TOKEN`
-and `lib/media.js`), not into JSONB. If a single run ever exceeds ~50k SKU
-rows, a follow-up moves `sku_rows` to Blob too — not v1.
+| Region | Source in image 1 | Component | Notes |
+|---|---|---|---|
+| **Top nav band** (dark navy) | logo · `Link generator` `Background remover` `Auto listing` `Label cropper` `Profit & loss` `Pricing` `More Tools` `Help & support` · `Log in` | `DashboardTopbar.jsx` (**modified**) | Data‑driven from `data/nav.js` (**locked decision ①**). `Profit & loss` is the active item. Sibling links resolve to hub tool URLs from `NEXT_PUBLIC_*`, else `#`. CLAUDE.md's "single‑product navbar" rule is retired (milestone 10). Right side keeps the existing `UserMenu` / `Log in` button. |
+| **Left sidebar** (white, fixed, `w-56` / `lg:w-52`) | search box · `Reset` · ⚙ · nav list (`Home` active as a dark filled pill) | `DashboardSidebar.jsx` (**new**) | Items = `visibleTabs(config)` → `Overview` (if `overviewTab.enabled`) → `Template Settings` (**only when `role==='master_admin'` or `templateSettingsAllowed`**, §5.1). ⚙ icon = jump to Template Settings for those users, a no‑op tooltip otherwise. `Search Folder…` filters the nav list live. `Reset` clears the active tab + filters. Off‑canvas drawer < `lg` (reuse tools‑4 `ListingToolsSidebar` drawer pattern + `DashboardTopbar` hamburger). |
+| **Green toolbar row** | `Market Place ▾` `Select Brand ▾` `Upload Payment Sheet` `Upload Order Sheet` `Header 1` `Header 2` `Header 3` `Download SKU Cost` `Upload SKU Cost` | `DashboardToolbar.jsx` (**rewritten**) | `Market Place ▾` = `MarketplacePicker` listing live templates + built‑in default. `Select Brand ▾` = `BrandFilter` — distinct values of `config.marketplace.brandHeaderId` (**locked decision ④: independent of the Company filter**). Upload buttons are generated from `config.fileSlots` (label + accept + multiple straight from the slot). `Download/Upload SKU Cost` unchanged (`skuCostTemplate.js`). Buttons: `bg-action` pill, `text-white`, leading Lucide icon — matches the screenshot's green. |
+| **Header bar** | `Dashboard` title · `Reset` `Setting` `All Compay ▾` `Date ▾` `Apply` | `DashboardHeaderBar.jsx` (**modified**) | `Setting` → `/profit-loss/template-settings` (rendered only for `master_admin` / granted; hidden otherwise). `All Compay ▾` = `CompanyFilter` — distinct values of `config.marketplace.companyHeaderId`, label **"All Companies"** (**locked decision ④: a separate dimension from Brand; both AND‑applied to the dataset**). `Date ▾` = existing `DateRangeFilter` (1 Month / 6 Months / 1 Year / Custom from–to). `Apply` = existing pending→applied commit. `Reset` mirrors the sidebar `Reset`. Add `Excel` / `PDF` / `History` / `Save` on the far right (already present in Rev 2). |
+| **KPI card band** | 7 cards, each: small label + secondary metric top‑row, big ₹ figure | `KpiCardRow.jsx` + `KpiCard.jsx` (**modified**) | Cards = the **active tab's Title Cards** (`tab.titleCardIds` → `config.titleCards`). `KpiCard` renders `name`, `subValue` (top‑right, formatted per `subValue.format`), `mainValue` (big, `text-neg` when `signed` & negative). Horizontal scroll < `xl`; grid `xl:grid-cols-N` where `N = layout.titleCards.columns`. Card horizontal scroller matches the screenshot's partially‑clipped "COGS" card. |
+| **Graph strip** (new — implied by image 2's Graph sections) | — | `GraphStrip.jsx` + `TemplateChart.jsx` (**new**) | Renders `tab.graphIds` → `config.graphData` in `tab.layout.graphs` order/spans. **No new dependency** — charts are hand‑drawn inline SVG (line/bar/area/pie) in `TemplateChart.jsx` (≤ 200 LOC, theme‑token colors, `overflow-x-auto`). Hidden when the tab has no graphs (fallback default `Home` tab ships 2). |
+| **View pills** | `My Details ▾` `All Details ▾` | `DetailsViewPills.jsx` (**modified**) | `All` = every `header` with `showInTable`. `My` = the user's saved subset (`/api/profit-loss/settings` `headers`, already wired). Checklist options come from the **active tab's headers**, not the static `SKU_COLUMNS`. |
+| **Details table** | `Sku Name` + metric columns, per‑column filter + sort icons, row checkboxes, `select all` | `DetailsTable.jsx` + `ColumnHeaderCell.jsx` (**modified**) | Columns = active tab's headers (My/All). One row per `groupByHeaderId` value. Cell value = `format(evaluate(header, rowScope))`. Sticky first column, `overflow-x-auto`, zebra, `bg-card-hover` hover — already built; only the column source changes. |
+| **Overview tab** | image 2 "Header Wise Overview" | `OverviewTab.jsx` (**new**) | A single wide table: one row per `groupByHeaderId` value, columns = `overviewTab.headerIds` **unioned across every visible tab's dataset** (i.e. computed over all uploads, not one tab's filter). Also gets Excel/PDF export. |
 
-**g. Run step.** After merge: run `scripts/profit_loss_migration.sql` in the
-Supabase SQL editor (manual, like every `*_migration.sql` here). Record in
+### 4.2 Component tree
+
+```
+app/profit-loss/page.js  (server shell — unchanged: StoreProvider > ToastProvider > ProfitLossShell)
+└─ ProfitLossShell.jsx  (client — MODIFIED: owns user/session; now also fetches live templates once)
+   ├─ DashboardTopbar.jsx          MODIFIED  (data-driven multi-tool nav)
+   └─ DashboardWorkspace.jsx       NEW  (replaces the single <ProfitLossView/> body)
+      ├─ DashboardSidebar.jsx      NEW
+      └─ <main>
+         ├─ DashboardToolbar.jsx   REWRITTEN  (slots from config.fileSlots)
+         │  ├─ MarketplacePicker.jsx   MODIFIED  (lists live templates)
+         │  └─ BrandFilter.jsx         NEW  (config.marketplace.brandHeaderId)
+         ├─ DashboardHeaderBar.jsx MODIFIED
+         │  ├─ CompanyFilter.jsx       NEW  ("All Companies ▾" — config.marketplace.companyHeaderId)
+         │  ├─ DateRangeFilter.jsx / AdsCostControl.jsx / SaveRunButton.jsx / HistoryDrawer trigger   REUSED
+         ├─ TabView.jsx            NEW  (renders one config.tab OR the Overview tab)
+         │  ├─ KpiCardRow.jsx > KpiCard.jsx        MODIFIED
+         │  ├─ GraphStrip.jsx > TemplateChart.jsx  NEW
+         │  ├─ DetailsViewPills.jsx                MODIFIED
+         │  └─ DetailsTable.jsx > ColumnHeaderCell.jsx   MODIFIED
+         ├─ OverviewTab.jsx        NEW
+         ├─ SheetSettingsPanel.jsx REUSED  (per-file tab/column overrides — still available)
+         └─ HistoryDrawer.jsx / RawRowsTable.jsx  REUSED
+```
+
+State lives in `DashboardWorkspace.jsx`: `liveTemplates[]`, `activeTemplateId`,
+`config` (resolved: live or fallback), `activeTabId`, `uploads[]` (keyed by
+`fileSlot.id`), `skuCost`, `pending`/`applied` filters (date, **company**,
+**brand**, ads — company and brand are independent selects, both AND‑applied by
+`resolveTemplate` before aggregation), `viewMode`, plus the memoised
+**`dataset`** — canonical rows → engine base metrics → per‑`groupBy` row scopes
+→ evaluated headers. Redux `sheetSettingsSlice` keeps the per‑file parse
+overrides (unchanged).
+
+### 4.3 Template‑driven render pipeline
+
+```
+uploads[] (per fileSlot)  ──parseWorkbook/readAnyFile──▶  rawRows per slot
+        │
+        ├─ mapping: config.fileSlots[].mappings + config.headers  ──▶  normalized rows
+        │      (a mapped sheetHeader fills its target header.id; unmapped extracted
+        │       headers fill their own header.id verbatim)
+        ▼
+lib/profitLoss/engine.js  ──▶  base metrics per groupBy key
+        │   { deliveredQty, returnQty, rtoQty, cancelledQty, exchangeQty, pendingQty,
+        │     totalOrderQty, grossSale, settlementAmt, shippingCredit, productCost,
+        │     adsCost, fees.*, taxes.*, skuCount, ... }   (Rev-2 engine, lightly generalised)
+        ▼
+lib/profitLoss/resolveTemplate.js  (NEW)
+        │   0. filter rows: date range ∧ company (companyHeaderId value) ∧ brand
+        │      (brandHeaderId value) ∧ platform — all independent, all AND
+        │   1. bind default headers to their `primitive`
+        │   2. topologically sort formula headers, cycle-guard, evaluate row-context
+        │   3. aggregate column totals across the filtered rows
+        │   4. evaluate Title Card mainValue/subValue (aggregate context)
+        │   5. evaluate each Graph Data series (aggregate, or time-bucketed for "times")
+        ▼
+{ tableRows[], titleCardValues{}, graphSeries{}, overviewRows[] }  ──▶  render
+```
+
+`resolveTemplate.js` is pure and unit‑testable against `source/samples/*.csv` +
+`data/defaultTemplate.js`.
+
+### 4.4 Export
+
+`lib/profitLoss/exportDashboard.js` (**extended**): given the resolved
+`{ titleCardValues, tableRows, columns, graphSeries, label }` → `.xlsx`
+(exceljs — one sheet: Title Cards block, then the table; one sheet per graph's
+series) and `.pdf` (jspdf + autotable — cards as a header grid, then the
+table). Overview tab exports the same way. Buttons already on
+`DashboardHeaderBar`.
+
+---
+
+## 5. Task 2 — Template Settings builder (pixel‑match of image 2)
+
+### 5.1 Routes, access gate, shell
+
+```
+/profit-loss/template-settings           list page         NEW   master_admin OR granted
+/profit-loss/template-settings/new        builder (create) NEW   master_admin OR granted
+/profit-loss/template-settings/[id]       builder (edit)   NEW   master_admin OR granted (own template)
+/profit-loss/template-access              grant screen     NEW   master_admin only
+```
+
+**Access model (locked decision ③) — mirrors tools‑4's `listing_template_access`
+exactly:**
+
+- **Grant column:** `user_settings.marketplace_template_access BOOLEAN NOT NULL
+  DEFAULT FALSE` (migration in §6). `NULL`/absent behaves as `FALSE` — nobody
+  reaches Template Settings until a `master_admin` flips it on for them (or they
+  *are* `master_admin`). Same "off until explicitly granted" default and
+  metadata‑only `ALTER` as `listing_template_access_migration.sql`.
+- **`lib/marketplaceTemplateAccess.js`** (tools‑5, ported from tools‑4's
+  `lib/listingTemplateAccess.js`): `fetchTemplateSettingsAllowed(token, role)` →
+  `true` if `role === 'master_admin'`, else `proxyAdminCall('/api/marketplace-template-access/me', { authHeader: 'Bearer '+token })` → `!!data.allowed`. Fails closed.
+- **`app/profit-loss/template-settings/layout.js`** (**new**) — covers
+  list / new / [id] in one place, copied from tools‑4's
+  `template-settings/layout.js`: read cookie → `verifyToken` → if
+  `payload && payload.role !== 'master_admin'` → `allowed =
+  fetchTemplateSettingsAllowed(token, role)` → `if (!allowed) redirect('/profit-loss')`.
+  A missing payload is **not** redirected (SSO‑handoff cookie may not be set
+  yet); the page's own API calls 401 → `LoginRequiredModal`.
+- **`app/profit-loss/template-access/page.js`** (**new**, `master_admin` only —
+  its own inline gate + hidden nav entry) — `TemplateAccessPanel.jsx` ported
+  from tools‑4: lists users, per‑user on/off toggle → `PUT
+  /api/marketplace-template-access` `{ userId, allowed }`.
+- **Sidebar** (`DashboardWorkspace`/`DashboardSidebar`, `ListingToolsShell`
+  pattern): the layout passes `initialTemplateSettingsAllowed` (server‑resolved);
+  the client shell re‑checks via `/api/marketplace-template-access/me` after the
+  SSO handoff settles. `Template Settings` entry shown when `role ===
+  'master_admin' || templateSettingsAllowed`; `Template Access` entry shown only
+  for `master_admin`.
+- **Ownership:** templates carry `owner_id`. `master_admin` sees/edits **all**
+  (`?scope=all`); a granted user sees/edits **only their own**. `/live` is
+  global regardless of owner. Every write route enforces
+  `master_admin || (granted && row.owner_id === payload.userId)` → `403`.
+- The builder itself is one scrolling page with a **sticky top pill‑nav**
+  (jump anchors) in image‑2 order: `Tab · Market Place · Title Card · Header ·
+  Graph Design · Graph Data · Version Page`. Body sections are **always
+  rendered** (tools‑4 "show the whole flow up front" pattern) in the image‑2
+  body order below. A right‑docked **History panel** (`TemplateLogPanel.jsx`)
+  shows the change log.
+
+### 5.2 Sections (image‑2 body order), each spec'd
+
+#### A. `Header` — `HeaderSection.jsx`
+Reproduces image 2's Header block: left = a searchable list (`Header 2`,
+`Header 3`, …) with **`+ Add New Header`**; right = the editor.
+
+- **Name** input + `Edit` / `Delete` / `Save` pill buttons (blue / red / green,
+  matching the screenshot).
+- **Type** segmented control: `Formula` · `Number` · `Text` · `Alphanumeric`
+  (green when active).
+- **Header List** dropdown + `Copy` / `Post` — pick another header to reference;
+  `Copy` copies its `[Name]` token, `Post` inserts it into the formula at the
+  caret.
+- **Formula builder** — a token row `+  -  /  ( )  %  Text` (buttons that append
+  to the formula string) + a free text input (`ed.abc&123*dss` placeholder).
+  Helper line: *"Reference other columns by name in brackets. Supports
+  +,-,/,\* (or the word "power"), and parentheses."* Live‑previews the result
+  against sample data.
+- Only shown when `type === 'formula'`.
+- **Default headers** (`source:"default"`) are seeded from
+  `data/defaultHeaders.js` — the P&L primitives + image‑1's 14 table columns,
+  each bound to an engine base metric (`primitive`) or a starter formula. They
+  can be renamed / re‑formulated but not deleted (delete → toast, like tools‑4
+  default headers).
+- **Union rule (the user's core requirement):** the template's final header
+  list =
+  `defaultHeaders ∪ manualHeaders ∪ { extracted sheet headers with NO mapping }`.
+  The moment a sheet header is mapped to a default header in the *Market Place*
+  section, it is **removed** from the "unmapped / extracted" pool and never
+  appears as its own header. `HeaderSection` shows three groups: **Default**,
+  **Extracted (unmapped)**, **Added by me** — with counts.
+
+#### B. `Title Card` — `TitleCardSection.jsx`
+Left list (`Title Card 1/2/3`) + `+`; right editor:
+- **Name** input + `Edit`/`Delete`/`Save`.
+- **Add Main Value** — Type segmented (`Formula`/`Number`/`Text`/`Alphanumeric`)
+  + `Header List` dropdown + `Copy`/`Post` + the same `+ - / ( ) % Text` formula
+  row + text input + helper line.
+- **Add Sub Value** — an identical, **independent** editor block (its own type +
+  its own formula), exactly as the screenshot shows two side‑by‑side value
+  editors.
+- Persists to `config.titleCards[]` as `{ id, name, mainValue, subValue }`.
+
+#### C. `Graph Design` — `GraphDesignSection.jsx`
+Left list (`Graph Design 1/2/3`) + `+`; right = **Name** input +
+`Edit`/`Delete`/`Save` + a 4‑tile chooser: **Line chart · Bar chart · Aria
+chart · Pie chart** (note the screenshot's "Aria" = **Area**; label it "Area
+chart"). Persists `{ id, name, chartType }`.
+
+#### D. `Graph Data` — `GraphDataSection.jsx`
+Left list (`Graph 1/2/3`) + `+`; right editor:
+- **Name** + `Edit`/`Delete`/`Save`.
+- **Type** segmented: `Formula` · `Number` · `Text` · `Graph Design`.
+- `Header List` dropdown + `Copy`/`Post` + the `+ - / ( ) %` formula row + text
+  input + helper line (same builder as everywhere).
+- **Graph Design** picker (which `graphDesigns[]` shell to bind to).
+- **Series editor**, gated on the bound design's `chartType`:
+  - **Pie** → **≥ 2** title/value pairs, each with its **own formula**
+    (`series[].title` + `series[].value.formula`). "Add pair" / "remove pair"
+    buttons; Save disabled with < 2 pairs.
+  - **Line / Bar / Area** → **exactly 1** pair: one `title` + one
+    `value` (formula) as the measure, and the **second axis is always
+    `"times"`** — a fixed time bucket (`day` / `week` / `month`, default
+    `day`) rendered on the x‑axis. UI shows the measure editor + a small
+    `times: [day▾]` control, no free formula for the second axis.
+- Persists to `config.graphData[]`.
+
+#### E. `Tab` — `TabSection.jsx`
+Left list (`Tab 1/2/3`) + **`+ Add New Tab`**; right editor reproduces image 2's
+Tab block:
+- **Name** input + `Add Title Card` `Add New Header` `Add Graph` +
+  `Edit`/`Delete`/`Save`.
+- **Graph row** — up to 4 `Graph ▾` slots; each picks a `graphData[]` entry;
+  drag to reorder; `–` removes; a `span` control (1–2 grid columns).
+- **Title Card row** — `Add Title Card ▾` slots; pick `titleCards[]`; reorder;
+  remove; the grid‑`columns` control sets `layout.titleCards.columns`.
+- **Header row** — a horizontal strip of `Add Header ▾` pickers (image 2 shows
+  ~8) selecting `headers[]` in display order; reorder; remove. This is the
+  tab's table column set + order.
+- Persists `{ id, name, order, icon, titleCardIds, graphIds, headerIds, layout }`.
+- **Show/hide** — each Tab row in the left list has an **on/off toggle**
+  (`visibility.tabs[tabId]`) = "show / hide from the users' sidebar".
+
+#### F. `Overview Tab` — `OverviewTabSection.jsx`
+Image 2's "Overview Tab" block: **Name** input + `+ Add New Header` +
+`Edit`/`Delete`/`Save`, then **"Header Wise Overview"** + a strip of
+`Add Header ▾` pickers. Persists `config.overviewTab = { enabled, name,
+headerIds }`. A master toggle enables/disables the Overview entry in the user
+sidebar.
+
+#### G. `Market Place` — `MarketPlaceSection.jsx`
+Image 2's "Market Place" block — the **first** thing an admin fills, even though
+it sits lower in the body:
+- Left list of marketplaces (`Market Place`, `Market Place 2`, …) + `+` — **one
+  template = one marketplace** (locked decision ②), so this list is the
+  template's own name only; multi‑marketplace templates are a later revision.
+- **Name** dropdown + `Edit`/`Delete`/`Save` + **`Add File`**.
+- **File slots** — a horizontal set of file cards (`File`, `File`, …) each with
+  a checkbox (include), an **`Upload File`** button, a **`Sheet 1 ▾`** picker
+  (which workbook tab), and paired **`Header` / `Value`** row‑index inputs
+  (`Header` = header row, `Value` = first data row). Maps to
+  `config.fileSlots[]` — the same slots that become the dashboard's green
+  upload buttons. The admin uploads a **sample** file here purely to extract
+  headers + sample values (persisted into the slot; the raw file is **not**
+  required to be stored — optional Blob upload behind `Q4`).
+- **Column mapping grid** — three columns exactly as the screenshot:
+  - **Unmap Header** — every extracted sheet header not yet mapped, each with a
+    `+` (map it).
+  - **Our Header** — a `▾` dropdown of our default headers (from
+    `config.headers` where `source === 'default'`, plus any manual header).
+  - **Map Header** — the committed `sheetHeader → ourHeader` pairs, each with a
+    `–` (unmap).
+  - Two search boxes filter the left and right lists.
+  - Committing a mapping writes `fileSlots[].mappings[]` **and** removes that
+    sheet header from `HeaderSection`'s "Extracted (unmapped)" group (§5.2 union
+    rule). Unmapping restores it.
+
+#### H. `Version Page` — `VersionSection.jsx`
+Image 2's "Version Page" block — a table with a **search** box and columns
+**`Version Number` · `Sub Version Number` · `Create date` · `Live date`**, plus
+a leading **on / off** toggle per row (the live pointer). Rows come from
+`marketplace_template_details` for this template. Behaviour:
+- **Save** (green, page footer) → writes the current builder state as a
+  **draft**: if editing an existing draft, `PUT` overwrites it; otherwise
+  `POST` a new row with `sub_version_number = max(sub)+1` for the current
+  `version_number`. Live rows are **immutable** — saving over a live version
+  forks a new draft.
+- **"Save as new major version"** → `version_number = max(version)+1`,
+  `sub_version_number = 1`.
+- The **on toggle** on a row = **Publish**: that `marketplace_template_details`
+  row → `status='live'`, the previously‑live row → `status='archived'`,
+  `marketplace_templates.live_version_id` / `is_live` / `last_published_at`
+  updated, and a `version.publish` log row written. Turning it **off** →
+  unpublish (marketplace disappears from user dashboards; `is_live=false`).
+- `Create date` = `created_at`; `Live date` = `published_at`.
+- Every template shows its **unique id** (`marketplace_templates.id`) at the top
+  of the builder and in the list page, copy‑to‑clipboard.
+
+### 5.3 List page — `app/profit-loss/template-settings/page.js`
+
+`TemplateSettingsList.jsx`: search + **`+ New Template`**. One row per
+`marketplace_templates`:
+
+| Column | Source |
+|---|---|
+| Marketplace name + `id` (copyable) + `template_number` (`MPT-0001`) | `marketplace_templates` |
+| Live version | `live_version_id` → `v{version}.{sub}` badge, or `— draft` |
+| **Last update** | `updated_at` (any draft save / rename / mapping edit) |
+| **Live date** | `last_published_at` |
+| Show in sidebar | `visibility.marketplaceInSidebar` toggle (writes `PATCH …/[id]`) |
+| Actions | `Open` (builder) · `Logs` (drawer → `GET …/[id]/logs`) · `Duplicate` · `Delete` (confirm) |
+
+`Logs` drawer = `TemplateLogPanel.jsx` — reverse‑chron list of
+`marketplace_template_logs` (`action`, `actor_name`, `created_at`, a one‑line
+`detail` summary). Same panel is docked in the builder.
+
+### 5.4 Builder shared pieces
+
+- `FormulaEditor.jsx` — the `+ - / ( ) % Text` token row + `Header List`
+  dropdown + `Copy`/`Post` + text input + live preview + helper line. Used by
+  Header / Title Card (×2) / Graph Data. ~140 LOC.
+- `TypeToggle.jsx` — `Formula / Number / Text / Alphanumeric` (or
+  `+ Graph Design`) segmented control. ~40 LOC.
+- `ListEditorColumn.jsx` — the recurring "searchable left list + `+` add +
+  select" pattern (Header/Title Card/Graph Design/Graph Data/Tab/Marketplace).
+  ~90 LOC.
+- `HeaderPickerStrip.jsx` — the `Add Header ▾` horizontal reorderable strip
+  (Tab + Overview). ~90 LOC.
+- `useTemplateDraft.js` — hook owning the whole `config` draft, `dirty` flag,
+  `validateConfig()`, autosave‑to‑`localStorage` (crash recovery), and the
+  save/publish calls. ~160 LOC.
+
+---
+
+## 6. Database schema (hub — `admin-pannels`)
+
+New migration **`scripts/marketplace_templates_migration.sql`** (safe to
+re‑run, additive). Mirrors `listing_templates_migration.sql`'s conventions
+(nanoid string PK, `owner_id UUID REFERENCES users(id) ON DELETE CASCADE`,
+per‑owner counter, RLS "service role manages").
+
+```sql
+-- ════════════════════════════════════════════════════════════════════════════
+-- Migration: Marketplace Templates for the Profit & Loss tool (tools-5).
+-- Backs /api/marketplace-templates/** (master_admin builds versioned
+-- dashboard templates; the tools-5 dashboard reads the live one). Hub-owned,
+-- same split as listing_templates / profit_loss_history.
+-- Run once in the Supabase SQL Editor. Safe to re-run.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- 1. marketplace_templates — one row per template (a template = one marketplace)
+CREATE TABLE IF NOT EXISTS marketplace_templates (
+  id                 VARCHAR(255) PRIMARY KEY,                 -- nanoid, from lib/db.js
+  owner_id           UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  owner_name         VARCHAR(255),
+  owner_role         VARCHAR(50),
+  template_number    VARCHAR(20)  NOT NULL,                    -- "MPT-0001", per owner
+  marketplace_name   VARCHAR(255) NOT NULL DEFAULT 'Untitled',
+  description        TEXT          NOT NULL DEFAULT '',
+  is_live            BOOLEAN      NOT NULL DEFAULT FALSE,
+  live_version_id    UUID,                                     -- -> marketplace_template_details.id
+  show_in_sidebar    BOOLEAN      NOT NULL DEFAULT TRUE,       -- denormalized from config.visibility.marketplaceInSidebar
+  last_published_at  TIMESTAMPTZ,                              -- "Live date"
+  created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),      -- "Last update"
+  UNIQUE (owner_id, template_number)
+);
+CREATE INDEX IF NOT EXISTS idx_mp_templates_owner ON marketplace_templates(owner_id);
+CREATE INDEX IF NOT EXISTS idx_mp_templates_live  ON marketplace_templates(is_live) WHERE is_live = TRUE;
+ALTER TABLE marketplace_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages marketplace_templates" ON marketplace_templates;
+CREATE POLICY "Service role manages marketplace_templates"
+  ON marketplace_templates FOR ALL USING (auth.role() = 'service_role');
+
+-- 2. marketplace_template_details — one row per VERSION of a template.
+--    Holds the entire builder payload (§3) in `config`.
+CREATE TABLE IF NOT EXISTS marketplace_template_details (
+  id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id          VARCHAR(255) NOT NULL REFERENCES marketplace_templates(id) ON DELETE CASCADE,
+  version_number       INTEGER      NOT NULL DEFAULT 1,        -- "Version Number"
+  sub_version_number   INTEGER      NOT NULL DEFAULT 1,        -- "Sub Version Number"
+  status               VARCHAR(16)  NOT NULL DEFAULT 'draft',  -- draft | live | archived
+  config               JSONB        NOT NULL DEFAULT '{}',     -- the whole §3 schema
+  note                 VARCHAR(500) NOT NULL DEFAULT '',
+  created_by           UUID         REFERENCES users(id) ON DELETE SET NULL,
+  created_by_name      VARCHAR(255),
+  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),    -- "Create date"
+  published_at         TIMESTAMPTZ,                            -- "Live date" (per version)
+  UNIQUE (template_id, version_number, sub_version_number)
+);
+CREATE INDEX IF NOT EXISTS idx_mp_details_template ON marketplace_template_details(template_id);
+CREATE INDEX IF NOT EXISTS idx_mp_details_live     ON marketplace_template_details(template_id, status);
+ALTER TABLE marketplace_template_details ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages marketplace_template_details" ON marketplace_template_details;
+CREATE POLICY "Service role manages marketplace_template_details"
+  ON marketplace_template_details FOR ALL USING (auth.role() = 'service_role');
+
+-- 3. marketplace_template_logs — append-only audit of create/update/delete +
+--    every version change + every show/hide toggle.
+CREATE TABLE IF NOT EXISTS marketplace_template_logs (
+  id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id  VARCHAR(255) NOT NULL REFERENCES marketplace_templates(id) ON DELETE CASCADE,
+  version_id   UUID         REFERENCES marketplace_template_details(id) ON DELETE SET NULL,
+  actor_id     UUID         REFERENCES users(id) ON DELETE SET NULL,
+  actor_name   VARCHAR(255),
+  action       VARCHAR(40)  NOT NULL,   -- template.create | template.update | template.delete
+                                        -- version.create | version.update | version.publish
+                                        -- version.unpublish | version.rollback
+                                        -- sidebar.toggle | tab.toggle
+  detail       JSONB        NOT NULL DEFAULT '{}',   -- { before, after, summary }
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mp_logs_template ON marketplace_template_logs(template_id, created_at DESC);
+ALTER TABLE marketplace_template_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages marketplace_template_logs" ON marketplace_template_logs;
+CREATE POLICY "Service role manages marketplace_template_logs"
+  ON marketplace_template_logs FOR ALL USING (auth.role() = 'service_role');
+
+-- 4. marketplace_template_counters — per-owner "MPT-000N" sequence
+CREATE TABLE IF NOT EXISTS marketplace_template_counters (
+  owner_id   UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  counter    INTEGER     NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE marketplace_template_counters ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role manages marketplace_template_counters" ON marketplace_template_counters;
+CREATE POLICY "Service role manages marketplace_template_counters"
+  ON marketplace_template_counters FOR ALL USING (auth.role() = 'service_role');
+
+-- 5. Per-user grant for the Template Settings section (locked decision ③).
+--    Same rationale/shape as scripts/listing_template_access_migration.sql:
+--    a brand-new gate nothing relied on before, so NOT NULL DEFAULT FALSE
+--    ("off until master_admin explicitly grants") is not a regression, and
+--    adding a constant-default column is a metadata-only change on PG 11+.
+ALTER TABLE user_settings
+  ADD COLUMN IF NOT EXISTS marketplace_template_access BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+**Modified table:** `user_settings` gains one boolean column (above).
+`users.id` is already `UUID`; nothing else changes.
+**Run step:** paste into the Supabase SQL editor after merge; record in
 `MEMORY.md` as "not yet run" until confirmed.
 
 ---
 
-### Step 5 — Auth guard / cross-cutting identification
+## 7. API routes
 
-No `src/server/auth/` folder in this stack — auth is `proxy.js` (Next
-middleware) + each route calling `getAuthPayload(req)` from `lib/auth.js`.
+### 7.1 Hub — `admin-pannels/app/api/marketplace-templates/**` (NEW)
 
-**a. Tool-app side (`tools-5`).**
+All `runtime='nodejs'`; guard `getAuthPayload(req)` → `401`. **Write routes**
+require `canBuild = payload.role === 'master_admin' || getUserMarketplaceTemplateAccess(payload.userId)`
+→ `403`; **`[id]` write routes** additionally require
+`payload.role === 'master_admin' || row.owner_id === payload.userId` → `403`.
+**Read routes** scope to `owner_id` unless `master_admin` (`?scope=all`).
 
-| Guard | File | Change |
-|---|---|---|
-| `proxy.js` middleware | `proxy.js` | **One change:** matcher `['/listing-tools/:path*', …]` → `['/profit-loss/:path*', '/api/:path*', '/login', '/forgot-password', '/reset-password']`. Keep CORS, `lt_at` URL-handoff verification, "no hard redirect on missing token for page navs". `/profit-loss` renders for anonymous visitors; only `/api/profit-loss/*` returns a real 401. |
-| `getAuthPayload(req)` | `lib/auth.js` | Verbatim. Every `/api/profit-loss/*` route calls it → `401` if `!payload?.userId`. |
-| `authHeaderFrom(req)` + `proxyAdminCall` / `proxyAuthCall` | `lib/connect.js` | Verbatim. |
-| `runServerBillingGate` | `lib/serverBilling.js` | **One change:** accept an optional `idempotencyKey` argument instead of always `randomUUID()` (so re-saving the *identical* run doesn't double-charge — the deduct RPC is idempotent on it). |
-| `requireLogin()` / `AuthGateProvider` / `LoginRequiredModal` / `BillingGateModal` | `lib/authGate.js`, `components/auth/*`, `components/billing/*` | Verbatim. A blocked save (`insufficient_coins` etc.) renders `BillingGateModal`; a 401 renders `LoginRequiredModal`. |
+```
+GET    /api/marketplace-templates              list (master_admin ?scope=all: all; else own)  ?includeVersions=1
+POST   /api/marketplace-templates              create template (+ first draft v1.1)          [canBuild]
+GET    /api/marketplace-templates/live         PUBLIC — no auth. Returns every template
+                                               where is_live AND show_in_sidebar, each with its
+                                               live config. Cache-Control: no-store.
+GET    /api/marketplace-templates/[id]         template + versions[] + live config            [owner | master_admin]
+PATCH  /api/marketplace-templates/[id]         rename / description / show_in_sidebar / visibility  [owner | master_admin]
+DELETE /api/marketplace-templates/[id]         delete template (cascade details + logs)             [owner | master_admin]
 
-**b. Hub side (`admin-pannels`).**
+GET    /api/marketplace-templates/[id]/versions            versions list                            [owner | master_admin]
+POST   /api/marketplace-templates/[id]/versions            save draft (body: { config, note, major? }) [owner | master_admin]
+GET    /api/marketplace-templates/[id]/versions/[vid]      one version's full config                [owner | master_admin]
+PUT    /api/marketplace-templates/[id]/versions/[vid]      overwrite a DRAFT version's config       [owner | master_admin]
+POST   /api/marketplace-templates/[id]/versions/[vid]/publish     make live / unpublish (body { live:bool }) [owner | master_admin]
 
-| Guard | File | Change |
-|---|---|---|
-| `getAuthPayload(req)` | `lib/auth.js` | Reuse. New `/api/profit-loss/*` routes → `payload.userId`. |
-| `getSupabase()` + new `profit_loss_*` fns | `lib/db.js` | Add alongside `upsertProductDetailsHistory` etc. |
-| `POST /api/wallet/deduct` | `app/api/wallet/deduct/route.js` | **No change** — already supports `quantity`, idempotency, `tools_access` check. |
-| hub `proxy.js` | `proxy.js` | No change — `/api/profit-loss/*` isn't under `/api/admin`; the route's own `getAuthPayload` is the gate. |
+GET    /api/marketplace-templates/[id]/logs               ?limit=&cursor= — change log             [owner | master_admin]
+POST   /api/marketplace-templates/[id]/source-file        OPTIONAL — Blob-store a sample sheet      [owner | master_admin]
 
-**c. Application order** (every `/api/profit-loss/*` handler): `getAuthPayload`
-→ `401` if none → validate body → **(save only)** `runServerBillingGate` →
-`402` if blocked → `proxyAdminCall(..., { authHeader: authHeaderFrom(req) })`
-/ hub `lib/db.js` fn scoped to `payload.userId` → camelCase JSON.
+── grant screen (master_admin only) ──
+GET    /api/marketplace-template-access                    list users + their allowed flag          [master_admin]
+PUT    /api/marketplace-template-access                    { userId, allowed } → upsert user_settings [master_admin]
+GET    /api/marketplace-template-access/me                 { allowed } for the caller               [any auth]
+```
 
-**d. Cross-cutting.** CORS handled in both `proxy.js`. Billing = Step 7/8. No
-rate-limit / CSRF layer added (repo-consistent).
+Per‑route logic highlights:
+- **POST `/versions`** — validate `config` with a server copy of
+  `validateConfig()` (reject unknown `chartType`, pie series < 2, formula
+  referencing a missing header name, cyclic formula graph). Compute
+  `version_number` / `sub_version_number`. Insert `status='draft'`. `updated_at`
+  bump on the parent. Write `version.create` log.
+- **POST `/publish`** — single Supabase call sequence (no cross‑table txn
+  available via the JS client, so: set target `status='live', published_at=now()`
+  → set prior live `status='archived'` → `update marketplace_templates` set
+  `is_live, live_version_id, last_published_at` → insert `version.publish` log).
+  Order chosen so a partial failure leaves the old live still live.
+- **GET `/live`** — the only anonymous route. Returns
+  `[{ id, marketplaceName, templateNumber, config }]`. Never leaks drafts.
+- **DELETE** — `marketplace_template_logs` + `_details` cascade via FK; write a
+  final `template.delete` log **before** the delete (to a
+  `marketplace_template_logs` archive? no — logs cascade too; instead also
+  append to a lightweight `tool_usage_events`‑style trail? **v1: accept that
+  deleting a template deletes its logs** — Q7).
+
+### 7.2 Tool app — `tools-5/app/api/marketplace-templates/**` (NEW, thin proxies)
+
+Same forward‑the‑caller's‑token idiom as `app/api/profit-loss/settings/route.js`:
+
+```
+GET  /api/marketplace-templates/live         → proxyAdminCall('/api/marketplace-templates/live')  [no auth — matches proxy.js "non-admin API passes through"]
+*    /api/marketplace-templates/**            → getAuthPayload → 401 → proxyAdminCall(path, { authHeader: authHeaderFrom(req) })
+*    /api/marketplace-template-access[/me]    → getAuthPayload → 401 → proxyAdminCall(path, { authHeader: authHeaderFrom(req) })
+```
+
+`proxy.js` matcher already covers `/api/:path*`; `/api/marketplace-templates/*`
+and `/api/marketplace-template-access/*` are **not** under `/api/admin` or
+`/api/profit-loss`, so the middleware lets them through and each route's own
+`getAuthPayload` (or lack of it, for `/live`) is the gate. No middleware change
+needed. No new env.
+
+### 7.3 hub `lib/db.js` functions (NEW, near the `*ListingTemplate*` block — the only place snake_case appears)
+
+```
+nextMarketplaceTemplateNumber(ownerId)              -> "MPT-000N"  (read-then-write, like listing_template_counters)
+listMarketplaceTemplates({ ownerId, scopeAll })     -> rows.map(toMarketplaceTemplateRow)
+getMarketplaceTemplate(id)                          -> row | null
+getMarketplaceTemplateWithVersions(id)             -> { template, versions[], liveConfig }
+createMarketplaceTemplate({ ownerId, ownerName, ownerRole, marketplaceName, description, config })
+                                                    -> inserts template + first details row (v1.1 draft) + template.create log
+updateMarketplaceTemplate(id, patch, actor)         -> whitelist { marketplaceName, description, showInSidebar } + touch updated_at + template.update log
+deleteMarketplaceTemplate(id, actor)                -> template.delete log, then delete (cascade)
+listMarketplaceTemplateVersions(templateId)
+getMarketplaceTemplateVersion(templateId, vid)
+createMarketplaceTemplateVersion(templateId, { config, note, major, createdBy, createdByName })
+updateMarketplaceTemplateVersion(templateId, vid, { config, note })   -- guarded: status must be 'draft'
+publishMarketplaceTemplateVersion(templateId, vid, { live }, actor)   -- the sequence in §7.1
+getLiveMarketplaceConfigs()                          -> [{ id, marketplaceName, templateNumber, config }]
+listMarketplaceTemplateLogs(templateId, { limit, cursor })
+recordMarketplaceTemplateLog({ templateId, versionId, actorId, actorName, action, detail })
+toMarketplaceTemplateRow(r) / toVersionRow(r) / toLogRow(r)   -- camelCase mappers
+-- grant flag (ported from getUserListingTemplateAccess / upsertUserListingTemplateAccess)
+getUserMarketplaceTemplateAccess(userId)             -> from('user_settings').select('marketplace_template_access')...  -> bool
+upsertUserMarketplaceTemplateAccess(userId, allowed) -> upsert user_settings
+listUsersWithMarketplaceTemplateAccess()            -> [{ userId, name, email, role, allowed }]  (grant screen)
+```
+
+No route handler carries business logic beyond validation + auth; no LLM
+anywhere.
 
 ---
 
-### Step 6 — Routes
+## 8. Formula engine — `lib/profitLoss/formula.js` (ported) + `resolveTemplate.js` (new)
 
-**a. Frontend routes** (`tools-5`):
-
-```
-/                     — SSO handoff → redirect /profit-loss        [public]      MODIFIED CLONE
-/profit-loss          — the tool                                    [public]      NEW
-/login /profile /forgot-password /reset-password                    [public/self] CLONE
-```
-
-**b. API routes.** All new handlers `export const runtime = 'nodejs'`.
-
-**Tool-app (`tools-5/app/api/`):**
-```
-Auth (CLONED verbatim; only the IS_CONNECT proxy branch is exercised):
-POST /api/auth/login | refresh | logout | change-password
-GET  /api/auth/me
-POST /api/auth/send-otp | verify-otp | send-contact-otp | verify-contact-change | reset-password
-GET  /api/admin/theme                                             (connect-aware; public GET)
-
-Profit & Loss (NEW; guard getAuthPayload → 401; then proxy to hub):
-GET    /api/profit-loss/settings        — my saved header list + preferences         → proxyAdminCall GET
-PUT    /api/profit-loss/settings        — upsert header list + preferences            → proxyAdminCall PUT
-GET    /api/profit-loss/history         — list my saved runs (paginated, newest 1st)  → proxyAdminCall GET
-POST   /api/profit-loss/history         — SAVE this run (billing gate here)           → runServerBillingGate → proxyAdminCall POST → store raw files to Blob
-GET    /api/profit-loss/history/[id]    — one saved run (full sku_rows + file links)  → proxyAdminCall GET
-DELETE /api/profit-loss/history/[id]    — delete a saved run (+ its Blob files)       → proxyAdminCall DELETE
-```
-
-**Hub (`admin-pannels/app/api/profit-loss/`, NEW):**
-```
-GET  /api/profit-loss/settings          — read profit_loss_settings for payload.userId
-PUT  /api/profit-loss/settings          — upsert { headers, preferences }
-GET  /api/profit-loss/history           — list (?limit=&cursor=) for payload.userId
-POST /api/profit-loss/history           — insert (label, platforms, dateFrom/To, adsMode/Value, rowCount, coinsCharged, summary, skuRows, sourceFiles)
-GET  /api/profit-loss/history/[id]      — one row iff user_id = payload.userId
-DELETE /api/profit-loss/history/[id]    — delete iff user_id = payload.userId
-```
-
-Every protected route names its guard (`getAuthPayload`); bodies camelCase;
-grouped by resource.
+- **`formula.js`** — a near‑verbatim port of tools‑4
+  `components/listing/formula.js`: `tokenize` / `parse` (recursive‑descent
+  `+ - * / ^`, parens, `power` alias), `evaluateFormula(formula, scope,
+  refNames)`. Two changes: (1) `scope` is a flat `{ [name]: number|string }`
+  map instead of a row+headers pair; (2) references resolve against a passed
+  `refNames[]` (all header/card names in scope) — same longest‑match‑first
+  bracket/bare logic. Text‑join mode kept (for `alphanumeric` headers like a
+  composite label).
+- **Row context** (table Header cells): `scope` = that groupBy row's base
+  metrics + every already‑evaluated formula header (topological order;
+  `resolveTemplate` builds the dependency graph from `[Name]` tokens, detects
+  cycles → the offending header shows `#CYCLE`).
+- **Aggregate context** (Title Card `mainValue`/`subValue`, Graph Data series,
+  Overview cells): `scope` = column **totals** across the filtered dataset
+  (`Σ` of each header over all rows) + scalar built‑ins (`[Ads %]`, `[SKU
+  Count]`, `[Row Count]`).
+- **Time bucket** (non‑pie graphs, the `"times"` axis): `resolveTemplate`
+  groups the filtered canonical rows by `orderDate` truncated to the series'
+  `unit` and evaluates the measure formula per bucket → `[{ t, value }]`.
+- **`validateConfig(config)`** — shared by the builder (`useTemplateDraft`) and
+  the hub POST route: every `[Name]` in every formula resolves; pie graphData
+  has ≥ 2 series; non‑pie has exactly 1; `graphDesignId` exists; `chartType` ∈
+  enum; tab ids reference real cards/graphs/headers; no formula cycle.
 
 ---
 
-### Step 7 — Components
+## 9. Output file structure
 
-All single-app → `components/dashboard/` (mirrors tools-4's existing folder).
-Parent: `app/profit-loss/page.js` → `<ProfitLossView/>`.
+### 9.1 `tools/arshanemi-tools-5/` (NEW ✚ / MODIFIED ✎)
 
-**a. New components:**
+```
+data/
+  templateSchema.js            ✚ 120  shape + makeEmptyConfig + validateConfig + CONFIG_VERSION
+  defaultTemplate.js           ✚ 180  the image-1 fallback config (8 tabs, 7 cards, 14 headers, 2 graphs)
+  defaultHeaders.js            ✚ 110  P&L primitive/default headers (name, type, primitive|formula, format)
+  nav.js                       ✚ 30   the top-nav items for DashboardTopbar (image-1 multi-tool bar)
+lib/profitLoss/
+  formula.js                   ✚ 210  ported recursive-descent evaluator (no eval)
+  resolveTemplate.js           ✚ 240  config + base metrics -> { tableRows, titleCardValues, graphSeries, overviewRows }
+  engine.js                    ✎ +40  expose raw base-metric buckets (not just the fixed skuRows shape)
+  exportDashboard.js           ✎ +90  template-driven Excel/PDF (cards block + table + per-graph sheet)
+  templatesApi.js              ✚ 60   client fetch helpers (list/get/saveDraft/publish/logs/live)
+components/dashboard/
+  DashboardWorkspace.jsx       ✚ 240  sidebar + main; owns config/tab/uploads/filters/dataset state
+  DashboardSidebar.jsx         ✚ 150  search + Reset + gear + tab list + Overview + Template Settings
+  DashboardTopbar.jsx          ✎ +40  data-driven multi-tool nav from data/nav.js
+  DashboardToolbar.jsx         ✎ ~    upload buttons generated from config.fileSlots
+  DashboardHeaderBar.jsx       ✎ ~    Setting button + <CompanyFilter/>
+  BrandFilter.jsx              ✚ 70   toolbar "Select Brand ▾"  (config.marketplace.brandHeaderId)
+  CompanyFilter.jsx            ✚ 70   header-bar "All Companies ▾" (config.marketplace.companyHeaderId) — independent
+  MarketplacePicker.jsx        ✎ ~    lists live templates + built-in default
+  TabView.jsx                  ✚ 150  renders one config.tab (cards + graphs + pills + table)
+  OverviewTab.jsx              ✚ 130  Header Wise Overview table + export
+  GraphStrip.jsx               ✚ 90
+  TemplateChart.jsx            ✚ 200  inline-SVG line/bar/area/pie, theme tokens, overflow-x-auto
+  KpiCardRow.jsx / KpiCard.jsx ✎ ~    title-card driven
+  DetailsTable.jsx / ColumnHeaderCell.jsx / DetailsViewPills.jsx  ✎ ~  columns from active tab headers
+components/templateSettings/            ✚ (all new — the builder)
+  TemplateSettingsList.jsx     ✚ 190  list page: rows, last update, live date, id, show/hide, logs
+  TemplateLogPanel.jsx         ✚ 90   change-log drawer/dock
+  TemplateBuilder.jsx          ✚ 240  the scrolling page: sticky pill-nav + all sections + Save/Publish footer
+  useTemplateDraft.js          ✚ 160  draft state, dirty, validate, localStorage recovery, save/publish
+  FormulaEditor.jsx            ✚ 150  + - / ( ) % Text row, Header List, Copy/Post, preview, helper line
+  TypeToggle.jsx               ✚ 40
+  ListEditorColumn.jsx         ✚ 90
+  HeaderPickerStrip.jsx        ✚ 90
+  HeaderSection.jsx            ✚ 220  types, formula, default/extracted/added groups, union rule
+  TitleCardSection.jsx         ✚ 170  name + main value + sub value (two independent FormulaEditors)
+  GraphDesignSection.jsx       ✚ 110  name + Line/Bar/Area/Pie chooser
+  GraphDataSection.jsx         ✚ 230  type, graph design, series editor (pie >=2 / others 1 + "times")
+  TabSection.jsx               ✚ 260  compose cards/graphs/headers, reorder, positioning, per-tab show/hide
+  OverviewTabSection.jsx       ✚ 120
+  MarketPlaceSection.jsx       ✚ 260  file slots, sample upload, Unmap/Our/Map mapping grid
+  VersionSection.jsx           ✚ 150  version table + on/off publish toggle
+  TemplateAccessPanel.jsx      ✚ 150  grant screen — user list + per-user allow toggle (ported from tools-4)
+lib/
+  marketplaceTemplateAccess.js ✚ 25   fetchTemplateSettingsAllowed(token, role)  (ported from tools-4)
+app/profit-loss/
+  page.js                      ✎ ~    (unchanged shell; body swap happens in ProfitLossShell)
+  template-settings/
+    layout.js                  ✚ 34   gate: master_admin OR fetchTemplateSettingsAllowed → else redirect
+    page.js                    ✚ 20   -> <TemplateSettingsList/>
+    new/page.js                ✚ 12   -> <TemplateBuilder/>
+    [id]/page.js               ✚ 14   -> <TemplateBuilder templateId={id}/>
+  template-access/
+    page.js                    ✚ 24   master_admin-only inline gate -> <TemplateAccessPanel/>
+app/api/marketplace-templates/
+  live/route.js                ✚ 25   proxy, no auth
+  route.js                     ✚ 40   GET/POST proxy (+ getAuthPayload)
+  [id]/route.js                ✚ 45   GET/PATCH/DELETE proxy
+  [id]/versions/route.js       ✚ 35
+  [id]/versions/[vid]/route.js ✚ 35
+  [id]/versions/[vid]/publish/route.js  ✚ 25
+  [id]/logs/route.js           ✚ 25
+app/api/marketplace-template-access/
+  route.js                     ✚ 30   GET list / PUT { userId, allowed }  proxy (+ getAuthPayload)
+  me/route.js                  ✚ 20   GET { allowed }  proxy (+ getAuthPayload)
+components/dashboard/ProfitLossShell.jsx  ✎ +20  render <DashboardWorkspace/> instead of bare <ProfitLossView/>; keep <ProfitLossView/> reachable as the fallback renderer body
+```
 
-| Component | File | Purpose | LOC |
-|---|---|---|---|
-| `ProfitLossView` | `components/dashboard/ProfitLossView.jsx` | Client entry. Owns all state: `uploads[]` (per-file: kind, platform, parsed rows), merged `canonicalRows`, `skuCostMap`, `adsMode/adsValue`, `dateRange`, `platformFilter`, computed `{ summary, skuRows }`, `viewMode` (my/all), save status. On mount (if logged in) `GET /api/profit-loss/settings` → apply saved `headers` + `preferences`. | 240 |
-| `DashboardToolbar` | `.../DashboardToolbar.jsx` | Screenshot row 1: `<MarketplacePicker/>` + 4 buttons. Uploads are styled `<label>` wrapping hidden `<input type="file" accept=".csv,.xlsx,.xls" multiple>`. "Download SKU Cost" → `lib/sheet/skuCostTemplate.js`. | 130 |
-| `MarketplacePicker` | `.../MarketplacePicker.jsx` | "Market Place ▾": Flipkart, Meesho, Amazon, Myntra, JioMart, Manual. Shows an "auto-detected ✓" chip after a file is parsed; explicit selection overrides detection for the next upload. | 90 |
-| `DashboardHeaderBar` | `.../DashboardHeaderBar.jsx` | Screenshot row 2: "Dashboard" title left; `<PlatformFilter/>`, `<DateRangeFilter/>`, green **Apply** button right. `Apply` is what recomputes. | 80 |
-| `DateRangeFilter` | `.../DateRangeFilter.jsx` | **Step-5 requirement.** Closed = "Date ▾". Open popover: **1 Month**, **6 Months**, **1 Year**, **Custom**. Presets set `{from,to}` relative to today. **Custom** reveals two `<input type="date">` (From / To) with validation `from ≤ to ≤ today`. Emits `{ preset, from, to }`. | 150 |
-| `PlatformFilter` | `.../PlatformFilter.jsx` | The screenshot's "All Compay ▾" — **an ecommerce-platform filter, not a company selector.** Options: "All Platforms" + the distinct platforms present in loaded data. Filters KPI cards + table. Disabled until ≥1 sheet loaded. | 70 |
-| `KpiCardRow` + `KpiCard` | `.../KpiCardRow.jsx`, `KpiCard.jsx` | The 7-card band: **Order** (count + ₹), **Return** (count + ₹), **Canceled** (count + ₹), **RTO** (count + ₹), **Ads Cost** (% + ₹), **Profit/Loss** (SKU count + ₹), **COGS** (SKU count + ₹). Horizontal scroll on mobile. Token-matched to the screenshot. | 135 |
-| `DetailsTable` | `.../DetailsTable.jsx` | Per-SKU table, columns exactly per Step 2(c). Row checkbox + "select all". Sticky header, `overflow-x-auto` wrapper, zebra + `bg-card-hover` hover. Simple windowing above 500 rows (no new dep). | 240 |
-| `ColumnHeaderCell` | `.../ColumnHeaderCell.jsx` | Label + **filter icon** (popover: text-contains / numeric ≥ ≤ / value checklist by column type) + **sort icon** (tri-state none/asc/desc). Used by `DetailsTable`. | 130 |
-| `DetailsViewPills` | `.../DetailsViewPills.jsx` | "My Details ▾" / "All Details ▾". **All** = every column. **My** = only columns in the saved `headers` list (sensible default when anonymous / never saved). Editing "My" while logged in `PUT`s `/api/profit-loss/settings`. | 120 |
-| `AdsCostControl` | `.../AdsCostControl.jsx` | Small inline control: toggle **%** / **₹**, numeric input. Feeds `adsMode`/`adsValue`. Persisted in `preferences`. | 60 |
-| `HistoryDrawer` | `.../HistoryDrawer.jsx` | Slide-over: `GET /api/profit-loss/history`, newest first — label, platform badges, date range, net P/L, row count, coins charged, "Open" / "Delete". "Open" → `history/[id]` loads the run read-only (incl. links to the stored raw files). Anonymous: one-line "Sign in to keep a history". | 150 |
-| `SaveRunButton` | `.../SaveRunButton.jsx` | Visible once a result is computed. Anonymous → `requireLogin()`. Logged-in → confirm dialog showing **"N rows → M coins"** (`M = ceil(N/100)`) → `POST /api/profit-loss/history`. Handles `402` (→ `BillingGateModal`) and success toast. | 90 |
-| `SheetDropCard` | `.../SheetDropCard.jsx` | Empty-state / drag-drop target listing what to upload and in what order. | 70 |
-| `PlatformBadge` | `.../PlatformBadge.jsx` | Small coloured marketplace chip, reused by picker + history. | 30 |
+`ProfitLossView.jsx` (Rev 2) is **kept** — `DashboardWorkspace` reuses its
+ingest/parse/settings logic; the fixed layout it renders today becomes the
+`defaultTemplate.js` path.
 
-**b. Carried over from tools-4 (reuse as-is):**
+### 9.2 `admin-pannels/` — backend delta
 
-| Component | Change |
-|---|---|
-| `components/dashboard/DashboardTopbar.jsx` | **Centre label `"Auto listing"` → `"Profit & Loss"`.** Nothing else. This is the single-product navbar (Rule 8). |
-| `UserMenu`, `BottomMenu` | verbatim |
-| `components/admin/SessionManager.jsx` | verbatim (silent token refresh) |
-| `components/auth/{AuthGateProvider,LoginRequiredModal}.jsx` | verbatim |
-| `components/billing/{BillingGateModal,InsufficientCoinsModal,BillingErrorModal,AccessUnauthorizedModal}.jsx` | verbatim — **used from day one** (save is metered) |
-| `components/admin/{Toast,Modal,ConfirmDialog,FormField,OtpDigitsInput,OtpPasswordResetModal,Skeleton}.jsx` | verbatim |
-| `components/profile/*`, `components/ui/{SplashScreen,ThemeToggle,Card}.jsx` | verbatim |
+```
+scripts/marketplace_templates_migration.sql   ✚  3 tables + counter + RLS + user_settings.marketplace_template_access (§6)
+app/api/marketplace-templates/
+  route.js                                     ✚ 70   GET list / POST create
+  live/route.js                                ✚ 35   PUBLIC live configs
+  [id]/route.js                                ✚ 80   GET / PATCH / DELETE
+  [id]/versions/route.js                       ✚ 70   GET / POST(save draft, validateConfig)
+  [id]/versions/[vid]/route.js                 ✚ 60   GET / PUT(draft only)
+  [id]/versions/[vid]/publish/route.js         ✚ 55   POST publish/unpublish sequence
+  [id]/logs/route.js                           ✚ 40   GET paginated
+app/api/marketplace-template-access/
+  route.js                                     ✚ 45   GET user list / PUT { userId, allowed }   [master_admin]
+  me/route.js                                  ✚ 25   GET { allowed }                           [any auth]
+lib/db.js                                      ✎ +260  ~18 marketplace_template_* / access fns + 3 camelCase mappers
+lib/templateConfig.js                          ✚ 90   server copy of validateConfig (imported by the version routes)
+```
 
-**c. Not carried:** everything under `components/listing/`, `ToolCard.jsx`,
-`hooks/useListingImageUpload.js`.
+**Estimated new/changed LOC:** ~4,900 in tools‑5 (~2,900 of it the builder),
+~1,000 in admin‑pannels. No file over 400 LOC.
 
 ---
 
-### Step 8 — Third-party integrations & marketplace schemas (from the sample CSVs)
+## 10. Build sequence (milestones)
 
-**a. Spreadsheet parsing.**
-- **`xlsx` (SheetJS)** — already a tools-4 dep. Parses `.csv/.xlsx/.xls` **in the browser** (`XLSX.read(arrayBuffer)`). No upload, no server round-trip for compute.
-- **`exceljs`** — already a tools-4 dep. Generates the blank **SKU Cost** template and the "export dashboard to Excel". `jspdf` / `jspdf-autotable` (already deps) for PDF export.
-- No env vars / keys / quotas.
-
-**b. Coin-wallet billing (admin panel) — the "1 coin / 100 rows" rule.**
-- `data/tools.js` gets a `profit-loss` tool. Feature `pl-save-history`: `coinCost: 1`.
-- On **save**, the tools-5 `POST /api/profit-loss/history` route computes `quantity = Math.max(1, Math.ceil(totalRowCount / 100))` and calls `runServerBillingGate(req, { toolSlug: 'profit-loss', featureApiIdentifier: 'pl-save-history', quantity, idempotencyKey })`.
-- `POST /api/wallet/deduct` charges `coinCost * quantity = 1 * ceil(rows/100)` coins, idempotent on `idempotencyKey`, `master_admin` free.
-- `idempotencyKey = sha1(userId + '|' + platformsCsv + '|' + dateFrom + '|' + dateTo + '|' + totalRowCount)` — re-saving the identical run is a no-op charge; a genuinely different run (new rows / dates) → new key → new charge.
-- App ships `NEXT_PUBLIC_IS_PAID=true`, `NEXT_PUBLIC_IS_CONNECT=true`. Browse / compute / export never call the gate → always free. Anonymous can't reach the save route.
-- Post-add on the hub: `npm run seed:products && npm run seed:tool-marketing && npm run seed:page-content && npm run tools:dedupe && npm run db:grant-all-tools` (the last grants `profit-loss` into every user's `tools_access`, which `/api/wallet/deduct` checks).
-- Env vars (names only; already in tools-4 `.env.example`): `NEXT_PUBLIC_IS_CONNECT`, `NEXT_PUBLIC_ADMIN_API_URL`, `NEXT_PUBLIC_IS_PAID`, `JWT_SECRET` + `JWT_REFRESH_SECRET` (= the hub's), `TOOLS_NAME=barmeto-profit-loss`, `BLOB_STORE_ID` + `BLOB_READ_WRITE_TOKEN`, SMTP + MSG91 (OTP). **Drop** `DROPBOX_*`, `GEMINI_API_KEY`, `FALLBACK_AI_*`.
-
-**c. `data/tools.js` entry (admin-pannels) — NEW:**
-```js
-{
-  slug: 'profit-loss',
-  title: 'Profit & Loss',
-  icon: 'TrendingUp',
-  shortDesc: 'Reconcile Flipkart, Meesho, Amazon, Myntra & JioMart payment sheets against your SKU costs — true net profit per SKU, in one dashboard.',
-  metaTitle: 'Profit & Loss Calculator for Ecommerce Sellers — Flipkart, Meesho, Amazon, Myntra, JioMart',
-  metaDescription: 'Upload your marketplace settlement sheets, add SKU costs, pick a date range — get a per-SKU profit/loss dashboard. Free to use. Sign in to save your history.',
-  category: 'analytics',
-  badge: 'Free',
-  toolUrl: 'https://profit-loss.barmeto.com/',   // final URL — confirm
-  requiresLogin: false,
-  features: [
-    { id: 'pl-dashboard', icon: 'LayoutDashboard', title: 'P&L Dashboard',    desc: 'Upload settlement + SKU cost sheets and compute net profit per SKU. Free.',              apiIdentifier: 'pl-dashboard',    coinCost: 0, fixFeeCoins: 0, isActive: true },
-    { id: 'pl-export',    icon: 'Download',         title: 'Export Dashboard', desc: 'Download the computed dashboard as Excel or PDF. Free.',                                  apiIdentifier: 'pl-export',       coinCost: 0, fixFeeCoins: 0, isActive: true },
-    { id: 'pl-save',      icon: 'Save',             title: 'Save to History',   desc: 'Store your uploaded files and results so you can compare months — 1 coin per 100 rows.', apiIdentifier: 'pl-save-history', coinCost: 1, fixFeeCoins: 0, isActive: true },
-  ],
-  hero: { headline: '…', h1: '…', subtext: '…' },
-  longform: [ /* author later */ ],
-  faqs: [ /* author later */ ],
-}
-```
-Add `'profit-loss'` to `toolDisplayOrder`. *(Per memory
-`project_tools_homepage_showcase_home_field` / `project_tools_dedupe_slug_rename`:
-`data/tools.js` edits are inert until synced; `seed:products` can leave orphan
-rows that `tools:dedupe` fixes.)*
-
-**d. Marketplace sample schemas (transcribed from the user's 5 CSVs).**
-Each file is a **combined settlement/transaction export** — one row per
-order-item / sub-order, carrying both the order fields and the money. These
-schemas are the contract the per-platform mapper modules implement. Real
-seller-panel exports carry more columns; the mapper matches **by header name,
-case/underscore/space-insensitive, with a fallback alias list** so extra
-columns are ignored and renamed columns still resolve.
-
-**Meesho** — `source/samples/meesho.csv`
-```
-Sub_Order_ID, Order_Date, SKU, Product_Name, Quantity, Order_Status,
-Customer_State, Gross_Sale_Amount, Shipping_Fee, Meesho_Commission,
-Fixed_Fee, RTO_Penalty, TCS_0_5_Percent, TDS_0_1_Percent, Net_Payout,
-Payment_Settlement_Date
-```
-- `Order_Status` ∈ `DELIVERED | RTO_RETURN | CUSTOMER_RETURN`
-- fees/taxes are negative magnitudes; `Net_Payout` negative on RTO/return rows
-- Meesho commission is 0 in the sample (their 0%-commission model)
-
-**Amazon** — `source/samples/amazon.csv`
-```
-Settlement_ID, Amazon_Order_ID, Posted_Date, Order_Type, SKU, ASIN,
-Quantity, Item_Price, Shipping_Credit, Referral_Fee, Closing_Fee,
-FBA_Weight_Handling_Fee, TCS_CGST, TCS_SGST, TDS_Sec_194O, Net_Amount
-```
-- `Order_Type` ∈ `Order | Refund` (no separate status column)
-- **multi-row per `Settlement_ID`**; **Refund rows have negative `Quantity` and negative `Item_Price`**, and fee columns flip sign (fee reversal)
-- `Shipping_Credit` is **income**, not a fee
-
-**Flipkart** — `source/samples/flipkart.csv`
-```
-Order_Item_ID, Order_Date, FSN, SKU, Order_State, Sale_Amount,
-Customer_Paid_Amount, Marketplace_Fee, Payment_Gateway_Fee,
-Pick_and_Pack_Fee, Fixed_Fee, GST_Tax_Deducted, TCS_Amount, TDS_Amount,
-Settlement_Value, Bank_Payout_Date
-```
-- `Order_State` ∈ `COMPLETED | RETURNED | CANCELLED`
-- **no quantity column** → qty = 1 per row
-- RETURNED row: `Sale_Amount = 0`, `Pick_and_Pack_Fee` charged, `Settlement_Value` negative; CANCELLED row: all zeros
-
-**Myntra** — `source/samples/myntra.csv`
-```
-Release_ID, Order_Release_Date, Myntra_Order_ID, Style_ID, Vendor_SKU,
-Category, Gross_Sales, Commission_Rate, Commission_Amount,
-Logistics_Deduction, Platform_Fee, TCS_194O, TDS_0_1,
-Net_Settlement_Amount, Settlement_Status
-```
-- `Settlement_Status` ∈ `SETTLED | RETURN_DEDUCTION | PENDING`
-- **no quantity column** → qty = 1; **multi-row per `Release_ID`**
-- `Commission_Rate` is a display string like `"24.00%"`
-
-**JioMart** — `source/samples/jiomart.csv`
-```
-Jio_Transaction_ID, Order_Date, Merchant_Ref_No, SKU_Code, Item_Description,
-Quantity, Order_Value, Jio_Commission, PG_Charges, Logistic_Fees,
-GST_On_Fees, TCS_Deduction, TDS_Deduction, Net_Payout_Amount, Payment_Mode,
-Payout_Status
-```
-- `Payout_Status` ∈ `PAID | PROCESSING` (no explicit return status in the sample — return inferred from a negative `Net_Payout_Amount` / absent settlement)
-
-**Canonical row schema** (`data/platforms/canonical.js`):
-```js
-{
-  platform,                 // 'flipkart'|'meesho'|'amazon'|'myntra'|'jiomart'
-  rowId,                    // `${platform}:${nativeId}` — stable, dedupe key
-  orderId, orderItemId, settlementId,
-  orderDate, settlementDate,           // ISO 'YYYY-MM-DD' | null
-  sku, productName,
-  qty,                                 // signed integer (negative on Amazon refund rows)
-  status,                              // 'delivered'|'return'|'rto'|'cancelled'|'refund'|'pending'|'exchange'
-  grossSale, settlement,               // ₹ ; settlement signed (negative = clawback)
-  shippingCredit,                      // ₹ income (Amazon)
-  fees: { commission, paymentGateway, shippingLogistics, fixedFee, pickPack,
-          closingFee, fbaFee, platformFee, rtoPenalty, other },   // positive magnitudes
-  taxes: { tcs, tds, gstOnFees },      // positive magnitudes
-  commissionRate,                      // number | null (Myntra)
-  meta: { customerState, category, asin, fsn, styleId, paymentMode }
-}
-```
-
-**Column-map matrix** (canonical ← source header):
-
-| canonical | Flipkart | Meesho | Amazon | Myntra | JioMart |
-|---|---|---|---|---|---|
-| orderId | `Order_Item_ID` | `Sub_Order_ID` | `Amazon_Order_ID` | `Myntra_Order_ID` | `Merchant_Ref_No` |
-| orderItemId | `Order_Item_ID` | `Sub_Order_ID` | `Amazon_Order_ID` | `Myntra_Order_ID` | `Jio_Transaction_ID` |
-| settlementId | — | — | `Settlement_ID` | `Release_ID` | — |
-| orderDate | `Order_Date` | `Order_Date` | `Posted_Date` | `Order_Release_Date` | `Order_Date` |
-| settlementDate | `Bank_Payout_Date` | `Payment_Settlement_Date` | `Posted_Date` | — | — |
-| sku | `SKU` | `SKU` | `SKU` | `Vendor_SKU` | `SKU_Code` |
-| productName | — | `Product_Name` | — | — | `Item_Description` |
-| qty | `1` (const) | `Quantity` | `Quantity` | `1` (const) | `Quantity` |
-| status ← | `Order_State` | `Order_Status` | `Order_Type` | `Settlement_Status` | `Payout_Status` |
-| grossSale | `Sale_Amount` | `Gross_Sale_Amount` | `Item_Price` | `Gross_Sales` | `Order_Value` |
-| settlement | `Settlement_Value` | `Net_Payout` | `Net_Amount` | `Net_Settlement_Amount` | `Net_Payout_Amount` |
-| shippingCredit | — | — | `Shipping_Credit` | — | — |
-| fees.commission | `Marketplace_Fee` | `Meesho_Commission` | `Referral_Fee` | `Commission_Amount` | `Jio_Commission` |
-| fees.paymentGateway | `Payment_Gateway_Fee` | — | — | — | `PG_Charges` |
-| fees.shippingLogistics | — | `Shipping_Fee` | — | `Logistics_Deduction` | `Logistic_Fees` |
-| fees.fixedFee | `Fixed_Fee` | `Fixed_Fee` | — | — | — |
-| fees.pickPack | `Pick_and_Pack_Fee` | — | — | — | — |
-| fees.closingFee | — | — | `Closing_Fee` | — | — |
-| fees.fbaFee | — | — | `FBA_Weight_Handling_Fee` | — | — |
-| fees.platformFee | — | — | — | `Platform_Fee` | — |
-| fees.rtoPenalty | — | `RTO_Penalty` | — | — | — |
-| taxes.tcs | `TCS_Amount` | `TCS_0_5_Percent` | `TCS_CGST` + `TCS_SGST` | `TCS_194O` | `TCS_Deduction` |
-| taxes.tds | `TDS_Amount` | `TDS_0_1_Percent` | `TDS_Sec_194O` | `TDS_0_1` | `TDS_Deduction` |
-| taxes.gstOnFees | `GST_Tax_Deducted` | — | — | — | `GST_On_Fees` |
-| commissionRate | — | — | — | `Commission_Rate` (`"24.00%"`→24) | — |
-| meta | `fsn:FSN` | `customerState:Customer_State` | `asin:ASIN` | `styleId:Style_ID, category:Category` | `paymentMode:Payment_Mode` |
-
-**Status canonicalisation:**
-| source value | canonical |
-|---|---|
-| FK `COMPLETED` / MEE `DELIVERED` / MYN `SETTLED` / JIO `PAID` / AMZ `Order` | `delivered` |
-| FK `RETURNED` / MEE `CUSTOMER_RETURN` / MYN `RETURN_DEDUCTION` | `return` |
-| MEE `RTO_RETURN` | `rto` |
-| FK `CANCELLED` | `cancelled` |
-| AMZ `Refund` | `refund` |
-| MYN `PENDING` / JIO `PROCESSING` | `pending` |
-
-Sign handling: mapper stores `fees.*` / `taxes.*` as **positive magnitudes**
-(`Math.abs`); `grossSale` and `settlement` kept **as-is** (signed). Amazon
-`Refund` rows keep negative `qty`.
-
-**Detection fingerprints** (`data/platforms/detect.js` — exact header-set match, very reliable given these distinctive names):
-| platform | header set contains |
-|---|---|
-| meesho | `Sub_Order_ID` **and** (`Meesho_Commission` or `Net_Payout`) |
-| amazon | `Settlement_ID` **and** `ASIN` |
-| flipkart | `Order_Item_ID` **and** `FSN` |
-| myntra | `Release_ID` **and** `Style_ID` |
-| jiomart | `Jio_Transaction_ID` **and** `Merchant_Ref_No` |
-| else | `manual` → user maps columns via a fallback mini-UI |
-
-**P&L engine** (`lib/profitLoss/engine.js`) — filter canonical rows by date
-range (`orderDate` ∈ range; the "Bank Statement" column uses `settlementDate`
-∈ range) and by `platformFilter`, then per SKU:
-```
-deliveredQty  = Σ qty where status = 'delivered'
-returnQty     = Σ |qty| where status ∈ {return, refund}
-rtoQty        = Σ |qty| where status = 'rto'
-cancelledQty  = Σ |qty| where status = 'cancelled'
-exchangeQty   = Σ |qty| where status = 'exchange'
-pendingQty    = Σ qty where status = 'pending'
-totalOrderQty = deliveredQty + returnQty + rtoQty + cancelledQty + exchangeQty + pendingQty
-totalOrderVal = Σ grossSale where status ∈ {delivered, pending}
-settleOrderQty= Σ qty where settlementDate in range   (fallback: status='delivered')
-settlementAmt = Σ settlement (signed)                 // fees & taxes already netted by the marketplace
-productCost   = skuCost[sku] × deliveredQty           // from SKU Cost upload; 0/"needs cost" if missing
-returnValue   = Σ (grossSale || |settlement|) where status ∈ {return, rto, refund}
-bankStatement = Σ settlement where settlementDate in range
-returnPct     = totalOrderQty ? returnQty / totalOrderQty × 100 : 0
-adsCost       = adsMode==='percent' ? settlementAmt × adsPct/100
-                                    : adsFlat × (settlementAmt / Σ settlementAmt over all SKUs)   // pro-rata
-cogs          = productCost
-profitLoss    = settlementAmt − productCost − adsCost
-```
-**KPI cards** (totals after filters):
-```
-Order      { count: Σ totalOrderQty, value: Σ totalOrderVal }
-Return     { count: Σ returnQty,      value: Σ returnValue }
-Canceled   { count: Σ cancelledQty,   value: 0 }
-RTO        { count: Σ rtoQty,         value: 0 }
-Ads Cost   { pct: adsPct,             value: Σ adsCost }
-Profit/Loss{ count: settled-SKU count, value: Σ profitLoss }
-COGS       { count: distinct-SKU count, value: Σ cogs }
-```
-**Table** (per SKU): Sku Name · Total Order (`totalOrderQty`) · Settle Order
-(`settleOrderQty`) · Product Cost (`productCost`) · Profit/Loss · Return %
-· COGS · Bank Statement · Ads Cost · Deliver (`deliveredQty`) · Return
-(`returnQty`) · RTO (`rtoQty`) · Exchange (`exchangeQty`) · Canceled
-(`cancelledQty`).
-
-**Uploads model.** *Payment Sheet* (required — the 5 sample schemas) drives
-everything. *Order Sheet* (optional) is a lighter per-platform mapper that
-enriches/adds rows not yet in the payment file (kept because the screenshot
-has the button; with these samples it's optional). *SKU Cost* (recommended):
-2 columns `SKU, Cost` (+ optional `Currency`); "Download SKU Cost" emits that
-header pre-filled with every distinct SKU seen so far.
-
-**e. Web research (context only; superseded by the sample schemas for
-implementation):** Meesho — meeshoprofit.in/blog/read-meesho-payment-report,
-trackecom.in/blog/meesho-payment-statement-guide; Flipkart —
-gonukkad.com/blog/flipkart-settlement-reports-reconciliation,
-help.eshopbox.com; Amazon — help.intentwise.com settlement V1→V2 mapping,
-docs.openbridge.com, support.a2xaccounting.com; Myntra/Ajio —
-unicommerce.com/blog/sell-on-myntra, terra-insight.com; JioMart —
-cointab.net/business/jiomart-marketplace-reconciliation, ecomexpert.co.in.
+1. **Schema + hub API.** `marketplace_templates_migration.sql` (incl. the
+   `user_settings.marketplace_template_access` column) → `lib/db.js` fns +
+   `lib/templateConfig.js` → the 8 hub routes + the 2
+   `marketplace-template-access` routes. Test with `curl` against a
+   hand‑written `config`.
+2. **Tool proxies + client helpers.** `app/api/marketplace-templates/**`,
+   `app/api/marketplace-template-access/**`, `lib/marketplaceTemplateAccess.js`,
+   `lib/profitLoss/templatesApi.js`.
+3. **Schema module + fallback.** `data/templateSchema.js`,
+   `data/defaultHeaders.js`, `data/defaultTemplate.js` (must reproduce image 1
+   exactly with zero backend).
+4. **Formula + resolver.** Port `formula.js`; write `resolveTemplate.js`; unit
+   tests against `source/samples/*.csv` + `defaultTemplate.js`.
+5. **Task 1 render.** `DashboardWorkspace` + `DashboardSidebar` + `TabView` +
+   template‑driven `KpiCardRow`/`DetailsTable`/`DetailsViewPills` +
+   `GraphStrip`/`TemplateChart` + `DashboardTopbar` nav + `BrandFilter`.
+   Pixel‑diff against image 1 with the fallback config, then with a live
+   template.
+6. **Task 2 access + read paths.** `template-settings/layout.js` gate
+   (`master_admin || fetchTemplateSettingsAllowed`) + `/profit-loss/template-access`
+   grant screen (`TemplateAccessPanel`) + sidebar entry wiring + list page +
+   `TemplateBuilder` shell + `useTemplateDraft` + `VersionSection` +
+   `TemplateLogPanel`.
+7. **Task 2 builder — section editors.** `MarketPlaceSection` (upload + mapping
+   grid) → `HeaderSection` (+ union rule) → `TitleCardSection` →
+   `GraphDesignSection` → `GraphDataSection` → `TabSection` →
+   `OverviewTabSection`. Shared `FormulaEditor`/`TypeToggle`/`ListEditorColumn`/
+   `HeaderPickerStrip` first.
+8. **Save / publish / logs** end‑to‑end; publish a template and confirm it
+   appears in the dashboard's `Market Place` picker and drives the sidebar.
+9. **Export** — template‑driven Excel/PDF for a tab + the Overview tab.
+10. **Docs** — update `CLAUDE.md` (navbar rule, new `/template-settings`
+    section, the 3 tables), add the migration + `MEMORY.md` "not yet run" note.
 
 ---
 
-### Step 9 — End-to-end Mermaid flow (technical)
+## 11. Open questions
 
-```mermaid
-flowchart TD
-    Start([Open /profit-loss]) --> Hyd[ProfitLossView mounts, client-only]
-    Hyd --> Logged{Signed in?}
-    Logged -- yes --> GS[GET /api/profit-loss/settings -> apply saved headers + preferences]
-    Logged -- no --> Def[Use default headers + preferences]
+**Resolved 2026‑09‑10** — ① navbar matches image 1 (data‑driven, single‑product
+rule retired); ② one template = one marketplace (v1); ③ Template Settings is
+`master_admin` + individually grantable (`user_settings.marketplace_template_access`
++ `/profit-loss/template-access` grant screen); ④ Company and Brand are two
+independent AND‑applied filters.
 
-    Hyd --> Up[Upload file - Payment or Order]
-    Up --> Parse[XLSX.read in browser -> rows]
-    Parse --> Det[detect.js fingerprints header set -> platform, or MarketplacePicker override]
-    Det --> Mapp[data/platforms/&lt;platform&gt;.js -> canonical rows, dedup by rowId, tag platform]
-    Mapp --> Merge[Append to canonicalRows across all uploads]
+Still open:
 
-    Merge --> Sku[Upload SKU Cost -> skuCostMap]  --> Ads[AdsCostControl: percent or flat]
-    Ads --> Date[DateRangeFilter: 1M / 6M / 1Y / custom from-to]
-    Date --> Apply([Apply]) --> Filt[Filter canonicalRows by date range + PlatformFilter]
-    Filt --> Eng[engine.js -> summary + skuRows]
-    Eng --> Rend[KpiCardRow + DetailsTable + DetailsViewPills render]
-
-    Rend --> Save([Save to History])
-    Save --> AuthQ{Signed in?}
-    AuthQ -- no --> LR[requireLogin -> LoginRequiredModal]
-    AuthQ -- yes --> Confirm[Confirm: N rows -> M = ceil N/100 coins]
-    Confirm --> Post[POST /api/profit-loss/history with label, platforms, dateFrom/To, adsMode/Value, rowCount N, summary, skuRows, files]
-    Post --> T5[tools-5 route: getAuthPayload -> 401 if none]
-    T5 --> Gate[runServerBillingGate toolSlug profit-loss, feature pl-save-history, quantity M, idempotencyKey]
-    Gate --> Deduct[[admin POST /api/wallet/deduct -> amount = 1 * M, idempotent]]
-    Deduct -- blocked --> B402[402 insufficient_coins / coins_expired -> BillingGateModal]
-    Deduct -- proceed --> Blob[hub stores raw files to Vercel Blob -> blobUrl per file]
-    Blob --> HubIns[admin POST /api/profit-loss/history -> lib/db.js insert, user_id = payload.userId, coins_charged = M]
-    HubIns --> OkT[201 with id -> Toast 'Saved - M coins used']
-
-    Rend --> EditMy([Edit 'My Details' columns])
-    EditMy --> MyAuth{Signed in?}
-    MyAuth -- no --> Sess[session-only]
-    MyAuth -- yes --> PutS[PUT /api/profit-loss/settings -> hub upsert profit_loss_settings onConflict user_id]
-
-    Rend --> Hist([Open History]) --> GList[GET /api/profit-loss/history?limit=20 -> hub SELECT WHERE user_id ORDER BY created_at DESC]
-    GList --> Open1([Open a run]) --> GOne[GET /api/profit-loss/history/id -> hub SELECT WHERE id AND user_id] --> RO[Dashboard re-renders read-only from saved summary + skuRows + file links]
-```
+1. **Q1 — Sample sheet storage.** The builder needs extracted headers + a few
+   sample values, which are snapshotted into `config`. Storing the **raw**
+   uploaded sample in Vercel Blob is optional. Skip raw‑file retention for v1?
+2. **Q2 — Live read exposure.** `GET /api/marketplace-templates/live` is public
+   (anonymous dashboards need it). OK to expose live template `config` (no row
+   data — just structure / formulas / header names) unauthenticated?
+3. **Q3 — Deleting a template deletes its logs** (FK cascade). Acceptable, or
+   should `marketplace_template_logs` survive deletion (separate archival
+   table / `ON DELETE SET NULL` on `template_id`)?
+4. **Q4 — Charts.** Plan hand‑draws SVG charts (no dep) to stay within the CDN
+   allowlist and keep the bundle small. Acceptable, or add a charting lib?
+5. **Q5 — "Header 1 / 2 / 3" buttons.** Image 1's toolbar shows three generic
+   `Header N` upload buttons (image 2's "Add File" produces them). Plan makes
+   these fully template‑defined `fileSlots` with `kind:'aux'`. Any fixed
+   meaning intended (e.g. Ads report, Returns report)?
+6. **Q6 — Version numbering.** Plan: `Save` bumps `sub_version`, "Save as new
+   major" bumps `version` and resets `sub` to 1; publishing any row sets it
+   live and archives the previous live. Matches the "Version / Sub Version"
+   columns — confirm the bump rules.
+7. **Q7 — Deploy URL.** `SITE_URL` in `app/layout.js` currently
+   `https://profit-loss.barmeto.com` — confirm, and confirm `ALLOWED_ORIGINS`
+   for the hub SSO iframe.
 
 ---
 
-### Step 10 — Route handlers & per-route logic
+## 12. Key decisions
 
-> Rule 4/5: tool-app routes parse + gate + proxy; hub routes guard + call
-> `lib/db.js`. camelCase on the wire; snake_case only in hub `lib/db.js`.
-
-#### Tool-app (`tools-5`)
-
-**`GET|PUT /api/profit-loss/settings/route.js`** (NEW)
-1. `runtime = 'nodejs'`. `payload = await getAuthPayload(req)`; `if (!payload?.userId) → 401`.
-2. **GET:** `proxyAdminCall('/api/profit-loss/settings', { authHeader: authHeaderFrom(req) })` → return `data` + upstream status, `Cache-Control: no-store`.
-3. **PUT:** `body = await req.json()`; require `Array.isArray(body.headers)` and `body.preferences` is a plain object (else `400 invalidInput`); `proxyAdminCall('/api/profit-loss/settings', { method: 'PUT', body, authHeader })`; return verbatim.
-4. Proxy throw (bad `NEXT_PUBLIC_ADMIN_API_URL`) → `503`.
-
-**`GET|POST /api/profit-loss/history/route.js`** (NEW)
-1. `runtime nodejs`; `getAuthPayload` → 401.
-2. **GET:** forward `?limit` (`clamp 1..100`, default 20) + `?cursor`; return `{ history, nextCursor }` (list items omit `skuRows`).
-3. **POST (SAVE):**
-   a. `body = await req.json()`. Require `body.summary` (object), `Array.isArray(body.skuRows)`, `Number.isInteger(body.rowCount) && body.rowCount >= 0`, `Array.isArray(body.platforms)`.
-   b. `quantity = Math.max(1, Math.ceil(body.rowCount / 100))`.
-   c. `idempotencyKey = sha1([payload.userId, body.platforms.join(','), body.dateFrom, body.dateTo, body.rowCount].join('|'))`.
-   d. `gate = await runServerBillingGate(req, { toolSlug: 'profit-loss', featureApiIdentifier: 'pl-save-history', quantity, idempotencyKey })`. If `gate.status === 'blocked'` → `return NextResponse.json(gate, { status: 402 })` (client renders `BillingGateModal`).
-   e. **Store raw files:** for each `body.sourceFiles[i] = { kind, platform, name, contentBase64 }`, `PUT` to Vercel Blob via the hub → collect `{ kind, platform, name, sizeBytes, rowCount, blobUrl }`. *(v1 simplification option: skip Blob, keep `contentBase64` in `source_files` JSONB when the total is < 1 MB, else Blob — decide in impl, see Q6.)*
-   f. `proxyAdminCall('/api/profit-loss/history', { method: 'POST', body: { ...body, sourceFiles: storedFiles, coinsCharged: gate.data?.coinsCost ?? quantity }, authHeader })`.
-   g. Return `{ id, coinsCharged }` `201`.
-4. Errors → `console.error` + `500 { error: 'Failed to save history' }`.
-
-**`GET|DELETE /api/profit-loss/history/[id]/route.js`** (NEW)
-1. `runtime nodejs`; `getAuthPayload` → 401; `const { id } = await params`.
-2. **GET:** `proxyAdminCall('/api/profit-loss/history/' + encodeURIComponent(id), { authHeader })` → full row (`skuRows` + `sourceFiles`); pass through upstream `404`.
-3. **DELETE:** `proxyAdminCall(..., { method: 'DELETE', authHeader })` → `{ ok: true }`; pass through `404`.
-
-**Auth routes** — cloned verbatim; only the existing `if (IS_CONNECT) return proxyAuthCall(...)` branch matters. No changes.
-
-#### Hub (`admin-pannels/app/api/profit-loss/…`, NEW)
-
-**`GET|PUT /api/profit-loss/settings/route.js`**
-1. `runtime nodejs`. `getAuthPayload` → `401` if `!payload?.userId`.
-2. **GET:** `row = await getProfitLossSettings(payload.userId)`; return `{ headers: row?.headers ?? [], preferences: row?.preferences ?? {} }` (never null).
-3. **PUT:** `body = await req.json()`; validate `Array.isArray(body.headers)` + `body.preferences` object (`400`); `await upsertProfitLossSettings(payload.userId, { headers: body.headers, preferences: body.preferences })`; return stored shape.
-
-**`GET|POST /api/profit-loss/history/route.js`**
-1. `runtime nodejs`; `getAuthPayload` → 401.
-2. **GET:** `limit = clamp(Number(sp.get('limit')) || 20, 1, 100)`; `cursor = sp.get('cursor')`; `{ rows, nextCursor } = await listProfitLossHistory(payload.userId, { limit, cursor })`; return `{ history: rows.map(toHistoryListItem), nextCursor }` (list item = `id, label, platforms, dateFrom, dateTo, rowCount, coinsCharged, netProfitLoss, createdAt` — no heavy blobs).
-3. **POST:** `body = await req.json()`. Require `body.summary` + `Array.isArray(body.skuRows)` + `Array.isArray(body.platforms)`. `id = await insertProfitLossHistory(payload.userId, body)`; return `{ id }` `201`. **No billing here** — the tool-app route already gated + charged (the hub deduct endpoint was called by `runServerBillingGate`). Hub trusts `body.coinsCharged` for the audit column only.
-4. Errors → `console.error` + `500`.
-
-**`GET|DELETE /api/profit-loss/history/[id]/route.js`**
-1. `runtime nodejs`; `getAuthPayload` → 401; `const { id } = await params`.
-2. **GET:** `row = await getProfitLossHistoryById(payload.userId, id)`; `if (!row) → 404`; return camelCase row.
-3. **DELETE:** best-effort delete each `row.source_files[].blobUrl` from Blob, then `await deleteProfitLossHistory(payload.userId, id)` (`WHERE id = $1 AND user_id = $2` — foreign id = 0 rows, still `{ ok: true }`, idempotent like `deleteProductDetailsHistory`).
-
-**New `admin-pannels/lib/db.js` functions** (near the listing-tools block; the
-only place snake_case appears):
-```
-getProfitLossSettings(userId)
-    → from('profit_loss_settings').select('*').eq('user_id', userId).maybeSingle()
-upsertProfitLossSettings(userId, { headers, preferences })
-    → .upsert({ user_id: userId, headers, preferences, updated_at: nowISO() }, { onConflict: 'user_id' }).select().single()
-listProfitLossHistory(userId, { limit, cursor })
-    → .eq('user_id', userId).order('created_at', { ascending:false }).limit(limit+1); if (cursor) .lt('created_at', cursor); slice → nextCursor
-insertProfitLossHistory(userId, b)
-    → .insert({ user_id:userId, label:b.label ?? null, platforms:b.platforms ?? [],
-                date_from:b.dateFrom ?? null, date_to:b.dateTo ?? null,
-                ads_mode:b.adsMode ?? null, ads_value:b.adsValue ?? null,
-                row_count:b.rowCount ?? 0, coins_charged:b.coinsCharged ?? 0,
-                summary:b.summary ?? {}, sku_rows:b.skuRows ?? [], source_files:b.sourceFiles ?? [] })
-      .select('id').single()
-getProfitLossHistoryById(userId, id)  → .select('*').eq('user_id', userId).eq('id', id).maybeSingle() → camelCase mapper
-deleteProfitLossHistory(userId, id)   → .delete().eq('user_id', userId).eq('id', id)
-```
-
-No route handler carries business logic; no LLM anywhere; no snake_case
-mapping outside hub `lib/db.js`.
+- **D1 — Template = versioned JSON `config`.** The dashboard is a pure renderer;
+  the Rev‑2 engine only supplies base metrics. A new marketplace layout is a
+  new template row, zero code.
+- **D2 — Hub‑owned, 3 tables.** `marketplace_templates` (pointer + live/date
+  denorm), `marketplace_template_details` (version‑wise `config`),
+  `marketplace_template_logs` (audit) + a per‑owner counter — mirrors
+  `listing_templates_migration.sql`. Tool app stays DB‑free; thin proxies only.
+- **D3 — Template Settings = `master_admin` OR individually granted**
+  (`user_settings.marketplace_template_access`, ported 1:1 from tools‑4's
+  `listing_template_access`) — double gate (`template-settings/layout.js` server
+  redirect + hidden sidebar entry) + a `master_admin`‑only grant screen at
+  `/profit-loss/template-access`. Templates are `owner_id`‑scoped: `master_admin`
+  edits all, a granted user edits only their own; `/live` is global.
+- **D4 — Reuse, don't reinvent.** Formula evaluator ported from tools‑4
+  `formula.js`; sidebar drawer / shell / gate patterns from
+  `ListingToolsShell` + `template-settings/layout.js`; proxy idiom from
+  `/api/profit-loss/settings`; counter pattern from `listing_template_counters`.
+- **D5 — Always‑working fallback.** `data/defaultTemplate.js` reproduces image 1
+  with no backend; a live template overrides it per marketplace.
+- **D6 — Union header rule.** Final headers =
+  `default ∪ manual ∪ unmapped‑extracted`; mapping a sheet header to a default
+  removes it from the pool. This is the user's explicit requirement and the
+  spine of `HeaderSection` ↔ `MarketPlaceSection`.
+- **D7 — Pie vs non‑pie graph data.** Pie → ≥ 2 formula‑driven title/value
+  pairs; every other chart → 1 measure + a fixed `"times"` (time‑bucket)
+  second axis. Enforced in `validateConfig` on both sides.
+- **D8 — No new deps.** Charts are inline SVG; parsing/export stay on the
+  existing `xlsx` / `exceljs` / `jspdf`.
+- **D9 — Navbar matches image 1** (data‑driven multi‑tool bar, `data/nav.js`);
+  the CLAUDE.md "single‑product navbar" rule is retired (milestone 10).
+- **D10 — Company and Brand are separate filters.** `config.marketplace` carries
+  both `companyHeaderId` and `brandHeaderId`; `resolveTemplate` applies date ∧
+  company ∧ brand ∧ platform independently, all AND, before aggregation.
+- **D11 — One template = one marketplace** for v1; multi‑marketplace templates
+  are a later revision.
 
 ---
 
-### Step 11 — Output folder structure
+## 13. Next step
 
-**a. `tools/arshanemi-tools-5/` (NEW files ✚):**
-
-```
-tools/arshanemi-tools-5/
-├── package.json                    ✚  clone minus @google/genai, dropbox; keep xlsx, exceljs, jspdf*; name "barmeto-profit-loss"; dev port 3005
-├── next.config.mjs proxy.js jsconfig.json postcss.config.mjs eslint.config.mjs .gitignore   ✚ clone (proxy matcher → /profit-loss/:path*)
-├── .env.example / .env             ✚  clone; drop DROPBOX_*/GEMINI_*/FALLBACK_AI_*; IS_CONNECT=true, IS_PAID=true, TOOLS_NAME=barmeto-profit-loss
-├── CLAUDE.md AGENTS.md README.md   ✚  clone + retitle "Profit & Loss (tools-5)"
-├── source/
-│   ├── profit-loss-dashboard.png   ✚  the reference screenshot (user drops in)
-│   └── samples/{meesho,amazon,flipkart,myntra,jiomart}.csv   ✚  the 5 sample CSVs
-├── app/
-│   ├── globals.css layout.js robots.js sitemap.js   ✚  clone (layout: isAdmin → startsWith('/profit-loss'); title "Barmeto — Profit & Loss")
-│   ├── page.js                     ✚  clone; redirect target → /profit-loss
-│   ├── profit-loss/
-│   │   └── page.js                 ✚  thin shell: <DashboardTopbar/> + <ToastProvider><ProfitLossView/></ToastProvider>
-│   ├── login/ profile/ forgot-password/ reset-password/   ✚ clone (login copy: "Profit & Loss")
-│   └── api/
-│       ├── auth/{login,logout,me,refresh,change-password,send-otp,verify-otp,send-contact-otp,verify-contact-change,reset-password}/route.js   ✚ clone verbatim
-│       ├── admin/theme/route.js            ✚ clone verbatim
-│       └── profit-loss/
-│           ├── settings/route.js           ✚ 55
-│           ├── history/route.js            ✚ 120  (parse + billing gate + Blob + proxy)
-│           └── history/[id]/route.js       ✚ 55
-├── components/
-│   ├── admin/ auth/ billing/ profile/ ui/  ✚  clone verbatim (drop listing/)
-│   └── dashboard/
-│       ├── DashboardTopbar.jsx UserMenu.jsx BottomMenu.jsx   ✚ clone (Topbar label → "Profit & Loss")
-│       ├── ProfitLossView.jsx              ✚ 240
-│       ├── DashboardToolbar.jsx            ✚ 130
-│       ├── MarketplacePicker.jsx           ✚ 90
-│       ├── DashboardHeaderBar.jsx          ✚ 80
-│       ├── DateRangeFilter.jsx             ✚ 150   ← Step-5 requirement
-│       ├── PlatformFilter.jsx              ✚ 70    ← the "All Platforms" filter
-│       ├── AdsCostControl.jsx              ✚ 60
-│       ├── KpiCardRow.jsx KpiCard.jsx      ✚ 135
-│       ├── DetailsTable.jsx ColumnHeaderCell.jsx   ✚ 370
-│       ├── DetailsViewPills.jsx            ✚ 120
-│       ├── HistoryDrawer.jsx               ✚ 150
-│       ├── SaveRunButton.jsx               ✚ 90
-│       ├── SheetDropCard.jsx               ✚ 70
-│       └── PlatformBadge.jsx               ✚ 30
-├── context/ThemeContext.jsx        ✚  clone verbatim
-├── hooks/{useDebouncedCallback,useInView,useScrollHeader}.js   ✚ clone (drop listing hooks)
-├── data/
-│   ├── company.js defaultTheme.js themePresets.js geoIndia.js tools.js   ✚ clone (tools.js trimmed to a single 'profit-loss' entry for local access)
-│   └── platforms/
-│       ├── canonical.js            ✚ 45   canonical row schema + status enum + KPI summary shape
-│       ├── detect.js               ✚ 90   detectPlatform(headerRow, fileName) — the fingerprint table
-│       ├── aliases.js              ✚ 60   per-canonical-field header alias lists (tolerate renamed columns)
-│       ├── flipkart.js             ✚ 110
-│       ├── meesho.js               ✚ 110
-│       ├── amazon.js               ✚ 150   (multi-row-per-settlement + signed refund rows)
-│       ├── myntra.js               ✚ 110
-│       ├── jiomart.js              ✚ 100
-│       └── manual.js               ✚ 70    hand-mapping fallback UI config
-└── lib/
-    ├── auth.js authGate.js connect.js tokenStore.js tokenHandoff.js profile.js
-    │   serverBilling.js toolBilling.js tools.js mailer.js sms.js validation.js utils.js
-    │   blobStore.js db.js          ✚  clone (serverBilling.js: add optional idempotencyKey arg; db.js trimmed to users/companies/otp/user_settings)
-    ├── sheet/
-    │   ├── parseWorkbook.js        ✚ 90   File → { sheetName: rows[] } via xlsx; header-row detection
-    │   └── skuCostTemplate.js      ✚ 70   exceljs → blank SKU Cost .xlsx (pre-filled with seen SKUs)
-    └── profitLoss/
-        ├── engine.js              ✚ 190   canonical rows + range + platform filter + skuCostMap + ads → { summary, skuRows }
-        ├── dateRanges.js          ✚ 50    preset → {from,to}; custom validation
-        └── exportDashboard.js     ✚ 120   summary+skuRows → .xlsx / .pdf
-```
-
-**b. `admin-pannels/` — backend delta:**
-
-```
-admin-pannels/
-├── scripts/profit_loss_migration.sql                  ✚  2 tables (Step 4)
-├── app/api/profit-loss/
-│   ├── settings/route.js                              ✚ 45
-│   ├── history/route.js                               ✚ 70
-│   └── history/[id]/route.js                          ✚ 55
-├── lib/db.js                                          ✎ +95  7 profit_loss_* fns + camelCase mapper
-├── data/tools.js                                      ✎ +40  'profit-loss' entry + toolDisplayOrder
-└── (run) npm run seed:products && seed:tool-marketing && seed:page-content && tools:dedupe && db:grant-all-tools
-```
-
-**c. File-by-file delta table:**
-
-| # | Path | NEW/MOD | Purpose | Est. LOC |
-|---|---|---|---|---|
-| F1 | tools-5/app/profit-loss/page.js | NEW | thin shell | 20 |
-| F2 | tools-5/components/dashboard/ProfitLossView.jsx | NEW | state owner | 240 |
-| F3 | …/DashboardToolbar.jsx + MarketplacePicker.jsx | NEW | uploads + platform tag | 220 |
-| F4 | …/DashboardHeaderBar.jsx + DateRangeFilter.jsx + PlatformFilter.jsx + AdsCostControl.jsx | NEW | filters row | 360 |
-| F5 | …/KpiCardRow.jsx + KpiCard.jsx | NEW | 7 stat cards | 135 |
-| F6 | …/DetailsTable.jsx + ColumnHeaderCell.jsx | NEW | per-SKU table, per-column filter+sort | 370 |
-| F7 | …/DetailsViewPills.jsx | NEW | My/All Details column sets | 120 |
-| F8 | …/HistoryDrawer.jsx + SaveRunButton.jsx + SheetDropCard.jsx + PlatformBadge.jsx | NEW | history + metered save + empty state | 340 |
-| F9 | tools-5/data/platforms/*.js (9) | NEW | detection + per-platform mapping + canonical + aliases | 845 |
-| F10 | tools-5/lib/sheet/*.js (2) | NEW | xlsx parse + SKU template | 160 |
-| F11 | tools-5/lib/profitLoss/*.js (3) | NEW | engine + date ranges + export | 360 |
-| B1 | tools-5/app/api/profit-loss/settings/route.js | NEW | GET/PUT proxy | 55 |
-| B2 | tools-5/app/api/profit-loss/history/route.js | NEW | GET + POST(parse→gate→Blob→proxy) | 120 |
-| B3 | tools-5/app/api/profit-loss/history/[id]/route.js | NEW | GET/DELETE proxy | 55 |
-| B4 | tools-5/lib/serverBilling.js | MOD (in clone) | accept optional idempotencyKey | +4 |
-| B5 | admin/app/api/profit-loss/settings/route.js | NEW | GET/PUT + guard | 45 |
-| B6 | admin/app/api/profit-loss/history/route.js | NEW | GET/POST + guard | 70 |
-| B7 | admin/app/api/profit-loss/history/[id]/route.js | NEW | GET/DELETE + guard | 55 |
-| B8 | admin/lib/db.js | MOD | 7 profit_loss_* fns | +95 |
-| B9 | admin/scripts/profit_loss_migration.sql | NEW | 2 tables + RLS | 45 |
-| B10 | admin/data/tools.js | MOD | catalog entry + display order | +40 |
-| C1 | tools-5/ (clone) app/layout.js, app/page.js, proxy.js, globals.css, all auth pages+routes, components/{admin,auth,billing,dashboard,profile,ui}, context, hooks, lib/* | NEW (copied) | account/session/theme/billing plumbing | ~0 new logic |
-| C2 | tools-5/components/dashboard/DashboardTopbar.jsx | MOD (in clone) | centre label → "Profit & Loss" | +1 |
-| C3 | tools-5/package.json, .env.example, CLAUDE.md | MOD (in clone) | drop listing deps/envs, retitle | ~ |
-
-**Estimated new/changed LOC:** ~4,200 in tools-5 (of which ~845 is the
-platform-mapping layer), ~350 in admin-pannels. No file exceeds 400 LOC.
-
----
-
-## Open questions
-
-1. **Q1 — Order Sheet.** The 5 sample CSVs are combined settlement files — the
-   *Payment Sheet* alone fully drives the dashboard. Keep the "Upload Order
-   Sheet" button (optional enrichment) or drop it for v1?
-2. **Q2 — billing threshold.** "1 coin per 100 rows" implemented as
-   `Math.ceil(rowCount / 100)` (1–100 rows = 1 coin, 101–200 = 2, …). Is
-   1–100 meant to be **free** instead (charge only from row 101)? And is
-   `rowCount` the **sum across all uploaded sheets** or the **computed SKU
-   count**? (Plan assumes sum of parsed sheet rows.)
-3. **Q3 — re-save.** Re-saving the *identical* run (same platforms/dates/row
-   count) is idempotent → **not** re-charged. Editing the date range or adding
-   a sheet = a new run = a new charge. Correct?
-4. **Q4 — Ads cost.** No ads column in any sample → it's a **manual input**
-   (toggle % / ₹). Default **%**, value **0**? Screenshot shows 40% / ₹5000.
-5. **Q5 — deploy URL.** `profit-loss.barmeto.com`? Needed for `data/tools.js`
-   `toolUrl`, `SITE_URL` in `layout.js`, and `ALLOWED_ORIGINS`.
-6. **Q6 — raw file storage.** Store the raw uploaded files in **Vercel Blob**
-   (pointer in `source_files`) — or is keeping just the **parsed rows +
-   summary** enough (skip raw-file retention)? Affects B2 step (e).
-7. **Q7 — "Manual" platform.** Include the hand-column-mapping fallback in v1,
-   or ship the 5 known platforms only and add Manual later?
-8. **Q8 — currency.** All samples are ₹. Assume INR everywhere, no FX?
-
-## Key decisions
-
-- **D1** — Clone of **tools-4** (only tool app with the full account suite: OTP, profile, forgot/reset, SSO handoff, billing modals).
-- **D2** — Persistence is **hub-owned**: 2 Postgres tables in admin-pannels + thin proxy routes in tools-5, identical to `/api/listing-tools/history`. The tool app never gets a database.
-- **D3** — Sheets are **parsed in the browser**; compute is 100% client-side and free. Only on an authenticated **Save** do data + files leave the browser.
-- **D4** — **Metered save**: `ceil(rowCount / 100)` coins via `POST /api/wallet/deduct` (`coinCost:1`, `quantity`), idempotent per run. Browse/compute/export never charge. `NEXT_PUBLIC_IS_PAID=true`.
-- **D5** — **"All Compay" = ecommerce-platform filter.** There is **no company entity** anywhere — no company table, no company creation, no `company` column.
-- **D6** — **Single-product navbar** (Rule 8): reuse tools-4 `DashboardTopbar`, only the label changes.
-- **D7** — Platform layer is **data, not code branches** — one `data/platforms/*.js` per marketplace, mapping the exact sample-CSV headers (alias-tolerant); the engine only sees canonical rows.
-- **D8** — Full `sku_rows` persisted (the user pays per 100 rows, so nothing is truncated). Raw files → Vercel Blob (pending Q6).
-
----
-
-## Next step
-
-Plan stops at "written + reviewed". On approval:
-1. Scaffold tools-5 by cloning tools-4; strip listing surfaces; retarget `proxy.js` + `app/page.js`; verify `/login` + `/profile` + theme against the hub (`IS_CONNECT=true`).
-2. Build the static pixel-matched `/profit-loss` shell vs `source/profit-loss-dashboard.png` with mock data.
-3. `data/platforms/*` + `lib/sheet/*` + `lib/profitLoss/engine.js` against the 5 `source/samples/*.csv` (start with Meesho).
-4. admin-pannels migration + `lib/db.js` fns + `/api/profit-loss/*` hub routes; then tools-5 proxy routes incl. the billing gate; then My Details + History UI + `SaveRunButton`.
-5. `data/tools.js` entry + seeds + `db:grant-all-tools`; marketing-page copy.
-6. Add the migration + `data/tools.js` sync to `MEMORY.md` as "not yet run".
+Plan stops at "written + reviewed". On approval, execute §10 in order. Nothing
+is implemented yet — this revision only rewrites the plan.
