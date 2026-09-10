@@ -5,7 +5,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Clock, Loader2, X } from 'lucide-react';
 import { isLoggedIn } from '@/lib/tokenStore';
 import { getSettings, putSettings } from '@/lib/profitLoss/apiClient';
-import { parseAllTabs, parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
+import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
+import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
 import { downloadDashboardXlsx, downloadDashboardPdf } from '@/lib/profitLoss/exportDashboard';
 import { detectPlatform } from '@/data/platforms/detect';
@@ -22,6 +23,7 @@ import DashboardHeaderBar from './DashboardHeaderBar';
 import KpiCardRow from './KpiCardRow';
 import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
+import RawRowsTable from './RawRowsTable';
 import SheetDropCard from './SheetDropCard';
 import HistoryDrawer from './HistoryDrawer';
 import SheetSettingsPanel from './SheetSettingsPanel';
@@ -30,6 +32,7 @@ import PlatformBadge from './PlatformBadge';
 const DEFAULT_RANGE = { preset: '6m', ...rangeForPreset('6m') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
 const MAX_INLINE_BYTES = 1_500_000;
+const META_LABELS = { __platform: 'Platform', __file: 'File', __sheet: 'Sheet' };
 
 export default function ProfitLossView() {
   const { addToast } = useToast();
@@ -50,6 +53,7 @@ export default function ProfitLossView() {
   const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
 
   // ── view ────────────────────────────────────────────────────────────────
+  const [tableView, setTableView] = useState('summary'); // 'summary' | 'raw'
   const [viewMode, setViewMode] = useState('all');
   const [myColumns, setMyColumns] = useState(DEFAULT_MY_COLUMNS);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -93,6 +97,31 @@ export default function ProfitLossView() {
     [canonicalRows],
   );
 
+  // Raw view — EVERY row of EVERY tab of EVERY uploaded file, EVERY original
+  // header, nothing aggregated or dropped. Meta columns keep it traceable
+  // across a combined multi-file / multi-tab load.
+  const rawTable = useMemo(() => {
+    const order = ['__platform', '__file', '__sheet'];
+    const seen = new Set(order);
+    const meta = {};
+    const rows = [];
+    for (const u of uploads) {
+      for (const tab of u.sheetNames) {
+        const t = u.byTab[tab];
+        if (!t) continue;
+        for (const h of t.headerRow) {
+          if (!h) continue;
+          if (!seen.has(h)) { seen.add(h); order.push(h); }
+          if (!meta[h] && t.headerMeta?.[h]) meta[h] = t.headerMeta[h]; // group / info from the sheet
+        }
+        for (const r of t.rows) {
+          rows.push({ __platform: u.platform, __file: u.fileName, __sheet: tab, ...r });
+        }
+      }
+    }
+    return { headers: order, rows, meta };
+  }, [uploads]);
+
   const computed = useMemo(() => {
     if (openedRun) {
       return {
@@ -114,7 +143,7 @@ export default function ProfitLossView() {
     });
   }, [openedRun, canonicalRows, skuCost, applied]);
 
-  const hasData = !!openedRun || canonicalRows.length > 0;
+  const hasData = !!openedRun || uploads.length > 0 || canonicalRows.length > 0;
   const columnKeys = viewMode === 'my' ? myColumns : SKU_COLUMNS.filter((c) => !c.sticky).map((c) => c.key);
 
   // ── ingest ────────────────────────────────────────────────────────────
@@ -123,8 +152,20 @@ export default function ProfitLossView() {
       setBusy(true);
       try {
         const added = [];
+        let needsMapping = false;
         for (const file of files) {
-          const wb = await parseAllTabs(file);
+          let wb;
+          try {
+            wb = await readAnyFile(file);
+          } catch (err) {
+            addToast(`${file.name}: ${err?.message || 'could not be read'}`, 'error');
+            continue;
+          }
+          if (!wb.sheetNames.length) {
+            addToast(`No readable table found in ${file.name}`, 'error');
+            continue;
+          }
+
           const first = wb.byTab[wb.sheetNames[0]] || { headerRow: [] };
           let platformId = detectPlatform(first.headerRow, wb.fileName);
           if (platformId === 'manual' && marketplace) platformId = marketplace;
@@ -138,10 +179,6 @@ export default function ProfitLossView() {
           const mapping = platformId === 'manual' ? guessMapping(wb.allHeaders) : undefined;
           const probe = mapRowsForPlatform(platformId, rawRows, { headerMap: cfg.headerMap || {}, mapping });
 
-          if (probe.length === 0) {
-            addToast(`Couldn’t read any rows from ${file.name}`, 'error');
-            continue;
-          }
           const buf = await file.arrayBuffer();
           added.push({
             id: crypto.randomUUID(),
@@ -152,13 +189,18 @@ export default function ProfitLossView() {
             sheetNames: wb.sheetNames,
             byTab: wb.byTab,
             allHeaders: wb.allHeaders,
+            mapped: probe.length,
             contentBase64: buf.byteLength <= MAX_INLINE_BYTES ? toBase64(buf) : null,
           });
           setDetectedId(platformId);
 
-          // Multi-tab workbook and the user hasn't pinned tabs for this
-          // marketplace yet → nudge them into Sheet Settings.
-          if (wb.sheetNames.length > 1 && !(cfg.tabs && cfg.tabs.length)) {
+          // The file is readable but its columns don't line up with this
+          // marketplace's P&L layout yet — keep the data (raw view + Sheet
+          // Settings dropdowns) and nudge the user to map it.
+          if (probe.length === 0) {
+            needsMapping = true;
+            setSettingsFocus(platformId);
+          } else if (wb.sheetNames.length > 1 && !(cfg.tabs && cfg.tabs.length)) {
             setSettingsFocus(platformId);
             setSettingsOpen(true);
           }
@@ -166,10 +208,18 @@ export default function ProfitLossView() {
         if (added.length) {
           setUploads((prev) => [...prev, ...added]);
           setOpenedRun(null);
-          addToast(`Loaded ${added.length} file${added.length === 1 ? '' : 's'}`);
+          const rows = added.reduce((s, a) => s + a.mapped, 0);
+          if (rows === 0) {
+            addToast('File loaded — columns don’t match yet. Map them in Sheet Settings.', 'error');
+            setTableView('raw');
+            setSettingsOpen(true);
+          } else {
+            addToast(`Loaded ${added.length} file${added.length === 1 ? '' : 's'}`);
+            if (needsMapping) setSettingsOpen(true);
+          }
         }
       } catch {
-        addToast('That file could not be parsed — is it a valid CSV/Excel export?', 'error');
+        addToast('That file could not be parsed — is it a valid CSV / Excel / PDF export?', 'error');
       } finally {
         setBusy(false);
       }
@@ -278,7 +328,7 @@ export default function ProfitLossView() {
           dirty={dirty}
           hasData={hasData}
           readOnly={!!openedRun}
-          onExportExcel={() => downloadDashboardXlsx({ summary: computed.summary, skuRows: computed.skuRows, columns: cols, label })}
+          onExportExcel={() => downloadDashboardXlsx({ summary: computed.summary, skuRows: computed.skuRows, columns: cols, label, rawHeaders: rawTable.headers, rawRows: rawTable.rows, metaLabels: META_LABELS })}
           onExportPdf={() => downloadDashboardPdf({ summary: computed.summary, skuRows: computed.skuRows, columns: cols, label })}
           onOpenHistory={() => setHistoryOpen(true)}
           saveProps={{ buildPayload: buildSavePayload, rowCount: computed.rowCount, disabled: busy }}
@@ -320,6 +370,15 @@ export default function ProfitLossView() {
                   <span key={u.id} className="inline-flex items-center gap-1.5 rounded-full border border-divider-light bg-background px-2 py-1">
                     <PlatformBadge id={u.platform} size="xs" />
                     <span className="text-muted">{u.fileName}</span>
+                    {u.mapped === 0 && (
+                      <button
+                        onClick={() => { setSettingsFocus(u.platform); setSettingsOpen(true); }}
+                        className="rounded bg-neg/10 px-1.5 text-[10px] font-semibold text-neg hover:underline"
+                        title="Columns didn’t match — map them in Sheet Settings"
+                      >
+                        raw only · map
+                      </button>
+                    )}
                     {u.sheetNames.length > 1 && (
                       <button
                         onClick={() => { setSettingsFocus(u.platform); setSettingsOpen(true); }}
@@ -349,17 +408,46 @@ export default function ProfitLossView() {
               </div>
             )}
 
-            <div className="mt-5">
-              <DetailsViewPills
-                mode={viewMode}
-                onModeChange={setViewMode}
-                myColumns={myColumns}
-                onMyColumnsChange={onMyColumnsChange}
-              />
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              {/* Summary (per-SKU) vs Raw rows (every line, every header) */}
+              <div className="inline-flex rounded-full border border-divider-light bg-background p-0.5 text-sm">
+                {[
+                  ['summary', 'Summary'],
+                  ['raw', `Raw rows${rawTable.rows.length ? ` · ${rawTable.rows.length.toLocaleString()}` : ''}`],
+                ].map(([id, txt]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTableView(id)}
+                    className={`rounded-full px-3 py-1 font-medium transition-colors ${
+                      tableView === id ? 'bg-action text-white' : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    {txt}
+                  </button>
+                ))}
+              </div>
+
+              {tableView === 'summary' && (
+                <DetailsViewPills
+                  mode={viewMode}
+                  onModeChange={setViewMode}
+                  myColumns={myColumns}
+                  onMyColumnsChange={onMyColumnsChange}
+                />
+              )}
             </div>
 
             <div className="mt-3">
-              <DetailsTable rows={computed.skuRows} columnKeys={columnKeys} />
+              {tableView === 'summary' ? (
+                <DetailsTable rows={computed.skuRows} columnKeys={columnKeys} />
+              ) : rawTable.rows.length ? (
+                <RawRowsTable headers={rawTable.headers} rows={rawTable.rows} metaLabels={META_LABELS} headerMeta={rawTable.meta} />
+              ) : (
+                <div className="rounded-xl border border-divider bg-background px-4 py-10 text-center text-sm text-muted">
+                  Raw rows show every line of every uploaded sheet — open a saved run or upload a sheet.
+                </div>
+              )}
             </div>
           </>
         )}

@@ -3,6 +3,7 @@
 import { FileDown, FileUp, Settings2, Upload } from 'lucide-react';
 import MarketplacePicker from './MarketplacePicker';
 import IconButton, { FileIconButton } from './IconButton';
+import { ACCEPT } from '@/lib/sheet/readAnyFile';
 
 // Row A (directly under the navbar): data in/out. Icon-first, one line.
 export default function DashboardToolbar({
@@ -25,10 +26,10 @@ export default function DashboardToolbar({
 
         <span className="mx-1 h-6 w-px bg-divider" />
 
-        <FileIconButton icon={Upload} label="Payment Sheet" title="Upload marketplace payment / settlement sheet" onFiles={onUploadPayment} disabled={busy} />
-        <FileIconButton icon={Upload} label="Order Sheet" title="Upload marketplace order sheet (optional)" onFiles={onUploadOrder} disabled={busy} />
+        <FileIconButton icon={Upload} label="Payment Sheet" title="Upload marketplace payment / settlement sheet (CSV, XLSX or PDF)" accept={ACCEPT} onFiles={onUploadPayment} disabled={busy} />
+        <FileIconButton icon={Upload} label="Order Sheet" title="Upload marketplace order sheet (optional)" accept={ACCEPT} onFiles={onUploadOrder} disabled={busy} />
         <IconButton icon={FileDown} label="SKU Cost Template" title="Download a blank SKU cost sheet (pre-filled with your SKUs)" onClick={onDownloadSkuTemplate} />
-        <FileIconButton icon={FileUp} label="SKU Cost" title="Upload your SKU → cost sheet" multiple={false} onFiles={(f) => onUploadSkuCost(f[0])} disabled={busy} tone="outline" />
+        <FileIconButton icon={FileUp} label="SKU Cost" title="Upload your SKU → cost sheet" accept=".csv,.tsv,.txt,.xlsx,.xls" multiple={false} onFiles={(f) => onUploadSkuCost(f[0])} disabled={busy} tone="outline" />
       </div>
     </div>
   );

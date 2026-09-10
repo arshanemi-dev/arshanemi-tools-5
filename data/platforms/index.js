@@ -1,4 +1,4 @@
-import { normHeader, num, absNum, toISODate, classifyStatus } from './canonical.js';
+import { normHeader, num, absNum, toISODate, classifyStatus, canonicalRow } from './canonical.js';
 import { getPlatform, detectPlatform } from './detect.js';
 
 export { PLATFORMS, PLATFORM_BY_ID, getPlatform, detectPlatform } from './detect.js';
@@ -30,13 +30,23 @@ export function pickBestTab(platformId, byTab, sheetNames) {
 // override layer that works for every platform.
 export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mapping } = {}) {
   const plat = getPlatform(platformId);
+  const hasOverrides = headerMap && Object.keys(headerMap).length > 0;
   const out = [];
-  for (const raw of rawRows) {
+  rawRows.forEach((raw, idx) => {
     let c = plat.toCanonical(raw, mapping);
-    if (!c) continue;
-    if (headerMap && Object.keys(headerMap).length) c = applyHeaderMap(c, raw, headerMap);
+    // The platform mapper bailed (its ID column isn't in this file — e.g. an
+    // "Orders" export vs a "Payments" export). If the user has mapped columns
+    // in Sheet Settings, drive it from a blank row instead so their mapping
+    // still works.
+    if (!c && hasOverrides) {
+      c = canonicalRow({ platform: platformId, rowId: `${platformId}:r${idx}`, orderId: `r${idx}` });
+    }
+    if (!c) return;
+    if (hasOverrides) c = applyHeaderMap(c, raw, headerMap);
+    // Drop rows that carry no usable signal at all.
+    if ((c.sku === '—' || !c.sku) && !c.settlement && !c.grossSale && !c.qty) return;
     out.push(c);
-  }
+  });
   return out;
 }
 
