@@ -1,17 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { makeTab } from '@/data/templateSchema';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
+import Field from './Field';
+import NameField from './NameField';
 
 const ICON_OPTIONS = ['LayoutDashboard', 'ShoppingCart', 'Undo2', 'TrendingUp', 'LineChart', 'Package', 'Map', 'ClipboardCheck'];
 
 // image 2 · Tab — each entry in the user's sidebar. Compose + order its Title
-// Cards, Graphs and Headers, set the KPI grid width, and toggle whether the
-// tab shows in the dashboard sidebar at all.
+// Cards, Graphs and Headers, and set the KPI grid width. Every tab that
+// exists shows in the dashboard sidebar — no separate visibility toggle,
+// same as Overview Tab. Rename / delete / reorder a tab from the sidebar
+// list (Settings toggle); this panel edits whichever one is active.
 export default function TabSection({ draft, activeId: activeIdProp, onActiveId }) {
-  const { config, patchItem, removeItem, setTabVisible } = draft;
+  const { config, addItem, patchItem } = draft;
   const tabs = [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const [localId, setLocalId] = useState(null);
   const activeId = activeIdProp !== undefined ? activeIdProp : localId;
@@ -19,26 +24,41 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
   const active = tabs.find((t) => t.id === activeId) || null;
 
   const cardOpts = (config.titleCards || []).map((c) => ({ id: c.id, name: c.name }));
-  const graphOpts = (config.graphData || []).map((g) => ({ id: g.id, name: g.name }));
+  const graphOpts = (config.graphs || []).map((g) => ({ id: g.id, name: g.name }));
   const headerOpts = (config.headers || []).map((h) => ({ id: h.id, name: h.name }));
-  const visible = (id) => config.visibility?.tabs?.[id] !== false;
 
   const patchLayout = (patch) => patchItem('tabs', active.id, { layout: { ...active.layout, ...patch } });
 
+  const addTab = () => {
+    const item = makeTab(`Tab ${tabs.length + 1}`, tabs.length);
+    addItem('tabs', item);
+    setActiveId(item.id);
+  };
+
   return (
     <div id="section-tab" className="scroll-mt-24">
-      <SectionHead title="Tab" desc="The dashboard sidebar entries and what each one shows." />
+      <SectionHead
+        title="Tab"
+        desc="The dashboard sidebar entries and what each one shows."
+        right={(
+          <button type="button" onClick={addTab} className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-2.5 py-1 text-[12px] font-medium text-action hover:bg-action-soft">
+            <Plus size={12} /> Add Tab
+          </button>
+        )}
+      />
       <div className="space-y-4 rounded-xl border border-divider bg-background p-4">
         {!active ? (
           <p className="py-10 text-center text-sm text-subtle">Pick a tab from the list on the left, or add one.</p>
         ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <input
+                <NameField
+                  list={tabs}
+                  id={active.id}
                   value={active.name}
-                  onChange={(e) => patchItem('tabs', active.id, { name: e.target.value })}
+                  onChange={(name) => patchItem('tabs', active.id, { name })}
                   placeholder="Enter Tab name"
-                  className="min-w-[10rem] flex-1 rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
+                  className="min-w-[10rem] flex-1"
                 />
                 <select
                   value={active.icon || 'LayoutDashboard'}
@@ -47,17 +67,6 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
                 >
                   {ICON_OPTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
                 </select>
-                <label className="flex items-center gap-1.5 text-xs text-muted">
-                  <input type="checkbox" checked={visible(active.id)} onChange={(e) => setTabVisible(active.id, e.target.checked)} className="accent-[var(--color-action)]" />
-                  Show in sidebar
-                </label>
-                <button
-                  type="button"
-                  onClick={() => { removeItem('tabs', active.id); setActiveId(null); }}
-                  className="inline-flex items-center gap-1 rounded-full bg-neg/10 px-3 py-1.5 text-xs font-semibold text-neg hover:bg-neg/20"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
               </div>
 
               <Field label="Title Cards" hint={`KPI grid — ${active.titleCardIds.length} card(s)`}>
@@ -85,18 +94,6 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
             </>
           )}
       </div>
-    </div>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <div className="rounded-lg border border-divider bg-card p-3">
-      <div className="mb-2 flex items-baseline justify-between">
-        <span className="text-[13px] font-semibold text-foreground">{label}</span>
-        {hint && <span className="text-[11px] text-subtle">{hint}</span>}
-      </div>
-      {children}
     </div>
   );
 }

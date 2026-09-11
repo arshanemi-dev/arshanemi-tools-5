@@ -108,15 +108,6 @@ export default function useTemplateDraft(templateId) {
   const updateMarketplace = useCallback((patch) => {
     setConfig((c) => ({ ...c, marketplace: { ...c.marketplace, ...patch } }));
   }, []);
-  const updateOverview = useCallback((patch) => {
-    setConfig((c) => ({ ...c, overviewTab: { ...c.overviewTab, ...patch } }));
-  }, []);
-  const setTabVisible = useCallback((tabId, visible) => {
-    setConfig((c) => ({ ...c, visibility: { ...c.visibility, tabs: { ...(c.visibility?.tabs || {}), [tabId]: visible } } }));
-  }, []);
-  const setMarketplaceVisible = useCallback((visible) => {
-    setConfig((c) => ({ ...c, visibility: { ...c.visibility, marketplaceInSidebar: visible } }));
-  }, []);
 
   // ── save / publish ─────────────────────────────────────────────────────
   const saveDraft = useCallback(async ({ major = false, note = '' } = {}) => {
@@ -164,7 +155,7 @@ export default function useTemplateDraft(templateId) {
     template, versions, activeVersionId, editingDraft,
     config, dirty, errors: validation.errors, valid: validation.ok,
     setConfig, patchConfig, addItem, patchItem, removeItem,
-    updateMarketplace, updateOverview, setTabVisible, setMarketplaceVisible,
+    updateMarketplace,
     saveDraft, publish, patchTemplate: savePatchTemplate, reloadMeta,
   };
 }

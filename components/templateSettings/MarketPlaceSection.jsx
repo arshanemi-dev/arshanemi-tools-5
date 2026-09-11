@@ -6,18 +6,24 @@ import { makeFileSlot, makeHeader } from '@/data/templateSchema';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
+import NameField from './NameField';
 
 // image 2 · Market Place — the upload slots (which become the dashboard's green
 // buttons) plus the Unmap / Our / Map column-mapping grid. Mapping a sheet
 // header to a default header removes it from the header pool (the "union" rule
-// — see HeaderSection).
-export default function MarketPlaceSection({ draft, activeSlotId = null }) {
+// — see HeaderSection). Files are a compact list (left) + the full slot
+// editor for whichever one is selected (right) — same master-detail pattern
+// as Header. File names must be unique — a duplicate reddens the input live.
+export default function MarketPlaceSection({ draft, activeSlotId = null, onActiveSlotId }) {
   const { addToast } = useToast();
-  const { config, setConfig, addItem, patchItem, removeItem, updateMarketplace, setMarketplaceVisible } = draft;
+  const { config, setConfig, addItem, patchItem, removeItem, updateMarketplace } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
   const headers = useMemo(() => config.headers || [], [config.headers]);
   const [busySlot, setBusySlot] = useState(null);
   const [pick, setPick] = useState({}); // { [sheetHeader]: headerId }
+  const [localSlotId, setLocalSlotId] = useState(null);
+  const setActiveSlotId = onActiveSlotId || setLocalSlotId;
+  const activeSlot = slots.find((s) => s.id === activeSlotId) || null;
 
   const mappedSheetHeaders = useMemo(() => {
     const set = new Set();
@@ -109,69 +115,61 @@ export default function MarketPlaceSection({ draft, activeSlotId = null }) {
       <SectionHead title="Market Place" desc="Upload slots + the column mapping. Fill this first." />
 
       <div className="space-y-4 rounded-xl border border-divider bg-background p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            value={config.marketplace?.name || ''}
-            onChange={(e) => updateMarketplace({ name: e.target.value })}
-            placeholder="Marketplace name"
-            className="min-w-[12rem] flex-1 rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
-          />
-          <label className="flex items-center gap-1.5 text-xs text-muted">
-            <input type="checkbox" checked={config.visibility?.marketplaceInSidebar !== false} onChange={(e) => setMarketplaceVisible(e.target.checked)} className="accent-[var(--color-action)]" />
-            Show marketplace to users
-          </label>
-        </div>
+        <input
+          value={config.marketplace?.name || ''}
+          onChange={(e) => updateMarketplace({ name: e.target.value })}
+          placeholder="Marketplace name"
+          className="w-full max-w-md rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
+        />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[['companyHeaderId', 'Company filter header'], ['brandHeaderId', 'Brand filter header'], ['groupByHeaderId', 'Group table rows by']].map(([key, label]) => (
-            <label key={key} className="text-[11px] font-medium text-muted">
-              {label}
-              <select
-                value={config.marketplace?.[key] || ''}
-                onChange={(e) => updateMarketplace({ [key]: e.target.value || null })}
-                className="mt-1 w-full rounded-md border border-divider bg-background px-2 py-1.5 text-xs focus:outline-none"
-              >
-                <option value="">—</option>
-                {headers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-              </select>
-            </label>
-          ))}
-        </div>
-
-        {/* File slots */}
+        {/* File slots — compact list (left) + the selected one's full editor (right) */}
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold text-foreground">Files</span>
-          <button type="button" onClick={() => addItem('fileSlots', makeFileSlot('File', 'aux'))} className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-2.5 py-1 text-[12px] font-medium text-action hover:bg-action-soft">
+          <button
+            type="button"
+            onClick={() => { const item = makeFileSlot(`File ${slots.length + 1}`, 'aux'); addItem('fileSlots', item); setActiveSlotId(item.id); }}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-2.5 py-1 text-[12px] font-medium text-action hover:bg-action-soft"
+          >
             <Plus size={12} /> Add File
           </button>
         </div>
-        <div className="flex flex-wrap gap-3">
-          {slots.map((s) => (
-            <div key={s.id} className={`w-56 rounded-lg border bg-card p-3 ${activeSlotId === s.id ? 'border-accent ring-1 ring-accent/40' : 'border-divider'}`}>
-              <div className="flex items-center gap-1.5">
-                <input
-                  value={s.label}
-                  onChange={(e) => patchItem('fileSlots', s.id, { label: e.target.value })}
-                  className="min-w-0 flex-1 rounded-md border border-divider bg-background px-2 py-1 text-[12.5px] font-medium focus:border-accent focus:outline-none"
-                />
-                <button type="button" onClick={() => removeItem('fileSlots', s.id)} className="rounded p-1 text-subtle hover:text-neg"><Trash2 size={12} /></button>
-              </div>
-              <label className="mt-2 inline-flex cursor-pointer items-center gap-1 rounded-md bg-action px-2 py-1 text-[11px] font-semibold text-white hover:bg-action-hover">
-                {busySlot === s.id ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Upload File
-                <input type="file" hidden accept=".csv,.xlsx,.xls,.pdf" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadSample(s.id, f); }} />
-              </label>
-              <p className="mt-1.5 text-[10.5px] text-subtle">{(s.extractedHeaders || []).length} columns · sheet “{s.sheetNameHint || '—'}”</p>
-              <div className="mt-1.5 flex gap-1">
-                {['headerRowIndex', 'valueRowIndex'].map((k) => (
-                  <label key={k} className="flex items-center gap-1 text-[10px] text-subtle">
-                    {k === 'headerRowIndex' ? 'Header' : 'Value'}
-                    <input type="number" min={1} value={s[k] || 1} onChange={(e) => patchItem('fileSlots', s.id, { [k]: Math.max(1, Number(e.target.value) || 1) })} className="w-12 rounded border border-divider bg-background px-1 py-0.5 text-[10px] focus:outline-none" />
+        {!slots.length ? (
+          <p className="rounded-lg border border-divider bg-card py-6 text-center text-[12px] text-subtle">No files yet — add one.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3">
+        
+
+            <div className="rounded-lg border border-divider bg-card p-3">
+              {!activeSlot ? (
+                <p className="py-10 text-center text-[12px] text-subtle">Pick a file from the list on the left to edit it.</p>
+              ) : (
+                <>
+                  <NameField
+                    list={slots}
+                    id={activeSlot.id}
+                    value={activeSlot.label}
+                    onChange={(label) => patchItem('fileSlots', activeSlot.id, { label })}
+                    field="label"
+                    className="w-full"
+                  />
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-1 rounded-md bg-action px-2 py-1 text-[11px] font-semibold text-white hover:bg-action-hover">
+                    {busySlot === activeSlot.id ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Upload File
+                    <input type="file" hidden accept=".csv,.xlsx,.xls,.pdf" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadSample(activeSlot.id, f); }} />
                   </label>
-                ))}
-              </div>
+                  <p className="mt-1.5 text-[10.5px] text-subtle">{(activeSlot.extractedHeaders || []).length} columns · sheet “{activeSlot.sheetNameHint || '—'}”</p>
+                  <div className="mt-1.5 flex gap-2">
+                    {['headerRowIndex', 'valueRowIndex'].map((k) => (
+                      <label key={k} className="flex items-center gap-1 text-[10px] text-subtle">
+                        {k === 'headerRowIndex' ? 'Header' : 'Value'}
+                        <input type="number" min={1} value={activeSlot[k] || 1} onChange={(e) => patchItem('fileSlots', activeSlot.id, { [k]: Math.max(1, Number(e.target.value) || 1) })} className="w-12 rounded border border-divider bg-background px-1 py-0.5 text-[10px] focus:outline-none" />
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
 
         {/* Mapping grid */}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">

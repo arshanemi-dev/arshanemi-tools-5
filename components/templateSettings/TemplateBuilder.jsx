@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, Check, History, Loader2, PanelLeft, Store } from 'lucide-react';
+import { AlertTriangle, Check, Eye, History, Loader2, PanelLeft, Store, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import { makeEmptyConfig } from '@/data/templateSchema';
 import { listTemplates, createTemplate, patchTemplate, deleteTemplate } from '@/lib/profitLoss/templatesApi';
 import useTemplateDraft from './useTemplateDraft';
 import BuilderSidebar from './BuilderSidebar';
+import BuilderPreview from './BuilderPreview';
 import HeaderSection from './HeaderSection';
 import TitleCardSection from './TitleCardSection';
-import GraphDesignSection from './GraphDesignSection';
-import GraphDataSection from './GraphDataSection';
+import GraphSection from './GraphSection';
 import TabSection from './TabSection';
 import OverviewTabSection from './OverviewTabSection';
 import MarketPlaceSection from './MarketPlaceSection';
@@ -19,10 +19,10 @@ import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
 
 // The single builder page (image 2). One left sidebar lists every marketplace
-// (add / rename / delete) and, for the active one, every entity — tabs,
-// headers, title cards, graphs, graph designs, files — each section with its
-// own search + add / rename / delete. The active marketplace is tracked in
-// ?t=<templateId>. There is no separate list / new / [id] route.
+// (add / rename / delete) and, for the active one, every entity — files,
+// headers (sheet + default), title cards, tabs, graphs — each section with
+// its own search + add / rename / delete. The active marketplace is tracked
+// in ?t=<templateId>. There is no separate list / new / [id] route.
 export default function TemplateBuilder() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -34,6 +34,7 @@ export default function TemplateBuilder() {
   const [templates, setTemplates] = useState(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const refreshList = () => setReloadKey((k) => k + 1);
 
@@ -159,15 +160,24 @@ export default function TemplateBuilder() {
           <div className="flex flex-1 items-center justify-center text-muted"><Loader2 className="animate-spin" size={26} /></div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 space-y-10 overflow-y-auto px-4 py-6 pb-28 sm:px-6 lg:px-8">
-              <MarketPlaceSection draft={draft} activeSlotId={selection.file ?? null} />
-              <HeaderSection {...sectionProps('header')} />
-              <TitleCardSection {...sectionProps('titleCard')} />
-              <GraphDesignSection {...sectionProps('graphDesign')} />
-              <GraphDataSection {...sectionProps('graphData')} />
-              <TabSection {...sectionProps('tab')} />
-              <OverviewTabSection draft={draft} />
-              <VersionSection draft={draft} />
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              {/* 1st half — settings */}
+              <div className="min-h-0 flex-1 overflow-y-auto bg-surface px-4 py-6 pb-10 sm:px-6 lg:w-1/2 lg:flex-none lg:border-r lg:border-divider lg:px-8">
+                <div className="mx-auto w-full max-w-2xl space-y-5">
+                  <HeaderSection {...sectionProps('header')} />
+                  <MarketPlaceSection draft={draft} activeSlotId={selection.file ?? null} onActiveSlotId={(id) => setSelection((s) => ({ ...s, file: id }))} />
+                  <GraphSection {...sectionProps('graph')} />
+                  <TitleCardSection {...sectionProps('titleCard')} />
+                  <TabSection {...sectionProps('tab')} />
+                  <OverviewTabSection {...sectionProps('overview')} />
+                  <VersionSection draft={draft} />
+                </div>
+              </div>
+
+              {/* 2nd half — live preview (desktop only; a toggle opens it full-screen below lg) */}
+              <div className="hidden min-h-0 flex-1 flex-col overflow-hidden lg:flex lg:w-1/2">
+                <BuilderPreview config={draft.config} />
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider bg-card px-4 py-3 sm:px-6 lg:px-8">
@@ -182,6 +192,9 @@ export default function TemplateBuilder() {
                 {draft.dirty && <span className="text-subtle">· unsaved changes</span>}
               </div>
               <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setMobilePreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover lg:hidden">
+                  <Eye size={14} /> Preview
+                </button>
                 <button type="button" onClick={() => setLogsOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover">
                   <History size={14} /> Log
                 </button>
@@ -197,6 +210,21 @@ export default function TemplateBuilder() {
           </>
         )}
       </div>
+
+      {mobilePreviewOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobilePreviewOpen(false)}
+            className="flex items-center gap-1.5 border-b border-divider px-4 py-2.5 text-left text-[13px] font-medium text-muted hover:bg-card-hover"
+          >
+            <X size={16} /> Close preview
+          </button>
+          <div className="min-h-0 flex-1">
+            <BuilderPreview config={draft.config} />
+          </div>
+        </div>
+      )}
 
       <TemplateLogPanel templateId={activeId} open={logsOpen} onClose={() => setLogsOpen(false)} />
     </div>

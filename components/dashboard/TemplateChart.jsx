@@ -1,9 +1,10 @@
 'use client';
 
 // Dependency-free charts for the template dashboard — inline SVG, theme-token
-// colours, scroll-free (fills its container). Handles the four Graph Design
-// types: line / bar / area (one measure over a time axis) and pie (>= 2
-// title/value slices). Data comes pre-computed from lib/profitLoss/resolveTemplate.
+// colours, scroll-free (fills its container). Handles the four chart types:
+// line / bar / area (one series per selected Graph Header, auto-split, over a
+// shared time axis) and pie (>= 2 header slices). Data comes pre-computed from
+// lib/profitLoss/resolveTemplate.
 
 const PALETTE = [
   'var(--color-action)',
@@ -24,71 +25,100 @@ function niceNum(n) {
   return `${Math.round(n * 10) / 10}`;
 }
 
-function TimeChart({ chartType, points }) {
-  if (!points.length) return <Empty />;
-  const values = points.map((p) => p.value);
+// `series` = [{ title, points: [{t, value}] }] — one per Graph Header,
+// auto-split (the same points/x-axis, one line/bar-group/area per header).
+function TimeChart({ chartType, series }) {
+  const allPoints = series.flatMap((s) => s.points || []);
+  if (!allPoints.length) return <Empty />;
+  const xKeys = [...new Set(series.flatMap((s) => (s.points || []).map((p) => p.t)))].sort();
+  const values = allPoints.map((p) => p.value);
   const max = Math.max(0, ...values);
   const min = Math.min(0, ...values);
   const span = max - min || 1;
   const iw = W - PAD.l - PAD.r;
   const ih = H - PAD.t - PAD.b;
-  const x = (i) => PAD.l + (points.length === 1 ? iw / 2 : (i / (points.length - 1)) * iw);
+  const x = (i) => PAD.l + (xKeys.length === 1 ? iw / 2 : (i / (xKeys.length - 1)) * iw);
   const y = (v) => PAD.t + ih - ((v - min) / span) * ih;
   const zeroY = y(0);
+  const nSeries = series.length;
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full" preserveAspectRatio="none" role="img">
-      {/* y gridlines */}
-      {[0, 0.5, 1].map((f) => {
-        const gy = PAD.t + ih * f;
-        const val = min + span * (1 - f);
-        return (
-          <g key={f}>
-            <line x1={PAD.l} y1={gy} x2={W - PAD.r} y2={gy} stroke="var(--color-divider)" strokeWidth="1" />
-            <text x={PAD.l - 6} y={gy + 3} textAnchor="end" fontSize="9" fill="var(--color-subtle)">{niceNum(val)}</text>
-          </g>
-        );
-      })}
-      <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="var(--color-divider-light)" strokeWidth="1" />
+    <div className="flex h-full flex-col gap-1">
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full flex-1" preserveAspectRatio="none" role="img">
+        {/* y gridlines */}
+        {[0, 0.5, 1].map((f) => {
+          const gy = PAD.t + ih * f;
+          const val = min + span * (1 - f);
+          return (
+            <g key={f}>
+              <line x1={PAD.l} y1={gy} x2={W - PAD.r} y2={gy} stroke="var(--color-divider)" strokeWidth="1" />
+              <text x={PAD.l - 6} y={gy + 3} textAnchor="end" fontSize="9" fill="var(--color-subtle)">{niceNum(val)}</text>
+            </g>
+          );
+        })}
+        <line x1={PAD.l} y1={zeroY} x2={W - PAD.r} y2={zeroY} stroke="var(--color-divider-light)" strokeWidth="1" />
 
-      {chartType === 'bar' ? (
-        points.map((p, i) => {
-          const bx = x(i) - Math.min(18, iw / points.length / 2);
-          const bw = Math.min(36, iw / points.length - 6);
-          const top = Math.min(y(p.value), zeroY);
-          const h = Math.abs(y(p.value) - zeroY);
-          return <rect key={i} x={bx} y={top} width={Math.max(2, bw)} height={Math.max(1, h)} rx="2" fill={PALETTE[0]} opacity="0.85" />;
-        })
-      ) : (
-        <>
-          {chartType === 'area' && (
-            <polygon
-              points={`${x(0)},${zeroY} ${points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')} ${x(points.length - 1)},${zeroY}`}
-              fill={PALETTE[0]}
-              opacity="0.14"
-            />
-          )}
-          <polyline
-            points={points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')}
-            fill="none"
-            stroke={PALETTE[0]}
-            strokeWidth="2"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-          {points.map((p, i) => <circle key={i} cx={x(i)} cy={y(p.value)} r="2.5" fill={PALETTE[0]} />)}
-        </>
+        {series.map((s, si) => {
+          const color = PALETTE[si % PALETTE.length];
+          const byT = new Map((s.points || []).map((p) => [p.t, p.value]));
+          const pts = xKeys.map((t, i) => ({ i, t, value: byT.get(t) ?? 0, has: byT.has(t) }));
+
+          if (chartType === 'bar') {
+            const group = Math.min(18, iw / xKeys.length / 2);
+            const bw = Math.max(2, Math.min(28, iw / xKeys.length / nSeries - 4));
+            return (
+              <g key={s.title || si}>
+                {pts.filter((p) => p.has).map((p) => {
+                  const bx = x(p.i) - group + si * (bw + 2);
+                  const top = Math.min(y(p.value), zeroY);
+                  const h = Math.abs(y(p.value) - zeroY);
+                  return <rect key={p.i} x={bx} y={top} width={bw} height={Math.max(1, h)} rx="2" fill={color} opacity="0.85" />;
+                })}
+              </g>
+            );
+          }
+          return (
+            <g key={s.title || si}>
+              {chartType === 'area' && pts.some((p) => p.has) && (
+                <polygon
+                  points={`${x(0)},${zeroY} ${pts.filter((p) => p.has).map((p) => `${x(p.i)},${y(p.value)}`).join(' ')} ${x(pts.length - 1)},${zeroY}`}
+                  fill={color}
+                  opacity="0.12"
+                />
+              )}
+              <polyline
+                points={pts.filter((p) => p.has).map((p) => `${x(p.i)},${y(p.value)}`).join(' ')}
+                fill="none"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+              {pts.filter((p) => p.has).map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.value)} r="2.5" fill={color} />)}
+            </g>
+          );
+        })}
+
+        {/* x labels — first / middle / last only, to stay legible */}
+        {[0, Math.floor((xKeys.length - 1) / 2), xKeys.length - 1]
+          .filter((i, idx, arr) => arr.indexOf(i) === idx && xKeys[i])
+          .map((i) => (
+            <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="9" fill="var(--color-subtle)">
+              {String(xKeys[i]).slice(5)}
+            </text>
+          ))}
+      </svg>
+      {nSeries > 1 && (
+        <ul className="flex flex-wrap gap-x-3 gap-y-0.5 px-1 text-[10.5px] text-muted">
+          {series.map((s, si) => (
+            <li key={s.title || si} className="flex items-center gap-1">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: PALETTE[si % PALETTE.length] }} />
+              <span className="truncate">{s.title}</span>
+            </li>
+          ))}
+        </ul>
       )}
-
-      {/* x labels — first / middle / last only, to stay legible */}
-      {[0, Math.floor((points.length - 1) / 2), points.length - 1]
-        .filter((i, idx, arr) => arr.indexOf(i) === idx && points[i])
-        .map((i) => (
-          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="9" fill="var(--color-subtle)">
-            {String(points[i].t).slice(5)}
-          </text>
-        ))}
-    </svg>
+    </div>
   );
 }
 
@@ -141,6 +171,5 @@ export default function TemplateChart({ chartType = 'line', series = [] }) {
   if (chartType === 'pie') {
     return <PieChart slices={series.map((s) => ({ title: s.title, value: Number(s.value) || 0 }))} />;
   }
-  const points = series[0]?.points || [];
-  return <TimeChart chartType={chartType} points={points} />;
+  return <TimeChart chartType={chartType} series={series} />;
 }

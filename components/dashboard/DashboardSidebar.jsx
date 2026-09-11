@@ -26,15 +26,14 @@ function NavRow({ active, icon: Icon, label, onClick }) {
 }
 
 // The reference dashboard's left sidebar: a folder search + Reset + gear, then
-// the nav list = the active template's visible tabs → Overview → (for
-// master_admin / granted users) Template Settings. Active row = dark filled
-// pill. Off-canvas drawer below lg.
+// the nav list = the active template's visible tabs → its Overview tab(s) →
+// (for master_admin / granted users) Template Settings. Active row = dark
+// filled pill. Off-canvas drawer below lg.
 export default function DashboardSidebar({
   tabs = [],
   activeKey,
   onSelect,
-  overviewEnabled = false,
-  overviewName = 'Overview',
+  overviewTabs = [],
   showTemplateSettings = false,
   onOpenTemplateSettings,
   onReset,
@@ -46,6 +45,10 @@ export default function DashboardSidebar({
     const s = q.trim().toLowerCase();
     return s ? tabs.filter((t) => t.name.toLowerCase().includes(s)) : tabs;
   }, [q, tabs]);
+  const filteredOverviews = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? overviewTabs.filter((o) => (o.name || '').toLowerCase().includes(s)) : overviewTabs;
+  }, [q, overviewTabs]);
 
   return (
     <>
@@ -104,10 +107,12 @@ export default function DashboardSidebar({
             />
           ))}
 
-          {overviewEnabled && (!q || overviewName.toLowerCase().includes(q.trim().toLowerCase())) && (
+          {filteredOverviews.length > 0 && (
             <>
               <div className="my-1 border-t border-divider" />
-              <NavRow active={activeKey === '__overview__'} icon={Layers} label={overviewName} onClick={() => onSelect('__overview__')} />
+              {filteredOverviews.map((ov) => (
+                <NavRow key={ov.id} active={activeKey === ov.id} icon={Layers} label={ov.name} onClick={() => onSelect(ov.id)} />
+              ))}
             </>
           )}
 

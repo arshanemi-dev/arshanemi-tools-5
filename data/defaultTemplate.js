@@ -31,25 +31,12 @@ const TITLE_CARDS = [
   { id: 'tc_cogs',     name: 'COGS',        mainValue: v('formula', '[COGS]', 'money'),         subValue: v('formula', '[SKU Count]', 'int') },
 ];
 
-const GRAPH_DESIGNS = [
-  { id: 'gd_trend', name: 'Trend', chartType: 'line' },
-  { id: 'gd_split', name: 'Split', chartType: 'pie' },
-];
-
-const GRAPH_DATA = [
-  {
-    id: 'g_pl_trend', name: 'Profit / Loss over time', type: 'formula', graphDesignId: 'gd_trend',
-    series: [{ title: 'Profit/Loss', value: v('formula', '[Profit/Loss]', 'money'), category: { type: 'times', unit: 'day' } }],
-  },
-  {
-    id: 'g_status_split', name: 'Order status split', type: 'formula', graphDesignId: 'gd_split',
-    series: [
-      { title: 'Delivered', value: v('formula', '[Deliver]', 'int') },
-      { title: 'Return',    value: v('formula', '[Return]', 'int') },
-      { title: 'RTO',       value: v('formula', '[RTO]', 'int') },
-      { title: 'Canceled',  value: v('formula', '[Canceled]', 'int') },
-    ],
-  },
+// A graph is a chart type + the "Graph Header" list it plots — one line/bar
+// per header (auto-split, like the Header section's column list) or one pie
+// slice per header.
+const GRAPHS = [
+  { id: 'g_pl_trend', name: 'Profit / Loss over time', chartType: 'line', headerIds: ['hdr_pl'] },
+  { id: 'g_status_split', name: 'Order status split', chartType: 'pie', headerIds: ['hdr_deliver', 'hdr_return', 'hdr_rto', 'hdr_canceled'] },
 ];
 
 const ALL_TABLE = [
@@ -95,14 +82,14 @@ export const DEFAULT_CONFIG = {
   fileSlots: FILE_SLOTS,
   headers: defaultHeaders(),
   titleCards: TITLE_CARDS,
-  graphDesigns: GRAPH_DESIGNS,
-  graphData: GRAPH_DATA,
+  graphs: GRAPHS,
   tabs: TABS,
-  overviewTab: {
-    enabled: true, name: 'Overview',
-    headerIds: ['hdr_total_order', 'hdr_settlement', 'hdr_pl', 'hdr_cogs', 'hdr_ads_cost', 'hdr_return_pct'],
-  },
-  visibility: { marketplaceInSidebar: true, tabs: {} },
+  overviewTabs: [
+    {
+      id: 'ov_sku', name: 'Overview', order: 0, fixedHeaderId: 'hdr_sku',
+      headerIds: ['hdr_total_order', 'hdr_settlement', 'hdr_pl', 'hdr_cogs', 'hdr_ads_cost', 'hdr_return_pct'],
+    },
+  ],
 };
 
 // Same shape as an entry from GET /api/marketplace-templates/live.

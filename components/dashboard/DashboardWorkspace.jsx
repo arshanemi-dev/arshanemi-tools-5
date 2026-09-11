@@ -26,7 +26,7 @@ import HistoryDrawer from './HistoryDrawer';
 
 const DEFAULT_RANGE = { preset: '6m', ...rangeForPreset('6m') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
-const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, aggregate: {}, companyOptions: [], brandOptions: [], rowCount: 0, platforms: [] };
+const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], brandOptions: [], rowCount: 0, platforms: [] };
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
@@ -47,21 +47,28 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     [templates, activeTemplateId],
   );
 
-  const visibleTabs = useMemo(() => {
-    const vis = config.visibility?.tabs || {};
-    return [...(config.tabs || [])]
-      .filter((t) => vis[t.id] !== false)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [config]);
+  // Every tab that exists shows (no separate visibility toggle).
+  const visibleTabs = useMemo(
+    () => [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [config],
+  );
+
+  // Overview tabs each have their own globally-unique id, so they slot into
+  // the same activeTabId as a regular Tab — no magic '__overview__' string.
+  // Every one that exists shows (no separate visibility toggle).
+  const visibleOverviewTabs = useMemo(
+    () => [...(config.overviewTabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [config],
+  );
 
   // The tab the user last picked; the *actual* active tab is derived from it so
   // switching templates can't leave a dangling id (no setState-in-effect).
   const [preferredTabId, setPreferredTabId] = useState(null);
   const activeTabId = useMemo(() => {
-    if (preferredTabId === '__overview__' && config.overviewTab?.enabled) return '__overview__';
     if (visibleTabs.some((t) => t.id === preferredTabId)) return preferredTabId;
-    return visibleTabs[0]?.id ?? (config.overviewTab?.enabled ? '__overview__' : null);
-  }, [preferredTabId, visibleTabs, config]);
+    if (visibleOverviewTabs.some((o) => o.id === preferredTabId)) return preferredTabId;
+    return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
+  }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
 
   // ── uploads ─────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
@@ -186,14 +193,19 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   const openTemplateSettings = () => { window.location.href = '/profit-loss/template-settings'; };
 
-  const showOverview = activeTabId === '__overview__';
+  const activeOverview = resolved.overviews?.[activeTabId] || null;
+  const showOverview = !!activeOverview;
   const activeTab = visibleTabs.find((t) => t.id === activeTabId) || null;
+  const activeOverviewTab = (config.overviewTabs || []).find((o) => o.id === activeTabId) || null;
 
   // ── build the "current tab" view for export + save ──────────────────────
   const buildView = useCallback(() => {
-    const headerIds = showOverview ? (config.overviewTab?.headerIds || []) : (activeTab?.headerIds || []);
-    const defs = headerIds.map((id) => resolved.headers.find((h) => h.id === id)).filter(Boolean);
-    const cardIds = showOverview ? [] : (activeTab?.titleCardIds || []);
+    const overview = activeOverview || { name: 'Overview', fixedHeader: null, headers: [], rows: [] };
+    const defs = showOverview
+      ? (overview.fixedHeader ? [overview.fixedHeader, ...overview.headers] : [])
+      : (activeTab?.headerIds || []).map((id) => resolved.headers.find((h) => h.id === id)).filter(Boolean);
+    const rows = showOverview ? overview.rows : resolved.tableRows;
+    const cardIds = showOverview ? (activeOverviewTab?.titleCardIds || []) : (activeTab?.titleCardIds || []);
     const cards = cardIds.map((id) => {
       const c = (config.titleCards || []).find((x) => x.id === id);
       const v = resolved.titleCardValues[id] || {};
@@ -201,14 +213,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     });
     return {
       label: config.marketplace?.name || 'Dashboard',
-      tabName: showOverview ? (config.overviewTab?.name || 'Overview') : (activeTab?.name || ''),
+      tabName: showOverview ? (overview.name || 'Overview') : (activeTab?.name || ''),
       cards,
       table: {
         columns: defs.map((d) => d.name),
-        rows: resolved.tableRows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
+        rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
       },
     };
-  }, [showOverview, config, activeTab, resolved]);
+  }, [showOverview, activeOverview, activeOverviewTab, config, activeTab, resolved]);
 
   const doExport = async (kind) => {
     const view = buildView();
@@ -249,8 +261,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         tabs={visibleTabs}
         activeKey={activeTabId}
         onSelect={(id) => { setPreferredTabId(id); onCloseMobileNav(); }}
-        overviewEnabled={!!config.overviewTab?.enabled}
-        overviewName={config.overviewTab?.name || 'Overview'}
+        overviewTabs={visibleOverviewTabs}
         showTemplateSettings={canManageTemplates}
         onOpenTemplateSettings={openTemplateSettings}
         onReset={resetFilters}
@@ -300,7 +311,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             ) : !hasData ? (
               <SheetDropCard />
             ) : showOverview ? (
-              <OverviewTab config={config} resolved={resolved} />
+              <OverviewTab config={config} tab={activeOverviewTab} resolved={resolved} />
             ) : (
               <TabView
                 config={config}

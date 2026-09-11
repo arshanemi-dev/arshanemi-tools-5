@@ -3,9 +3,10 @@
 // structural gate in lib/templateConfig.js — keep the two in sync.
 //
 // A `config` fully describes one marketplace's dashboard: its upload slots +
-// column mappings, its header list + formulas, its Title Cards, its Graph
-// Designs + Graph Data, its Tabs, and its Overview tab. The dashboard is a
-// pure renderer of this; lib/profitLoss/engine.js only supplies base metrics.
+// column mappings, its header list + formulas, its Title Cards, its Graphs
+// (chart type + the headers they plot), its Tabs, and its Overview Tabs (one
+// or more pivots, each on its own fixed header). The dashboard is a pure
+// renderer of this; lib/profitLoss/engine.js only supplies base metrics.
 
 import { nanoid } from 'nanoid';
 
@@ -43,11 +44,9 @@ export function makeEmptyConfig(marketplaceName = '') {
     fileSlots: [],
     headers: [],
     titleCards: [],
-    graphDesigns: [],
-    graphData: [],
+    graphs: [],
     tabs: [],
-    overviewTab: { enabled: false, name: 'Overview', headerIds: [] },
-    visibility: { marketplaceInSidebar: true, tabs: {} },
+    overviewTabs: [],
   };
 }
 
@@ -97,25 +96,13 @@ export function makeTitleCard(name = 'Title Card') {
   };
 }
 
-export function makeGraphDesign(name = 'Graph Design', chartType = 'line') {
-  return { id: newId('gd'), name, chartType };
-}
-
-export function makeSeries(pie = false) {
-  const s = { title: '', value: makeValue('formula') };
-  if (!pie) s.category = { type: 'times', unit: 'day' };
-  return s;
-}
-
-export function makeGraphData(name = 'Graph', chartType = 'line') {
-  const pie = chartType === 'pie';
-  return {
-    id: newId('g'),
-    name,
-    type: 'formula', // formula | number | text | graphDesign
-    graphDesignId: null,
-    series: pie ? [makeSeries(true), makeSeries(true)] : [makeSeries(false)],
-  };
+// A Graph Design (its chart type) and its Graph Data (the headers it plots)
+// are one entity — a chart type + the "Graph Header" list to draw. Pie charts
+// need >= 2 headers (one slice each); line/bar/area take >= 1 header (one
+// series each, plotted over a time bucket) and auto-split into one line/bar
+// per selected header, same idea as the Header section's column list.
+export function makeGraph(name = 'Graph', chartType = 'line') {
+  return { id: newId('g'), name, chartType, headerIds: [] };
 }
 
 export function makeTab(name = 'Tab', order = 0) {
@@ -128,6 +115,26 @@ export function makeTab(name = 'Tab', order = 0) {
     graphIds: [],
     headerIds: [],
     layout: { titleCards: { columns: 4 }, graphs: [], tableDefaultView: 'all' },
+  };
+}
+
+// An Overview tab is a pivot: one Fixed Header (a unique key, e.g. Sku Name —
+// one row per value it takes) plus the other headers that aggregate within
+// each group. There can be several of these, each its own tab in the
+// dashboard sidebar (after the regular Tabs) as soon as it's created — no
+// separate visibility toggle. Same as a Tab, it can also carry its own Title
+// Cards (KPI band) and Graphs — those read the same global titleCardValues /
+// graphSeries every Tab reads from, just a different picked subset.
+export function makeOverviewTab(name = 'Overview', order = 0) {
+  return {
+    id: newId('ov'),
+    name,
+    order,
+    fixedHeaderId: null,
+    headerIds: [],
+    titleCardIds: [],
+    graphIds: [],
+    layout: { titleCards: { columns: 4 } },
   };
 }
 
@@ -162,15 +169,40 @@ function hasFormulaCycle(headers) {
   return false;
 }
 
+// Every section except Header must use each name at most once (headers are
+// referenced by name in [brackets] and already need that uniqueness for a
+// different reason — see knownRef/hasFormulaCycle above; a Tab is free to
+// pick two headers that happen to share a display name, that's fine).
+// `field` lets file slots reuse this against `label` instead of `name`.
+function checkUniqueNames(list, label, push, field = 'name') {
+  const seen = new Set();
+  for (const it of list) {
+    const key = String(it?.[field] || '').trim().toLowerCase();
+    if (!key) continue;
+    if (seen.has(key)) push(`duplicate ${label} ${field}: "${it[field]}"`);
+    seen.add(key);
+  }
+}
+
+// UI-side check for one item's name field, to redden its input live as the
+// user types — same rule as checkUniqueNames, just against a single item
+// instead of collecting every violation in the list.
+export function isDuplicateName(list, id, name, field = 'name') {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return false;
+  return (list || []).some((it) => it?.id !== id && String(it?.[field] || '').trim().toLowerCase() === key);
+}
+
 export function validateConfig(config) {
   const errors = [];
   const push = (m) => errors.push(m);
   if (!config || typeof config !== 'object') return { ok: false, errors: ['config must be an object'] };
 
   const {
-    marketplace = {}, headers = [], titleCards = [], graphDesigns = [],
-    graphData = [], tabs = [], overviewTab = {}, visibility = {},
+    marketplace = {}, fileSlots = [], headers = [], titleCards = [], graphs = [],
+    tabs = [], overviewTabs = [],
   } = config;
+  checkUniqueNames(fileSlots, 'file', push, 'label');
 
   const headerIds = new Set();
   const headerNames = new Set();
@@ -193,6 +225,7 @@ export function validateConfig(config) {
   }
   if (hasFormulaCycle(headers)) push('headers contain a circular formula reference');
 
+  checkUniqueNames(titleCards, 'title card', push);
   const cardIds = new Set();
   for (const c of titleCards) {
     if (!c?.id) { push('every title card needs an id'); continue; }
@@ -204,46 +237,39 @@ export function validateConfig(config) {
     }
   }
 
-  const designIds = new Set();
-  const designType = new Map();
-  for (const g of graphDesigns) {
-    if (!g?.id) { push('every graph design needs an id'); continue; }
-    designIds.add(g.id);
-    if (!CHART_TYPES.includes(g.chartType)) push(`graph design "${g.name || g.id}": bad chartType ${g.chartType}`);
-    designType.set(g.id, g.chartType);
-  }
-
+  checkUniqueNames(graphs, 'graph', push);
   const graphIds = new Set();
-  for (const gd of graphData) {
-    if (!gd?.id) { push('every graph data needs an id'); continue; }
-    graphIds.add(gd.id);
-    if (gd.graphDesignId && !designIds.has(gd.graphDesignId)) push(`graph "${gd.name || gd.id}" references unknown graph design`);
-    const chart = designType.get(gd.graphDesignId);
-    const series = Array.isArray(gd.series) ? gd.series : [];
-    if (chart === 'pie' && series.length < 2) push(`pie graph "${gd.name || gd.id}" needs at least 2 title/value pairs`);
-    if (chart && chart !== 'pie' && series.length !== 1) push(`graph "${gd.name || gd.id}" (${chart}) needs exactly 1 series`);
-    for (const s of series) {
-      for (const ref of refsIn(s?.value?.formula)) {
-        if (!knownRef(ref)) push(`graph "${gd.name || gd.id}" references unknown [${ref}]`);
-      }
-    }
+  for (const g of graphs) {
+    if (!g?.id) { push('every graph needs an id'); continue; }
+    graphIds.add(g.id);
+    if (!CHART_TYPES.includes(g.chartType)) push(`graph "${g.name || g.id}": bad chartType ${g.chartType}`);
+    const headerIdsUsed = Array.isArray(g.headerIds) ? g.headerIds : [];
+    if (g.chartType === 'pie' && headerIdsUsed.length < 2) push(`pie graph "${g.name || g.id}" needs at least 2 headers`);
+    if (g.chartType && g.chartType !== 'pie' && headerIdsUsed.length < 1) push(`graph "${g.name || g.id}" (${g.chartType}) needs at least 1 header`);
+    for (const id of headerIdsUsed) if (!headerIds.has(id)) push(`graph "${g.name || g.id}" references unknown header`);
   }
 
-  const tabIds = new Set();
+  checkUniqueNames(tabs, 'tab', push);
   for (const t of tabs) {
     if (!t?.id) { push('every tab needs an id'); continue; }
-    tabIds.add(t.id);
     for (const id of t.titleCardIds || []) if (!cardIds.has(id)) push(`tab "${t.name || t.id}" references unknown title card`);
     for (const id of t.graphIds || []) if (!graphIds.has(id)) push(`tab "${t.name || t.id}" references unknown graph`);
     for (const id of t.headerIds || []) if (!headerIds.has(id)) push(`tab "${t.name || t.id}" references unknown header`);
   }
 
-  for (const id of overviewTab?.headerIds || []) if (!headerIds.has(id)) push('overview tab references unknown header');
+  checkUniqueNames(overviewTabs, 'overview tab', push);
+  for (const ov of overviewTabs) {
+    if (!ov?.id) { push('every overview tab needs an id'); continue; }
+    for (const id of ov.headerIds || []) if (!headerIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown header`);
+    if (ov.fixedHeaderId && !headerIds.has(ov.fixedHeaderId)) push(`overview tab "${ov.name || ov.id}" fixed header references unknown header`);
+    for (const id of ov.titleCardIds || []) if (!cardIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown title card`);
+    for (const id of ov.graphIds || []) if (!graphIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown graph`);
+  }
+
   for (const key of ['companyHeaderId', 'brandHeaderId', 'groupByHeaderId']) {
     const id = marketplace?.[key];
     if (id && !headerIds.has(id)) push(`marketplace.${key} references unknown header`);
   }
-  for (const id of Object.keys(visibility?.tabs || {})) if (!tabIds.has(id)) push('visibility.tabs references unknown tab');
 
   return { ok: errors.length === 0, errors };
 }

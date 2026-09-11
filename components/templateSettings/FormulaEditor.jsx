@@ -10,12 +10,16 @@ const TOKENS = ['+', '-', '/', '*', '(', ')', '%'];
 // Copy / Post + a text field + helper + live preview. Used by Header /
 // Title Card (×2) / Graph Data. `refNames` are the names a [bracket] can point
 // at; `previewScope` (optional) is a { name: number } map for the live result.
-export default function FormulaEditor({ value = '', onChange, refNames = [], previewScope, placeholder = 'ed.abc&123*dss' }) {
+// Sum / Count wrap the picked header as SUM([Name]) / COUNT([Name]) — the two
+// aggregate operators (lib/profitLoss/formula.js) that reduce a column across
+// every row in the current group, instead of just this row/scope.
+export default function FormulaEditor({ value = '', onChange, refNames = [], previewScope, placeholder = 'ed.abc&123*dss', disabled = false }) {
   const inputRef = useRef(null);
   const [pick, setPick] = useState(refNames[0] || '');
   const [open, setOpen] = useState(false);
 
   const insert = (text) => {
+    if (disabled) return;
     const el = inputRef.current;
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
@@ -38,16 +42,18 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], pre
           <button
             key={t}
             type="button"
+            disabled={disabled}
             onClick={() => insert(t)}
-            className="h-7 w-7 rounded-md border border-divider bg-background text-[13px] font-medium text-muted hover:bg-card-hover"
+            className="h-7 w-7 rounded-md border border-divider bg-background text-[13px] font-medium text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             {t}
           </button>
         ))}
         <button
           type="button"
+          disabled={disabled}
           onClick={() => insert('Text')}
-          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover"
+          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           Text
         </button>
@@ -57,13 +63,14 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], pre
         <div className="relative">
           <button
             type="button"
+            disabled={disabled}
             onClick={() => setOpen((o) => !o)}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-divider bg-background px-2 text-[12px] text-muted hover:bg-card-hover"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-divider bg-background px-2 text-[12px] text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="max-w-[8rem] truncate">{pick || 'Header List'}</span>
             <ChevronDown size={12} />
           </button>
-          {open && (
+          {open && !disabled && (
             <ul className="absolute z-30 mt-1 max-h-60 w-52 overflow-y-auto rounded-lg border border-divider-light bg-background p-1 shadow-lg">
               {refNames.map((n) => (
                 <li key={n}>
@@ -82,18 +89,39 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], pre
         <button
           type="button"
           onClick={() => pick && navigator.clipboard?.writeText(`[${pick}]`)}
-          disabled={!pick}
-          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover disabled:opacity-40"
+          disabled={disabled || !pick}
+          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           Copy
         </button>
         <button
           type="button"
           onClick={() => pick && insert(`[${pick}]`)}
-          disabled={!pick}
-          className="h-7 rounded-md bg-action px-2 text-[12px] font-semibold text-white hover:bg-action-hover disabled:opacity-40"
+          disabled={disabled || !pick}
+          className="h-7 rounded-md bg-action px-2 text-[12px] font-semibold text-white hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           Post
+        </button>
+
+        <span className="mx-1 h-5 w-px bg-divider" />
+
+        <button
+          type="button"
+          title="Sum this column across every row in the group"
+          onClick={() => insert(pick ? `SUM([${pick}])` : 'SUM()')}
+          disabled={disabled}
+          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Sum
+        </button>
+        <button
+          type="button"
+          title="Count this column's non-blank values across every row in the group"
+          onClick={() => insert(pick ? `COUNT([${pick}])` : 'COUNT()')}
+          disabled={disabled}
+          className="h-7 rounded-md border border-divider bg-background px-2 text-[12px] font-medium text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Count
         </button>
       </div>
 
@@ -102,11 +130,13 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], pre
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-divider bg-background px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none"
+        disabled={disabled}
+        className="w-full rounded-lg border border-divider bg-background px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       />
 
       <p className="text-[11px] text-subtle">
-        Reference other columns by name in brackets. Supports <code>+ - / *</code> (or the word “power”), and parentheses.
+        Reference other columns by name in brackets. Supports <code>+ - / *</code> (or the word “power”), parentheses,
+        and <code>SUM([..])</code> / <code>COUNT([..])</code> across the group.
         {preview !== null && (
           <>
             {' '}·{' '}

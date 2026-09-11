@@ -4,15 +4,16 @@ const LABELS = { formula: 'Formula', number: 'Number', text: 'Text', alphanumeri
 
 // The "Formula / Number / Text / Alphanumeric" segmented control from image 2
 // — green when active. Used by Header / Title Card / Graph Data.
-export default function TypeToggle({ value, onChange, options = ['formula', 'number', 'text', 'alphanumeric'] }) {
+export default function TypeToggle({ value, onChange, options = ['formula', 'number', 'text', 'alphanumeric'], disabled = false }) {
   return (
     <div className="inline-flex flex-wrap gap-1 rounded-lg border border-divider bg-card p-0.5">
       {options.map((opt) => (
         <button
           key={opt}
           type="button"
+          disabled={disabled}
           onClick={() => onChange(opt)}
-          className={`rounded-md px-2.5 py-1 text-[12.5px] font-semibold transition-colors ${
+          className={`rounded-md px-2.5 py-1 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             value === opt ? 'bg-action text-white shadow-sm' : 'text-subtle hover:text-foreground'
           }`}
         >

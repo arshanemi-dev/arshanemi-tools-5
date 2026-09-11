@@ -41,6 +41,254 @@
 > **`master_admin` + individually grantable**. ④ **Company** and **Brand** are
 > **two independent filters** (`config.marketplace.companyHeaderId` +
 > `brandHeaderId`), AND‑applied.
+>
+> ---
+>
+> ## Rev 4 (2026‑09‑11) — merged Graph, per‑section Edit/Save, SUM/COUNT, Overview pivot
+>
+> Supersedes every §3/§5.2/§8 reference to `graphDesigns`/`graphData` below —
+> those sections describe the Rev 3 shape; the current code (and this addendum)
+> is authoritative.
+>
+> - **Graph Design + Graph Data are one entity now: `config.graphs[]`**
+>   (`{ id, name, chartType, headerIds[], timeUnit }`, `data/templateSchema.js`
+>   `makeGraph`). No more manual per‑slice formulas — picking a chart type +
+>   "Graph Header" columns (`HeaderPickerStrip`) auto‑splits into one pie slice
+>   or one line/bar/area series **per header**, the same idea as the Header
+>   section's column list. `GraphSection.jsx` replaces `GraphDesignSection.jsx`
+>   + `GraphDataSection.jsx`, with a live **Chart.js** (`chart.js` +
+>   `react-chartjs-2`) demo preview (`GraphPreviewChart.jsx`) — deterministic
+>   seeded demo data at design time; the real dashboard still renders resolved
+>   values via the dependency‑free inline‑SVG `TemplateChart.jsx`
+>   (`GraphStrip`), now multi‑series‑aware.
+> - **Header section split: "Header" (sheet‑mapped/manual) vs "Default
+>   Header"** (`source: 'default'`, renamable, not deletable) — two sidebar
+>   groups over the same `config.headers[]` (`BuilderSidebar.jsx` `GROUPS`
+>   `filter` + shared `selectionKey: 'header'`), one on‑page editor
+>   (`HeaderSection.jsx`).
+> - **Per‑section Edit / Delete / Save.** Every section (Header, Title Card,
+>   Tab, Graph, Overview, the Market Place name/filters block) opens read‑only;
+>   `Edit` unlocks its fields and reveals `Save`; `Save` re‑locks — a **local UI
+>   checkpoint only** (`useEditLock.js` + `ItemHeaderBar.jsx`). The config is
+>   already live via `patchItem()`; actual persistence is still only the
+>   builder's own `Save Draft` / `Save as new version` footer.
+> - **Formula engine gains `SUM([Header])` / `COUNT([Header])`**
+>   (`lib/profitLoss/formula.js` `applyAggregateFns`) — string‑substituted
+>   before parsing, so they fold into surrounding arithmetic. Reduce over
+>   `rows`, an array of per‑row `{ [headerName]: value }` scopes
+>   (`resolveTemplate.js` `computeScope` → `rowScopes`, built from the already
+>   ‑resolved table so formula‑header values are included). Wired into Title
+>   Card / Overview formulas; scoped out of per‑row Header formulas (no
+>   cross‑row context there without a two‑pass rewrite — not attempted).
+> - **Overview tab is a pivot.** `overviewTab.fixedHeaderId` names one unique
+>   key header (e.g. Sku Name) — `resolveTemplate()` groups the filtered rows
+>   by its value and returns `overview: { fixedHeader, headers, rows }`, one
+>   row per unique value, other picked headers aggregated (Σ via the same
+>   `computeScope` each group runs) within it. `OverviewTab.jsx` (dashboard)
+>   and `DashboardWorkspace.jsx`'s export `buildView()` both read
+>   `resolved.overview` instead of the flat `tableRows` when on the Overview
+>   tab.
+> - **Layout decision:** the unified `BuilderSidebar.jsx` accordion (one rail,
+>   collapsible groups) was **kept as‑is** — not reverted to Rev 3's per‑section
+>   stacked lists (§5 below still shows that older layout).
+>
+> ---
+>
+> ## Rev 5 (2026‑09‑11, later) — multiple Overview tabs, per‑section names must
+> ## be unique, reorder-mode fix, section chrome simplified
+>
+> Supersedes every remaining §3/§8 reference to the Rev‑4 singular
+> `overviewTab` below — the current code (and this addendum) is authoritative.
+>
+> - **`config.overviewTab` (one) → `config.overviewTabs[]` (many).** Each is
+>   `{ id, name, order, enabled, fixedHeaderId, headerIds }`
+>   (`makeOverviewTab`) — same pivot idea as Rev 4, just no longer a
+>   singleton. `OverviewTabSection.jsx` is now a list‑based section (add /
+>   rename / delete / reorder from the sidebar, same pattern as Tab/Graph);
+>   `BuilderSidebar.jsx` gained an `overview` group (sorts + reorders by
+>   `.order`, same as `tab`). `resolveTemplate()` returns `overviews: {
+>   [overviewTabId]: {name, fixedHeader, headers, rows} }` instead of one
+>   `overview`. Each overview tab has its own globally‑unique id (`ov_*`
+>   prefix) so the dashboard needs no `'__overview__'` magic string — it's a
+>   tab slot exactly like a regular Tab (`DashboardSidebar.jsx` lists
+>   `overviewTabs[]` after `tabs[]`; `DashboardWorkspace.jsx`'s `activeTabId`
+>   picks from either list uniformly).
+> - **Every section's items must have a unique name except Header** — Title
+>   Card, Tab, Graph, and now Overview Tab all reject (via `validateConfig`'s
+>   new `checkUniqueNames`) two items sharing a name; Header is deliberately
+>   exempt (a Tab can legitimately pick two headers with the same display
+>   name — headers are identified by id, not name uniqueness, for this
+>   purpose).
+> - **Reorder-mode fix:** the Settings toggle now shows a clearly labeled
+>   "Save" pill button at the sidebar's own top bar (not just a small
+>   checkmark buried inside each collapsed group) so it's unmistakable that
+>   reorder mode is active.
+> - **Section chrome simplified again:** the per‑section Edit/Delete/Save
+>   lock added in Rev 4 (`ItemHeaderBar`/`useEditLock`) was removed — fields
+>   are directly editable, no lock; deleting an item is done from the
+>   sidebar's own rename/delete icons. Each section's `SectionHead` instead
+>   grew a "+ Add X" button at its own top‑right. The builder's main content
+>   column is wrapped in a `max-w-4xl` centered column (`bg-surface` gutter)
+>   so section cards don't stretch edge‑to‑edge on wide screens.
+>
+> ---
+>
+> ## Rev 6 (2026‑09‑11, later still) — live split-screen preview
+>
+> The builder's main area is now a 1st‑half/2nd‑half split on `lg:` screens:
+> settings (unchanged) on the left, a live dashboard preview on the right,
+> driven straight off `draft.config` — new `BuilderPreview.jsx`. It generates
+> a small deterministic fake order set (3 SKUs × 14 days, mixed
+> delivered/return/rto/cancelled — `demoCanonicalRows()`, same seeded‑demo
+> idea as Rev 4's `GraphPreviewChart`) and runs it through the **real**
+> `resolveTemplate()` (so the real P&L engine computes it), then renders it
+> with the **same dashboard components the live site uses** —
+> `components/dashboard/{TabView,OverviewTab,KpiCardRow,GraphStrip,
+> DetailsTable}` — behind a small pill strip to switch between the config's
+> Tabs and Overview Tabs. Because it's just `config` in, `resolved` out
+> through a `useMemo`, adding/editing a Header, Title Card, Graph, Tab or
+> Overview Tab in the left half re-renders the right half immediately — no
+> wiring beyond passing `draft.config` down. Below `lg` the split collapses
+> (preview hidden) and a "Preview" button in the footer opens it full‑screen
+> instead. Verified via a node smoke test against `data/defaultTemplate.js`'s
+> `DEFAULT_CONFIG`: title cards / pie graph slices / overview pivot / table
+> all resolve to plausible non‑zero numbers, and appending a Tab to the
+> config is reflected immediately in the resolved output.
+>
+> ---
+>
+> ## Rev 7 (2026‑09‑12) — marketplace visibility is live‑version‑only; Market
+> ## Place filter/group selectors removed
+>
+> - **"Show marketplace to users" checkbox removed** from `MarketPlaceSection.jsx`
+>   — it wrote `config.visibility.marketplaceInSidebar`, which the hub's
+>   `getLiveMarketplaceConfigs()` (`lib/db.js`, backs `/api/marketplace-
+>   templates/live`) was ALSO gating on (`.eq('show_in_sidebar', true)`) on
+>   top of `is_live`. That second gate is now gone — a marketplace is visible
+>   to users purely by having a **live published version** (Version Page's
+>   on/off toggle). `visibility.marketplaceInSidebar` dropped from
+>   `makeEmptyConfig`/`DEFAULT_CONFIG`/hub `emptyConfig()`;
+>   `setMarketplaceVisible` deleted from `useTemplateDraft.js`.
+> - **Overview Tab's "Show in sidebar" checkbox removed** — same idea: an
+>   Overview Tab shows as soon as it's created, no separate toggle. Dropped
+>   `enabled` from `makeOverviewTab` / the default template's overview entry;
+>   `DashboardWorkspace.jsx`'s `visibleOverviewTabs` no longer filters by it.
+> - **Company filter header / Brand filter header / Group table rows by
+>   selectors removed** from `MarketPlaceSection.jsx`'s UI. The underlying
+>   `marketplace.companyHeaderId`/`brandHeaderId`/`groupByHeaderId` fields,
+>   `resolveTemplate()`'s use of them, and the live dashboard's Company/Brand
+>   filters are all untouched — they just default to unset (no filter, group
+>   by SKU) with no builder UI to set them anymore. Existing templates that
+>   already have values keep working as before.
+>
+> ---
+>
+> ## Rev 8 (2026‑09‑12, later) — KPI band wraps instead of scrolling; Overview
+> ## Tabs can carry Title Cards + Graphs like a Tab
+>
+> - **`KpiCardRow.jsx`**: was `overflow-x-auto` (horizontal scroll, cards
+>   `flex-1` with only a `min-w`); now `flex-wrap` with each card bounded
+>   `min-w-[180px] max-w-[260px]` — cards wrap onto new rows instead of
+>   scrolling sideways, matching the reference dashboard.
+> - **Overview Tab gained Title Cards + Graphs**, the same two fields a Tab
+>   has (`makeOverviewTab` → `titleCardIds`, `graphIds`,
+>   `layout.titleCards.columns`), validated the same way
+>   (`validateConfig`/hub mirror check both reference known cards/graphs).
+>   `OverviewTabSection.jsx` grew the same "Title Cards" (+ Cards‑per‑row) and
+>   "Graphs" `Field` blocks a `TabSection.jsx` has — extracted the shared
+>   `Field` wrapper into `components/templateSettings/Field.jsx` since two
+>   sections now use it verbatim. On the dashboard side,
+>   `components/dashboard/OverviewTab.jsx` now takes `{config, tab, resolved}`
+>   (was just `{overview}`) and renders `KpiCardRow`/`GraphStrip` above the
+>   pivot table, reading off the SAME global `resolved.titleCardValues` /
+>   `resolved.graphSeries` every Tab reads — no resolveTemplate.js change
+>   needed, an Overview Tab's title cards/graphs are just a different picked
+>   subset of the same global pool. `DashboardWorkspace.jsx` and
+>   `BuilderPreview.jsx` both updated to pass the raw `config.overviewTabs`
+>   entry through. Verified end-to-end with a node smoke test: config
+>   validates, an Overview Tab's picked title cards/graphs resolve correctly
+>   via the global maps, pivot still works.
+>
+> ---
+>
+> ## Rev 9 (2026‑09‑12, later) — Header is cards not a single-item editor;
+> ## per-Tab visibility toggle removed
+>
+> - **Header section content order moved before Market Place/Files** in
+>   `TemplateBuilder.jsx` (already true in `BuilderSidebar`'s group order —
+>   this just matched the content column to it).
+> - **`HeaderSection.jsx` rewritten from "pick one from the sidebar, edit in
+>   one panel" to "every header is its own always-visible card."** Adding a
+>   header adds another card to the list immediately; each card has its own
+>   inline Delete button (default headers' stays disabled, same rule as
+>   before). Picking a header in the sidebar now just highlights its card
+>   (border + ring) rather than switching which one is shown — matches the
+>   Market Place section's file-slot cards, which already worked this way.
+>   Every other section (Title Card/Graph/Tab/Overview Tab) is unchanged —
+>   still single-active-item + sidebar picker; this was Header-specific.
+> - **Tab's "Show in sidebar" checkbox removed** — a Tab shows in the
+>   dashboard as soon as it's created, same philosophy already applied to
+>   Marketplace visibility (Rev 7) and Overview Tab visibility (Rev 7). With
+>   nothing left writing or reading it, the whole `config.visibility` field
+>   was dropped from `makeEmptyConfig`/`DEFAULT_CONFIG`/hub `emptyConfig()`,
+>   and its now-vacuous reference check removed from both validators
+>   (client `data/templateSchema.js` and hub `lib/templateConfig.js`).
+>   `setTabVisible` deleted from `useTemplateDraft.js`;
+>   `DashboardWorkspace.jsx`'s `visibleTabs` no longer filters by it.
+>
+> ---
+>
+> ## Rev 10 (2026‑09‑12, later still) — Header goes back to master‑detail (all
+> ## cards expanded was one turn only)
+>
+> Rev 9's "every header fully expanded as its own card" turned out to be one
+> step too far — user wants a compact list instead. `HeaderSection.jsx` now
+> has an internal 2‑column layout: **left** = every header as one compact
+> row (name + a small source badge + a Delete icon, default headers' stays
+> disabled) — clicking a row sets it active; **right** = the full editor
+> (name, type, format, show‑in‑table, formula editor) for whichever header is
+> active, same fields as before Rev 9. Picking a header from the outer
+> `BuilderSidebar` still works the same way (`activeId`/`onActiveId`), it
+> just highlights + opens the matching left‑column row instead of a
+> full‑page card. Every other section is still unaffected.
+>
+> ---
+>
+> ## Rev 11 (2026‑09‑12, later still) — Files go master‑detail too; names must
+> ## be unique everywhere except Header, with live red‑border feedback
+>
+> - **File slots now use the same master‑detail layout as Header**: a compact
+>   left‑column list (label + Delete) and the full slot editor (label, Upload
+>   File, extracted‑columns line, header/value row‑index inputs) on the right
+>   for whichever one is selected. `MarketPlaceSection` gained an
+>   `onActiveSlotId` prop (mirrors `onActiveId` elsewhere) so the compact rows
+>   can drive selection themselves, not just receive it from the sidebar.
+> - **File names (labels) must be unique**, same rule as Title Card/Graph/
+>   Tab/Overview Tab — `checkUniqueNames` (both `data/templateSchema.js` and
+>   hub `lib/templateConfig.js`) generalized to take a `field` param
+>   (defaults to `'name'`) so it can check `label` for file slots too.
+> - **New: live red‑border feedback on duplicate names**, everywhere the
+>   uniqueness rule applies (Title Card, Graph, Tab, Overview Tab, File) —
+>   Header stays exempt, per the standing rule. New
+>   `data/templateSchema.js` export `isDuplicateName(list, id, name, field)`
+>   for the single‑item check, and a new shared
+>   `components/templateSettings/NameField.jsx` (a name `<input>` that
+>   reddens its own border the moment it collides with another item's name)
+>   used by all five sections instead of a plain `<input>`.
+> - Fixed in passing: `HeaderSection.jsx`'s and `MarketPlaceSection.jsx`'s
+>   left‑column compact lists had gone missing on disk (empty grid cells) —
+>   restored both; they're required for master‑detail selection to work at
+>   all.
+> - Verified: `npm run build` + `npm run lint` green; `isDuplicateName` and
+>   `validateConfig` sanity‑checked via node (self excluded correctly,
+>   duplicate file labels correctly rejected).
+> - **Follow-up bug from the same rule**: every other "Add X" already
+>   auto-numbered (`Header 4`, `Tab 2`, …) except File, which always created
+>   a slot named plain `"File"` — meaning a 2nd file instantly tripped the
+>   new duplicate-name check with nothing typed yet. Fixed both places that
+>   create a file slot: `MarketPlaceSection.jsx`'s own "+ Add File" button
+>   and `BuilderSidebar.jsx`'s `file` group (`make: (n) => …` was ignoring
+>   `n` entirely) — both now do `File ${n}`.
 
 ---
 

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
-import { AGGREGATE_BUILTIN_NAMES } from '@/data/templateSchema';
+import { Plus } from 'lucide-react';
+import { AGGREGATE_BUILTIN_NAMES, makeTitleCard } from '@/data/templateSchema';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
+import NameField from './NameField';
 
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
@@ -45,9 +46,10 @@ function ValueEditor({ label, value, onChange, refNames, previewScope }) {
 }
 
 // image 2 · Title Card — one name + two independently-formula'd values (main +
-// sub), exactly the KPI card shape the dashboard renders.
+// sub), exactly the KPI card shape the dashboard renders. Rename / delete an
+// item from the sidebar list; this panel edits whichever one is active.
 export default function TitleCardSection({ draft, activeId: activeIdProp, onActiveId }) {
-  const { config, patchItem, removeItem } = draft;
+  const { config, addItem, patchItem } = draft;
   const cards = config.titleCards || [];
   const [localId, setLocalId] = useState(null);
   const activeId = activeIdProp !== undefined ? activeIdProp : localId;
@@ -57,29 +59,36 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
   const refNames = [...(config.headers || []).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
   const previewScope = Object.fromEntries(refNames.map((n) => [n, 100]));
 
+  const addCard = () => {
+    const item = makeTitleCard(`Title Card ${cards.length + 1}`);
+    addItem('titleCards', item);
+    setActiveId(item.id);
+  };
+
   return (
     <div id="section-title-card" className="scroll-mt-24">
-      <SectionHead title="Title Card" desc="A card name plus a main value and a sub value — each its own formula." />
+      <SectionHead
+        title="Title Card"
+        desc="A card name plus a main value and a sub value — each its own formula."
+        right={(
+          <button type="button" onClick={addCard} className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-2.5 py-1 text-[12px] font-medium text-action hover:bg-action-soft">
+            <Plus size={12} /> Add Title Card
+          </button>
+        )}
+      />
       <div className="space-y-3 rounded-xl border border-divider bg-background p-4">
         {!active ? (
           <p className="py-10 text-center text-sm text-subtle">Pick a title card from the list on the left, or add one.</p>
         ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={active.name}
-                  onChange={(e) => patchItem('titleCards', active.id, { name: e.target.value })}
-                  placeholder="Enter Title card name"
-                  className="min-w-[12rem] flex-1 rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => { removeItem('titleCards', active.id); setActiveId(null); }}
-                  className="inline-flex items-center gap-1 rounded-full bg-neg/10 px-3 py-1.5 text-xs font-semibold text-neg hover:bg-neg/20"
-                >
-                  <Trash2 size={12} /> Delete
-                </button>
-              </div>
+              <NameField
+                list={cards}
+                id={active.id}
+                value={active.name}
+                onChange={(name) => patchItem('titleCards', active.id, { name })}
+                placeholder="Enter Title card name"
+                className="w-full max-w-md"
+              />
               <ValueEditor
                 label="Add Main Value"
                 value={active.mainValue}
