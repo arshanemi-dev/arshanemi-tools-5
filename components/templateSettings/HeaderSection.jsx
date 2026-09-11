@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { AGGREGATE_BUILTIN_NAMES, makeHeader } from '@/data/templateSchema';
-import ListEditorColumn from './ListEditorColumn';
+import { AGGREGATE_BUILTIN_NAMES } from '@/data/templateSchema';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
 
-const SOURCE_LABEL = { default: 'default', extracted: 'sheet', manual: 'added' };
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
 // image 2 · Header — the template's header list. Default headers (bound to an
@@ -16,10 +14,12 @@ const FORMATS = ['money', 'int', 'pct', 'text'];
 // headers appear only for sheet columns that were NOT mapped to a default one
 // in the Market Place section (the "union" rule). Formula headers reference
 // other headers by [name].
-export default function HeaderSection({ draft }) {
-  const { config, addItem, patchItem, removeItem } = draft;
+export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId }) {
+  const { config, patchItem, removeItem } = draft;
   const headers = config.headers || [];
-  const [activeId, setActiveId] = useState(headers[0]?.id || null);
+  const [localId, setLocalId] = useState(null);
+  const activeId = activeIdProp !== undefined ? activeIdProp : localId;
+  const setActiveId = onActiveId || setLocalId;
   const active = headers.find((h) => h.id === activeId) || null;
 
   const refNames = [
@@ -27,12 +27,6 @@ export default function HeaderSection({ draft }) {
     ...AGGREGATE_BUILTIN_NAMES,
   ];
   const previewScope = Object.fromEntries(refNames.map((n) => [n, 100]));
-
-  const addHeader = () => {
-    const h = makeHeader({ name: `Header ${headers.length + 1}`, type: 'number', source: 'manual' });
-    addItem('headers', h);
-    setActiveId(h.id);
-  };
 
   const counts = headers.reduce((acc, h) => { acc[h.source] = (acc[h.source] || 0) + 1; return acc; }, {});
 
@@ -42,24 +36,10 @@ export default function HeaderSection({ draft }) {
         title="Header"
         desc={`The template's column list — default ${counts.default || 0} · from sheets ${counts.extracted || 0} · added ${counts.manual || 0}.`}
       />
-      <div className="flex flex-wrap gap-4">
-        <ListEditorColumn
-          title="Headers"
-          items={headers.map((h) => ({ id: h.id, label: h.name }))}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onAdd={addHeader}
-          addLabel="Add New Header"
-          renderMeta={(it) => {
-            const h = headers.find((x) => x.id === it.id);
-            return <span className="shrink-0 text-[10px] uppercase text-subtle">{SOURCE_LABEL[h?.source] || ''}</span>;
-          }}
-        />
-
-        <div className="min-w-0 flex-1 rounded-xl border border-divider bg-background p-4">
-          {!active ? (
-            <p className="py-10 text-center text-sm text-subtle">Select or add a header.</p>
-          ) : (
+      <div className="rounded-xl border border-divider bg-background p-4">
+        {!active ? (
+          <p className="py-10 text-center text-sm text-subtle">Pick a header from the list on the left, or add one.</p>
+        ) : (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -123,7 +103,6 @@ export default function HeaderSection({ draft }) {
               )}
             </div>
           )}
-        </div>
       </div>
     </div>
   );

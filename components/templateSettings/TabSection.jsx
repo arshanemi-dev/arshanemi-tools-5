@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { makeTab } from '@/data/templateSchema';
-import ListEditorColumn from './ListEditorColumn';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
 
@@ -12,10 +10,12 @@ const ICON_OPTIONS = ['LayoutDashboard', 'ShoppingCart', 'Undo2', 'TrendingUp', 
 // image 2 · Tab — each entry in the user's sidebar. Compose + order its Title
 // Cards, Graphs and Headers, set the KPI grid width, and toggle whether the
 // tab shows in the dashboard sidebar at all.
-export default function TabSection({ draft }) {
-  const { config, addItem, patchItem, removeItem, setTabVisible } = draft;
+export default function TabSection({ draft, activeId: activeIdProp, onActiveId }) {
+  const { config, patchItem, removeItem, setTabVisible } = draft;
   const tabs = [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const [activeId, setActiveId] = useState(tabs[0]?.id || null);
+  const [localId, setLocalId] = useState(null);
+  const activeId = activeIdProp !== undefined ? activeIdProp : localId;
+  const setActiveId = onActiveId || setLocalId;
   const active = tabs.find((t) => t.id === activeId) || null;
 
   const cardOpts = (config.titleCards || []).map((c) => ({ id: c.id, name: c.name }));
@@ -23,32 +23,15 @@ export default function TabSection({ draft }) {
   const headerOpts = (config.headers || []).map((h) => ({ id: h.id, name: h.name }));
   const visible = (id) => config.visibility?.tabs?.[id] !== false;
 
-  const add = () => {
-    const t = makeTab(`Tab ${tabs.length + 1}`, tabs.length);
-    addItem('tabs', t);
-    setActiveId(t.id);
-  };
   const patchLayout = (patch) => patchItem('tabs', active.id, { layout: { ...active.layout, ...patch } });
 
   return (
     <div id="section-tab" className="scroll-mt-24">
       <SectionHead title="Tab" desc="The dashboard sidebar entries and what each one shows." />
-      <div className="flex flex-wrap gap-4">
-        <ListEditorColumn
-          title="Tabs"
-          items={tabs.map((t) => ({ id: t.id, label: t.name }))}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onAdd={add}
-          addLabel="Add New Tab"
-          renderMeta={(it) => (
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${visible(it.id) ? 'bg-action' : 'bg-divider-light'}`} />
-          )}
-        />
-        <div className="min-w-0 flex-1 space-y-4 rounded-xl border border-divider bg-background p-4">
-          {!active ? (
-            <p className="py-10 text-center text-sm text-subtle">Select or add a tab.</p>
-          ) : (
+      <div className="space-y-4 rounded-xl border border-divider bg-background p-4">
+        {!active ? (
+          <p className="py-10 text-center text-sm text-subtle">Pick a tab from the list on the left, or add one.</p>
+        ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -101,7 +84,6 @@ export default function TabSection({ draft }) {
               </Field>
             </>
           )}
-        </div>
       </div>
     </div>
   );

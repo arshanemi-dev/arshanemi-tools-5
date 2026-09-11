@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { AGGREGATE_BUILTIN_NAMES, TIME_UNITS, makeGraphData, makeSeries } from '@/data/templateSchema';
-import ListEditorColumn from './ListEditorColumn';
+import { AGGREGATE_BUILTIN_NAMES, TIME_UNITS, makeSeries } from '@/data/templateSchema';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
@@ -22,11 +21,13 @@ function fitSeries(series, isPie) {
 // image 2 · Graph Data — binds data to a Graph Design. Pie needs ≥ 2
 // formula-driven title/value pairs; every other chart takes exactly one
 // measure formula plus a fixed "times" (time-bucket) x-axis.
-export default function GraphDataSection({ draft }) {
-  const { config, addItem, patchItem, removeItem } = draft;
+export default function GraphDataSection({ draft, activeId: activeIdProp, onActiveId }) {
+  const { config, patchItem, removeItem } = draft;
   const graphs = config.graphData || [];
   const designs = config.graphDesigns || [];
-  const [activeId, setActiveId] = useState(graphs[0]?.id || null);
+  const [localId, setLocalId] = useState(null);
+  const activeId = activeIdProp !== undefined ? activeIdProp : localId;
+  const setActiveId = onActiveId || setLocalId;
   const active = graphs.find((g) => g.id === activeId) || null;
 
   const refNames = [...(config.headers || []).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
@@ -34,11 +35,6 @@ export default function GraphDataSection({ draft }) {
   const chartType = designs.find((d) => d.id === active?.graphDesignId)?.chartType || null;
   const isPie = chartType === 'pie';
 
-  const add = () => {
-    const g = makeGraphData(`Graph ${graphs.length + 1}`, 'line');
-    addItem('graphData', g);
-    setActiveId(g.id);
-  };
   const setSeries = (series) => patchItem('graphData', active.id, { series });
   const patchSeries = (i, patch) => setSeries(active.series.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
@@ -50,19 +46,10 @@ export default function GraphDataSection({ draft }) {
   return (
     <div id="section-graph-data" className="scroll-mt-24">
       <SectionHead title="Graph Data" desc="Bind a measure (or measures, for pie) to a Graph Design." />
-      <div className="flex flex-wrap gap-4">
-        <ListEditorColumn
-          title="Graph Data"
-          items={graphs.map((g) => ({ id: g.id, label: g.name }))}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onAdd={add}
-          addLabel="Add Graph Data"
-        />
-        <div className="min-w-0 flex-1 space-y-4 rounded-xl border border-divider bg-background p-4">
-          {!active ? (
-            <p className="py-10 text-center text-sm text-subtle">Select or add a graph.</p>
-          ) : (
+      <div className="space-y-4 rounded-xl border border-divider bg-background p-4">
+        {!active ? (
+          <p className="py-10 text-center text-sm text-subtle">Pick a graph from the list on the left, or add one.</p>
+        ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -153,7 +140,6 @@ export default function GraphDataSection({ draft }) {
               )}
             </>
           )}
-        </div>
       </div>
     </div>
   );

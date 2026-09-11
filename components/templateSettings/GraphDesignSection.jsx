@@ -2,40 +2,26 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { CHART_TYPES, CHART_LABELS, makeGraphDesign } from '@/data/templateSchema';
-import ListEditorColumn from './ListEditorColumn';
+import { CHART_TYPES, CHART_LABELS } from '@/data/templateSchema';
 import SectionHead from './SectionHead';
 
 // image 2 · Graph Design — reusable chart shells (a name + a chart type). Graph
 // Data entries bind to one of these.
-export default function GraphDesignSection({ draft }) {
-  const { config, addItem, patchItem, removeItem } = draft;
+export default function GraphDesignSection({ draft, activeId: activeIdProp, onActiveId }) {
+  const { config, patchItem, removeItem } = draft;
   const designs = config.graphDesigns || [];
-  const [activeId, setActiveId] = useState(designs[0]?.id || null);
+  const [localId, setLocalId] = useState(null);
+  const activeId = activeIdProp !== undefined ? activeIdProp : localId;
+  const setActiveId = onActiveId || setLocalId;
   const active = designs.find((d) => d.id === activeId) || null;
-
-  const add = () => {
-    const d = makeGraphDesign(`Graph Design ${designs.length + 1}`, 'line');
-    addItem('graphDesigns', d);
-    setActiveId(d.id);
-  };
 
   return (
     <div id="section-graph-design" className="scroll-mt-24">
       <SectionHead title="Graph Design" desc="Name a chart and pick its type." />
-      <div className="flex flex-wrap gap-4">
-        <ListEditorColumn
-          title="Graph Designs"
-          items={designs.map((d) => ({ id: d.id, label: d.name }))}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onAdd={add}
-          addLabel="Add Graph Design"
-        />
-        <div className="min-w-0 flex-1 space-y-4 rounded-xl border border-divider bg-background p-4">
-          {!active ? (
-            <p className="py-10 text-center text-sm text-subtle">Select or add a graph design.</p>
-          ) : (
+      <div className="space-y-4 rounded-xl border border-divider bg-background p-4">
+        {!active ? (
+          <p className="py-10 text-center text-sm text-subtle">Pick a graph design from the list on the left, or add one.</p>
+        ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -68,7 +54,6 @@ export default function GraphDesignSection({ draft }) {
               </div>
             </>
           )}
-        </div>
       </div>
     </div>
   );

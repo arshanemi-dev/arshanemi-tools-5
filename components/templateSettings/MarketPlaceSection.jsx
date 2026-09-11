@@ -11,7 +11,7 @@ import SectionHead from './SectionHead';
 // buttons) plus the Unmap / Our / Map column-mapping grid. Mapping a sheet
 // header to a default header removes it from the header pool (the "union" rule
 // — see HeaderSection).
-export default function MarketPlaceSection({ draft }) {
+export default function MarketPlaceSection({ draft, activeSlotId = null }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem, patchItem, removeItem, updateMarketplace, setMarketplaceVisible } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
@@ -147,7 +147,7 @@ export default function MarketPlaceSection({ draft }) {
         </div>
         <div className="flex flex-wrap gap-3">
           {slots.map((s) => (
-            <div key={s.id} className="w-56 rounded-lg border border-divider bg-card p-3">
+            <div key={s.id} className={`w-56 rounded-lg border bg-card p-3 ${activeSlotId === s.id ? 'border-accent ring-1 ring-accent/40' : 'border-divider'}`}>
               <div className="flex items-center gap-1.5">
                 <input
                   value={s.label}
