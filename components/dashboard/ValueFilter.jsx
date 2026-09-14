@@ -3,11 +3,10 @@
 import { ChevronDown } from 'lucide-react';
 import Popover from './Popover';
 
-// One dropdown value filter — used twice, independently: "Select Brand ▾" in
-// the toolbar (config.marketplace.brandHeaderId) and "All Companies ▾" in the
-// header bar (config.marketplace.companyHeaderId). `value` is 'all' or one of
-// `options`. Disabled (greyed) when the template binds no header for it or the
-// loaded data has no distinct values yet.
+// One dropdown value filter — e.g. "All Companies ▾" in the header bar,
+// listing the distinct "MarketPlace_Brand" combos tagged onto the loaded
+// rows (see resolveTemplate's companyOptions). `value` is 'all' or one of
+// `options`. Disabled (greyed) when there's no data loaded yet.
 export default function ValueFilter({ label, allLabel = `All ${label}`, options = [], value = 'all', onChange, align = 'left' }) {
   const disabled = !options.length;
   const current = value === 'all' ? allLabel : value;

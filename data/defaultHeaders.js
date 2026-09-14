@@ -1,12 +1,11 @@
 // The built-in "default headers" the Template Settings builder seeds every new
-// template with, and the columns the zero-config fallback dashboard renders
-// (data/defaultTemplate.js). Each binds to a base metric the P&L engine
+// template with. Each binds to a base metric the P&L engine
 // (lib/profitLoss/engine.js) already computes per groupBy row — `primitive` is
 // the key on an engine skuRow. Formula-type headers / title cards reference
 // these by their `name` in [brackets].
 //
-// Ids are STABLE strings (not generated) so the fallback template and the
-// builder's seeded state both reference the same header across reloads.
+// Ids are STABLE strings (not generated) so the builder's seeded state
+// references the same header across reloads.
 
 export const DEFAULT_HEADERS = [
   // ── the 14 columns from the reference dashboard table (showInTable) ──

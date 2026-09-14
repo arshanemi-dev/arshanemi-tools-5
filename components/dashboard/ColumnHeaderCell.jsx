@@ -2,10 +2,15 @@
 
 import { ArrowDown, ArrowUp, ChevronsUpDown, Filter } from 'lucide-react';
 import Popover from './Popover';
+import ArrangeControl from './ArrangeControl';
 
-// One <th> body: label + filter popover + tri-state sort toggle.
+// One <th> body: label + filter popover + tri-state sort toggle, plus an
+// inline ArrangeControl when this column offers one (never for the sticky
+// first column — see DetailsTable). Sort/filter hide entirely while the
+// table is in edit mode — arranging is the only thing to do with a header
+// then, on every column including the sticky one.
 // filter shape: { op:'contains'|'gte'|'lte'|'between', a, b } | null
-export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFilterChange }) {
+export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFilterChange, editMode = false, showArrange = false, items, hiddenIds, onSwapWith, onHide }) {
   const dir = sort?.key === col.key ? sort.dir : null;
   const isText = col.type === 'text';
 
@@ -21,79 +26,92 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
   return (
     <div className="flex items-center gap-1">
       <span>{col.label}</span>
-      <button
-        type="button"
-        onClick={cycleSort}
-        className={`rounded p-0.5 transition-colors hover:bg-card-hover ${dir ? 'text-action' : 'text-subtle'}`}
-        aria-label={`Sort by ${col.label}`}
-      >
-        <SortIcon size={12} />
-      </button>
-      <Popover
-        align="left"
-        panelClass="min-w-[13rem] p-2"
-        trigger={() => (
+      {!editMode && (
+        <>
           <button
             type="button"
-            className={`rounded p-0.5 transition-colors hover:bg-card-hover ${active ? 'text-action' : 'text-subtle'}`}
-            aria-label={`Filter ${col.label}`}
+            onClick={cycleSort}
+            className={`rounded p-0.5 transition-colors hover:bg-card-hover ${dir ? 'text-action' : 'text-subtle'}`}
+            aria-label={`Sort by ${col.label}`}
           >
-            <Filter size={12} />
+            <SortIcon size={12} />
           </button>
-        )}
-      >
-        {(close) => (
-          <div className="space-y-2">
-            {isText ? (
-              <input
-                autoFocus
-                placeholder="Contains…"
-                defaultValue={filter?.a ?? ''}
-                onChange={(e) =>
-                  onFilterChange(e.target.value ? { op: 'contains', a: e.target.value } : null)
-                }
-                className="w-full rounded-lg border border-divider-light bg-background px-2.5 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-              />
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  placeholder="min"
-                  defaultValue={filter?.a ?? ''}
-                  onChange={(e) => {
-                    const a = e.target.value;
-                    onFilterChange(mergeRange(filter, { a }));
-                  }}
-                  className="w-full rounded-lg border border-divider-light bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-                />
-                <span className="text-xs text-subtle">–</span>
-                <input
-                  type="number"
-                  placeholder="max"
-                  defaultValue={filter?.b ?? ''}
-                  onChange={(e) => {
-                    const b = e.target.value;
-                    onFilterChange(mergeRange(filter, { b }));
-                  }}
-                  className="w-full rounded-lg border border-divider-light bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-                />
-              </div>
-            )}
-            {active && (
+          <Popover
+            align="left"
+            panelClass="min-w-[13rem] p-2"
+            trigger={() => (
               <button
                 type="button"
-                onClick={() => {
-                  onFilterChange(null);
-                  close();
-                }}
-                className="w-full rounded-lg border border-divider-light px-2 py-1 text-xs text-muted hover:bg-card-hover"
+                className={`rounded p-0.5 transition-colors hover:bg-card-hover ${active ? 'text-action' : 'text-subtle'}`}
+                aria-label={`Filter ${col.label}`}
               >
-                Clear filter
+                <Filter size={12} />
               </button>
             )}
-          </div>
-        )}
-      </Popover>
+          >
+            {(close) => (
+              <div className="space-y-2">
+                {isText ? (
+                  <input
+                    autoFocus
+                    placeholder="Contains…"
+                    defaultValue={filter?.a ?? ''}
+                    onChange={(e) =>
+                      onFilterChange(e.target.value ? { op: 'contains', a: e.target.value } : null)
+                    }
+                    className="w-full rounded-lg border border-divider-light bg-background px-2.5 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+                  />
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      placeholder="min"
+                      defaultValue={filter?.a ?? ''}
+                      onChange={(e) => {
+                        const a = e.target.value;
+                        onFilterChange(mergeRange(filter, { a }));
+                      }}
+                      className="w-full rounded-lg border border-divider-light bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+                    />
+                    <span className="text-xs text-subtle">–</span>
+                    <input
+                      type="number"
+                      placeholder="max"
+                      defaultValue={filter?.b ?? ''}
+                      onChange={(e) => {
+                        const b = e.target.value;
+                        onFilterChange(mergeRange(filter, { b }));
+                      }}
+                      className="w-full rounded-lg border border-divider-light bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+                    />
+                  </div>
+                )}
+                {active && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onFilterChange(null);
+                      close();
+                    }}
+                    className="w-full rounded-lg border border-divider-light px-2 py-1 text-xs text-muted hover:bg-card-hover"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+            )}
+          </Popover>
+        </>
+      )}
+      {showArrange && (
+        <ArrangeControl
+          currentId={col.id}
+          items={items}
+          hiddenIds={hiddenIds}
+          onSwapWith={onSwapWith}
+          onHide={onHide}
+        />
+      )}
     </div>
   );
 }

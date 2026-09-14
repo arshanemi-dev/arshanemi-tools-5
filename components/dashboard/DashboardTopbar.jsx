@@ -5,10 +5,9 @@ import Image from 'next/image';
 import { Menu } from 'lucide-react';
 import UserMenu from './UserMenu';
 import { redirectToLogin } from '@/lib/authGate';
-import { NAV_ITEMS, ACTIVE_NAV_KEY } from '@/data/nav';
 
-// The reference dashboard's dark navbar: logo, the multi-tool link row
-// (data/nav.js — "Profit & loss" is the active item), and login / account.
+// The dark navbar: logo, a centered "Profit & loss" label, and login / account.
+// (Previously showed the full data/nav.js multi-tool link row.)
 export default function DashboardTopbar({ user, onLogout, onMenuClick }) {
   return (
     <header className="sticky top-0 z-50 flex-shrink-0 border-b border-white/10 bg-footer">
@@ -29,18 +28,10 @@ export default function DashboardTopbar({ user, onLogout, onMenuClick }) {
             <Image src="/images/barmeto-logo.png" alt="Barmeto" width={132} height={40} className="h-9 w-auto rounded-lg" priority />
           </Link>
 
-          <nav className="flex min-w-0 flex-1 items-center gap-5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            {NAV_ITEMS.map((item) => {
-              const active = item.key === ACTIVE_NAV_KEY;
-              const cls = `whitespace-nowrap text-sm transition-colors ${
-                active ? 'font-semibold text-white underline underline-offset-8 decoration-2' : 'text-white/70 hover:text-white'
-              }`;
-              return item.internal ? (
-                <Link key={item.key} href={item.href} className={cls}>{item.label}</Link>
-              ) : (
-                <a key={item.key} href={item.href} className={cls}>{item.label}</a>
-              );
-            })}
+          <nav className="flex min-w-0 flex-1 items-center justify-center">
+            <span className="whitespace-nowrap text-sm font-semibold text-white underline underline-offset-8 decoration-2">
+              Profit & loss
+            </span>
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">

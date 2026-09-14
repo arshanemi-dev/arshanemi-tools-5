@@ -8,7 +8,7 @@ export default function AdsCostControl({ value, onChange }) {
   const { mode = 'percent', value: v = 0 } = value || {};
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-divider-light bg-background px-3 py-1.5 text-sm">
+    <div className="items-center gap-2 rounded-full border border-divider-light bg-background px-3 py-1.5 text-sm hidden">
       <Megaphone size={14} className="text-muted" />
       <span className="text-muted">Ad spend</span>
       <div className="flex overflow-hidden rounded-full border border-divider-light">

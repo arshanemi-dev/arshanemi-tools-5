@@ -27,8 +27,10 @@ export function pickBestTab(platformId, byTab, sheetNames) {
 // Map a batch of raw sheet rows to canonical rows for one platform, then apply
 // the user's Sheet Settings header-map overrides on top. `mapping` is only
 // consulted by the 'manual' platform's own mapper; `headerMap` is the generic
-// override layer that works for every platform.
-export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mapping } = {}) {
+// override layer that works for every platform. `tag` (the brand picked in
+// the toolbar before this upload, plus the "MarketPlace_Brand" combo derived
+// from it) is stamped onto every row the same way regardless of platform.
+export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mapping, tag } = {}) {
   const plat = getPlatform(platformId);
   const hasOverrides = headerMap && Object.keys(headerMap).length > 0;
   const out = [];
@@ -43,6 +45,7 @@ export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mappin
     }
     if (!c) return;
     if (hasOverrides) c = applyHeaderMap(c, raw, headerMap);
+    if (tag) { c.brand = tag.brand ?? c.brand; c.company = tag.company ?? c.company; }
     // Drop rows that carry no usable signal at all.
     if ((c.sku === '—' || !c.sku) && !c.settlement && !c.grossSale && !c.qty) return;
     out.push(c);

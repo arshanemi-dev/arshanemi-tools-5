@@ -4,8 +4,7 @@ import { ChevronDown, Store } from 'lucide-react';
 import Popover from './Popover';
 
 // "Market Place ▾" — picks which published marketplace template drives the
-// dashboard. Always lists the built-in Default first, then every live
-// template from GET /api/marketplace-templates/live.
+// dashboard, from GET /api/marketplace-templates/live.
 export default function MarketplacePicker({ templates = [], activeId, onChange }) {
   const active = templates.find((t) => t.id === activeId) || templates[0];
 
@@ -36,7 +35,6 @@ export default function MarketplacePicker({ templates = [], activeId, onChange }
               }`}
             >
               <span className="truncate">{t.marketplaceName}</span>
-              {t.isFallback && <span className="shrink-0 text-[10px] uppercase text-subtle">built-in</span>}
             </button>
           ))}
         </>

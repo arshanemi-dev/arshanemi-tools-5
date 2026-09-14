@@ -35,9 +35,7 @@ export default function DashboardHeaderBar({
 
       <div className="flex flex-wrap items-center gap-2">
         <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} />
-        {showSetting && (
-          <IconButton icon={Settings} label="Setting" title="Open Template Settings" tone="ghost" onClick={onOpenSetting} />
-        )}
+       
         <ValueFilter label="Companies" allLabel="All Companies" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
         <AdsCostControl value={ads} onChange={onAdsChange} />

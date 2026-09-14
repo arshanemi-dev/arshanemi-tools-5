@@ -7,7 +7,7 @@ import ColumnHeaderCell from './ColumnHeaderCell';
 // ({ id, name, format, signed }) in display order; `rows` =
 // resolveTemplate().tableRows ({ key, cells: { [headerId]: { raw, display } } }).
 // First column is sticky/linked, rest sortable + per-column filterable.
-export default function DetailsTable({ columns = [], rows = [] }) {
+export default function DetailsTable({ columns = [], rows = [], editMode = false, arrange }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
     key: h.id,
@@ -85,6 +85,12 @@ export default function DetailsTable({ columns = [], rows = [] }) {
                     onSortChange={setSort}
                     filter={filters[col.key]}
                     onFilterChange={(f) => setFilters((prev) => ({ ...prev, [col.key]: f }))}
+                    editMode={editMode}
+                    showArrange={editMode && !col.sticky}
+                    items={arrange?.allItems}
+                    hiddenIds={arrange?.hiddenIds}
+                    onSwapWith={(targetId) => arrange?.swapWith(col.id, targetId)}
+                    onHide={() => arrange?.hide(col.id)}
                   />
                 </th>
               ))}
@@ -94,7 +100,7 @@ export default function DetailsTable({ columns = [], rows = [] }) {
             {view.length === 0 && (
               <tr>
                 <td colSpan={cols.length + 1} className="px-4 py-10 text-center text-sm text-muted">
-                  No rows match the current filters.
+                  {rows.length === 0 ? 'No data yet — upload a sheet to see rows here.' : 'No rows match the current filters.'}
                 </td>
               </tr>
             )}

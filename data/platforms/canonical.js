@@ -100,6 +100,11 @@ export function canonicalRow(partial) {
     },
     taxes: { tcs: 0, tds: 0, gstOnFees: 0, ...(partial.taxes ?? {}) },
     commissionRate: partial.commissionRate ?? null,
+    // The brand picked in the toolbar before this file was uploaded, and the
+    // "MarketPlace_Brand" combo derived from it — tagged onto every row by
+    // mapRowsForPlatform's `tag` option, not extracted from the sheet.
+    brand: partial.brand ?? null,
+    company: partial.company ?? null,
     meta: partial.meta ?? {},
   };
 }

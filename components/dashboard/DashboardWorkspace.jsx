@@ -1,19 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { isLoggedIn } from '@/lib/tokenStore';
-import { getSettings, putSettings } from '@/lib/profitLoss/apiClient';
 import { listLiveTemplates } from '@/lib/profitLoss/templatesApi';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
+import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
 import { detectPlatform } from '@/data/platforms/detect';
 import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
 import { downloadTemplateXlsx, downloadTemplatePdf } from '@/lib/profitLoss/exportTemplate';
-import { DEFAULT_TEMPLATE } from '@/data/defaultTemplate';
+import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
+import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { useToast } from '@/components/admin/Toast';
 
 import DashboardSidebar from './DashboardSidebar';
@@ -21,54 +21,55 @@ import DashboardToolbar from './DashboardToolbar';
 import DashboardHeaderBar from './DashboardHeaderBar';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
-import SheetDropCard from './SheetDropCard';
 import HistoryDrawer from './HistoryDrawer';
+import NoMarketplaces from './NoMarketplaces';
+import NoTemplateSidebar from './NoTemplateSidebar';
 
 const DEFAULT_RANGE = { preset: '6m', ...rangeForPreset('6m') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
-const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], brandOptions: [], rowCount: 0, platforms: [] };
+const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], rowCount: 0, platforms: [] };
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
 
   // ── templates ───────────────────────────────────────────────────────────
-  const [templates, setTemplates] = useState([DEFAULT_TEMPLATE]);
-  const [activeTemplateId, setActiveTemplateId] = useState(DEFAULT_TEMPLATE.id);
+  // Starts empty and stays empty unless a real marketplace template is
+  // published — no built-in fallback config, so a fresh install with nothing
+  // configured shows "No marketplaces" instead of a fake dashboard.
+  const [templates, setTemplates] = useState([]);
+  const [templatesReady, setTemplatesReady] = useState(false);
+  const [activeTemplateId, setActiveTemplateId] = useState(null);
 
   useEffect(() => {
-    listLiveTemplates().then(({ ok, data }) => {
-      if (!ok || !Array.isArray(data?.templates) || !data.templates.length) return;
-      setTemplates([DEFAULT_TEMPLATE, ...data.templates]);
-    });
+    listLiveTemplates()
+      .then(({ ok, data }) => {
+        const live = ok && Array.isArray(data?.templates) ? data.templates : [];
+        if (live.length) {
+          setTemplates(live);
+          setActiveTemplateId(live[0].id);
+        }
+      })
+      .finally(() => setTemplatesReady(true));
   }, []);
 
   const config = useMemo(
-    () => (templates.find((t) => t.id === activeTemplateId) || DEFAULT_TEMPLATE).config,
+    () => (templates.find((t) => t.id === activeTemplateId) || templates[0])?.config ?? {},
     [templates, activeTemplateId],
   );
 
-  // Every tab that exists shows (no separate visibility toggle).
-  const visibleTabs = useMemo(
+  // Every tab the template defines, in template order — the full list the
+  // sidebar's edit-mode "Tabs" dropdown reorders/hides from.
+  const allTabsSorted = useMemo(
     () => [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [config],
   );
 
   // Overview tabs each have their own globally-unique id, so they slot into
   // the same activeTabId as a regular Tab — no magic '__overview__' string.
-  // Every one that exists shows (no separate visibility toggle).
-  const visibleOverviewTabs = useMemo(
+  const allOverviewTabsSorted = useMemo(
     () => [...(config.overviewTabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [config],
   );
-
-  // The tab the user last picked; the *actual* active tab is derived from it so
-  // switching templates can't leave a dangling id (no setState-in-effect).
-  const [preferredTabId, setPreferredTabId] = useState(null);
-  const activeTabId = useMemo(() => {
-    if (visibleTabs.some((t) => t.id === preferredTabId)) return preferredTabId;
-    if (visibleOverviewTabs.some((o) => o.id === preferredTabId)) return preferredTabId;
-    return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
-  }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
 
   // ── uploads ─────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
@@ -82,42 +83,67 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   }, [uploads]);
 
   // ── filters (pending vs applied) ────────────────────────────────────────
-  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', brand: 'all', platform: 'all', ads: DEFAULT_ADS });
-  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', brand: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
   const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
+
+  // ── brand (toolbar setup step, not a view filter) ───────────────────────
+  // Market Place, then Brand — picking/creating one here is what unlocks the
+  // file upload buttons and tags every row of the next upload as
+  // "MarketPlace_Brand" (Company). Unlike the filters above this takes effect
+  // immediately, no Apply needed — it has to be live the moment an upload
+  // button is clicked. The saved brand *list* persists per-user (or
+  // session-only when signed out); which one is currently active does not.
+  const [selectedBrand, setSelectedBrand] = useState(null);
 
   // ── view ────────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState('all');
-  const [myColumns, setMyColumns] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  useEffect(() => {
-    if (!isLoggedIn()) return;
-    getSettings().then(({ ok, data }) => {
-      if (!ok) return;
-      if (Array.isArray(data.headers)) setMyColumns(data.headers);
-      const p = data.preferences || {};
+  // My Details column subset + the sidebar's Settings -> Save edit-mode
+  // layout (tabs/title-cards/graphs/columns show+order) — one per-user
+  // settings row, see lib/profitLoss/useDashboardSettings.js.
+  const {
+    loggedIn, myColumns, onMyColumnsChange,
+    layout, setTopSection, setTabSection, resetLayout,
+    brands, addBrand,
+    editMode, setEditMode, saveLayout, savingLayout,
+  } = useDashboardSettings({
+    ads: pending.ads,
+    dateRange: pending.dateRange,
+    addToast,
+    onLoadedPreferences: (p) => {
       if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
       if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
-    });
-  }, []);
+    },
+  });
 
-  const putTimer = useRef(null);
-  const onMyColumnsChange = (next) => {
-    setMyColumns(next);
-    if (!isLoggedIn()) return;
-    clearTimeout(putTimer.current);
-    putTimer.current = setTimeout(() => {
-      putSettings({
-        headers: next,
-        preferences: { adsMode: pending.ads.mode, adsValue: pending.ads.value, defaultDatePreset: pending.dateRange.preset },
-      });
-    }, 800);
-  };
+  const visibleTabs = useMemo(
+    () => applyLayout(allTabsSorted, layout.tabs || emptySection()),
+    [allTabsSorted, layout],
+  );
+  const visibleOverviewTabs = useMemo(
+    () => applyLayout(allOverviewTabsSorted, layout.overviewTabs || emptySection()),
+    [allOverviewTabsSorted, layout],
+  );
+
+  // The tab the user last picked; the *actual* active tab is derived from it so
+  // switching templates (or hiding the current tab in edit mode) can't leave a
+  // dangling id (no setState-in-effect).
+  const [preferredTabId, setPreferredTabId] = useState(null);
+  const activeTabId = useMemo(() => {
+    if (visibleTabs.some((t) => t.id === preferredTabId)) return preferredTabId;
+    if (visibleOverviewTabs.some((o) => o.id === preferredTabId)) return preferredTabId;
+    return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
+  }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
 
   // ── resolve ─────────────────────────────────────────────────────────────
+  // Always resolved from the config — even with zero rows uploaded — so the
+  // sidebar's tabs, title cards, graphs and table headers are visible (in
+  // their zero/empty state) the moment a marketplace template is selected,
+  // not only after the first file lands.
   const resolved = useMemo(() => {
-    if (!canonicalRows.length) return emptyResolved;
+    if (!config.headers?.length) return emptyResolved;
     try {
       return resolveTemplate(config, {
         canonicalRows,
@@ -127,7 +153,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         dateTo: applied.dateRange.to,
         platform: applied.platform,
         company: applied.company,
-        brand: applied.brand,
       });
     } catch (err) {
       console.error('resolveTemplate failed:', err);
@@ -137,10 +162,27 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   const hasData = uploads.length > 0;
 
+  // "All Companies" always lists every saved brand as "MarketPlace_Brand" for
+  // the active marketplace — not just the ones with uploaded rows yet — plus
+  // any company tag already present in the data (belt-and-braces in case a
+  // row was tagged with a brand no longer in the saved list).
+  const companyOptions = useMemo(() => {
+    const marketplaceName = config.marketplace?.name || 'Marketplace';
+    const fromBrands = brands.map((b) => `${marketplaceName}_${b}`);
+    return [...new Set([...fromBrands, ...(resolved.companyOptions || [])])].sort();
+  }, [brands, config, resolved.companyOptions]);
+
   // ── ingest ──────────────────────────────────────────────────────────────
+  // Every upload is checked against the slot's saved headers (extracted in
+  // Template Settings when its sample sheet was mapped) before it's parsed —
+  // a sheet missing columns the template expects is rejected with an error
+  // instead of silently producing a table with holes in it.
   const onUpload = useCallback(async (slotId, files) => {
+    if (!selectedBrand) { addToast('Pick or create a brand first', 'error'); return; }
     setBusy(true);
     try {
+      const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
+      const tag = { brand: selectedBrand, company: `${config.marketplace?.name || 'Marketplace'}_${selectedBrand}` };
       const added = [];
       for (const file of files) {
         let wb;
@@ -154,8 +196,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         const first = wb.byTab[wb.sheetNames[0]] || { headerRow: [] };
         const platform = detectPlatform(first.headerRow, wb.fileName);
         const tab = pickBestTab(platform, wb.byTab, wb.sheetNames);
+        const headerRow = wb.byTab[tab]?.headerRow ?? first.headerRow;
+        const { ok, missing } = matchSlotHeaders(slotDef, headerRow);
+        if (!ok) {
+          addToast(`${file.name}: doesn't match "${slotDef.label}" — missing column${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`, 'error');
+          continue;
+        }
         const rawRows = wb.byTab[tab]?.rows ?? [];
-        const rows = mapRowsForPlatform(platform, rawRows, {});
+        const rows = mapRowsForPlatform(platform, rawRows, { tag });
         added.push({ id: crypto.randomUUID(), slotId, fileName: file.name, platform, rows });
       }
       if (added.length) {
@@ -166,7 +214,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     } finally {
       setBusy(false);
     }
-  }, [addToast]);
+  }, [addToast, config, selectedBrand]);
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
@@ -186,7 +234,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   }, [canonicalRows]);
 
   const resetFilters = () => {
-    const fresh = { dateRange: DEFAULT_RANGE, company: 'all', brand: 'all', platform: 'all', ads: DEFAULT_ADS };
+    const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
     setPending(fresh);
     setApplied(fresh);
   };
@@ -255,8 +303,24 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     };
   }, [buildView, applied, resolved, canonicalRows, activeTab, config, uploads]);
 
+  if (!templatesReady) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Loader2 className="animate-spin text-muted" size={28} />
+      </div>
+    );
+  }
+  if (templates.length === 0) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <NoTemplateSidebar />
+        <NoMarketplaces />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1">
       <DashboardSidebar
         tabs={visibleTabs}
         activeKey={activeTabId}
@@ -267,6 +331,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         onReset={resetFilters}
         mobileOpen={mobileNavOpen}
         onClose={onCloseMobileNav}
+        editMode={editMode}
+        allTabs={allTabsSorted}
+        tabsSection={layout.tabs || emptySection()}
+        onTabsSectionChange={(next) => setTopSection('tabs', next)}
+        allOverviewTabs={allOverviewTabsSorted}
+        overviewTabsSection={layout.overviewTabs || emptySection()}
+        onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -274,22 +345,30 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           templates={templates}
           activeTemplateId={activeTemplateId}
           onSelectTemplate={setActiveTemplateId}
-          brandOptions={resolved.brandOptions}
-          brand={pending.brand}
-          onBrandChange={(brand) => setPending((s) => ({ ...s, brand }))}
+          brands={brands}
+          brand={selectedBrand}
+          onBrandChange={setSelectedBrand}
+          onCreateBrand={addBrand}
           fileSlots={config.fileSlots || []}
           onUpload={onUpload}
           onUploadSkuCost={onUploadSkuCost}
           onDownloadSkuTemplate={onDownloadSkuTemplate}
+          hasData={hasData}
           busy={busy}
+          loggedIn={loggedIn}
+          editMode={editMode}
+          onEnterEditMode={() => setEditMode(true)}
+          onSaveLayout={saveLayout}
+          onResetLayout={resetLayout}
+          savingLayout={savingLayout}
         />
 
-        <main className="w-full min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
+        <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           <DashboardHeaderBar
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}
-            companyOptions={resolved.companyOptions}
+            companyOptions={companyOptions}
             company={pending.company}
             onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
             dateRange={pending.dateRange}
@@ -305,13 +384,19 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy }}
           />
 
-          <div className="mt-6">
-            {busy && !hasData ? (
-              <div className="flex justify-center py-16 text-muted"><Loader2 className="animate-spin" size={28} /></div>
-            ) : !hasData ? (
-              <SheetDropCard />
-            ) : showOverview ? (
-              <OverviewTab config={config} tab={activeOverviewTab} resolved={resolved} />
+          <div className="mt-6 space-y-5">
+            {/* Even with nothing uploaded yet, the active tab's title cards /
+                graphs / table headers render from the template config in
+                their zero/empty state — only the rows are empty. */}
+            {showOverview ? (
+              <OverviewTab
+                config={config}
+                tab={activeOverviewTab}
+                resolved={resolved}
+                editMode={editMode}
+                layout={layout}
+                onSetTabSection={setTabSection}
+              />
             ) : (
               <TabView
                 config={config}
@@ -321,6 +406,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onViewModeChange={setViewMode}
                 myColumns={myColumns}
                 onMyColumnsChange={onMyColumnsChange}
+                editMode={editMode}
+                layout={layout}
+                onSetTabSection={setTabSection}
               />
             )}
           </div>
