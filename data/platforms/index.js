@@ -45,6 +45,11 @@ export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mappin
     }
     if (!c) return;
     if (hasOverrides) c = applyHeaderMap(c, raw, headerMap);
+    // Every raw sheet column, keyed by its own header text — what
+    // resolveTemplate.js's readHeaderFromRow looks up via a global header's
+    // (per-marketplace) mappedFrom.sheetHeader. Existing canonical `meta`
+    // (set by the platform's own toCanonical) wins over the raw passthrough.
+    c.meta = { ...raw, ...(c.meta || {}) };
     if (tag) { c.brand = tag.brand ?? c.brand; c.company = tag.company ?? c.company; }
     // Drop rows that carry no usable signal at all.
     if ((c.sku === '—' || !c.sku) && !c.settlement && !c.grossSale && !c.qty) return;

@@ -27,7 +27,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // top of the template's own definition. The first table column is never
 // hideable/reorderable — it's the sticky row key, same rule "My Details"
 // already applies.
-export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {} }) {
+export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, companyControl }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -92,7 +92,15 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
               onMyColumnsChange={onMyColumnsChange}
             />
           </div>
-          <DetailsTable columns={columns} rows={resolved.tableRows} editMode={editMode} arrange={headersArrange} />
+          <DetailsTable
+            columns={columns}
+            rows={resolved.tableRows}
+            editMode={editMode}
+            arrange={headersArrange}
+            costBySku={costBySku}
+            onCostChange={onCostChange}
+            companyControl={companyControl}
+          />
         </>
       )}
     </div>

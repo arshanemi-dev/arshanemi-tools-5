@@ -1,11 +1,11 @@
-// The built-in "default headers" the Template Settings builder seeds every new
-// template with. Each binds to a base metric the P&L engine
-// (lib/profitLoss/engine.js) already computes per groupBy row — `primitive` is
-// the key on an engine skuRow. Formula-type headers / title cards reference
-// these by their `name` in [brackets].
-//
-// Ids are STABLE strings (not generated) so the builder's seeded state
-// references the same header across reloads.
+// Reference list of the P&L engine's available base metrics
+// (lib/profitLoss/engine.js) — `primitive` is the key on an engine skuRow.
+// Not auto-seeded into the global config anymore (Global Settings starts
+// blank; see Global Template Settings plan) — kept here as the map from
+// "what the engine computes" to "what a Header's primitive can bind to"
+// while building out Headers in Template Settings > Global Settings.
+// Formula-type headers / title cards reference headers by `name` in
+// [brackets], same as before.
 
 export const DEFAULT_HEADERS = [
   // ── the 14 columns from the reference dashboard table (showInTable) ──
@@ -40,16 +40,3 @@ export const AGGREGATE_BUILTINS = {
   'Settled SKU Count': 'settledSkuCount',
   'Row Count': 'rowCount',     // canonical rows in the filtered set
 };
-
-// Fresh copies with every schema field filled in — used to seed a new template.
-export function defaultHeaders() {
-  return DEFAULT_HEADERS.map((h) => ({
-    formula: '',
-    source: 'default',
-    mappedFrom: null,
-    note: '',
-    signed: false,
-    showInTable: true,
-    ...h,
-  }));
-}

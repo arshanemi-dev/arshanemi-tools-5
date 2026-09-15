@@ -7,26 +7,31 @@ import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
 import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
+import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { detectPlatform } from '@/data/platforms/detect';
 import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
-import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
+import { resolveTemplate, readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { downloadTemplateXlsx, downloadTemplatePdf } from '@/lib/profitLoss/exportTemplate';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 
 import DashboardSidebar from './DashboardSidebar';
 import DashboardToolbar from './DashboardToolbar';
 import DashboardHeaderBar from './DashboardHeaderBar';
+import BrandPicker from './BrandPicker';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
 import HistoryDrawer from './HistoryDrawer';
 import NoMarketplaces from './NoMarketplaces';
 import NoTemplateSidebar from './NoTemplateSidebar';
+import SheetDebugger from '@/components/templateSettings/SheetDebugger';
 
-const DEFAULT_RANGE = { preset: '6m', ...rangeForPreset('6m') };
+const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
+const DEFAULT_ROW_LIMIT = 100;
 const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], rowCount: 0, platforms: [] };
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
@@ -36,7 +41,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Starts empty and stays empty unless a real marketplace template is
   // published — no built-in fallback config, so a fresh install with nothing
   // configured shows "No marketplaces" instead of a fake dashboard.
+  // Headers/Title Cards/Graphs/Tabs/Overview Tabs are global (`global`,
+  // shared, fetched once) — switching marketplace only changes `templates`'
+  // per-marketplace fileSlots/mappings, never the dashboard's shape.
   const [templates, setTemplates] = useState([]);
+  const [globalConfig, setGlobalConfig] = useState(null);
   const [templatesReady, setTemplatesReady] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState(null);
 
@@ -44,6 +53,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     listLiveTemplates()
       .then(({ ok, data }) => {
         const live = ok && Array.isArray(data?.templates) ? data.templates : [];
+        setGlobalConfig(ok ? data?.global || {} : {});
         if (live.length) {
           setTemplates(live);
           setActiveTemplateId(live[0].id);
@@ -52,10 +62,38 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       .finally(() => setTemplatesReady(true));
   }, []);
 
-  const config = useMemo(
-    () => (templates.find((t) => t.id === activeTemplateId) || templates[0])?.config ?? {},
+  const activeMarketplace = useMemo(
+    () => templates.find((t) => t.id === activeTemplateId) || templates[0],
     [templates, activeTemplateId],
   );
+
+  // The effective config a marketplace's dashboard renders: the shared
+  // global Headers/Title Cards/Graphs/Tabs/Overview Tabs, plus this
+  // marketplace's own `marketplace` + `fileSlots`. Each global header's
+  // `mappedFrom` isn't stored on the header itself anymore (the same header
+  // maps to a different sheet column per marketplace) — it's reconstructed
+  // here from the active marketplace's fileSlots[].mappings before
+  // resolveTemplate (which stays marketplace-agnostic) ever sees it.
+  const config = useMemo(() => {
+    if (!globalConfig || !activeMarketplace) return {};
+    const fileSlots = activeMarketplace.config?.fileSlots || [];
+    const mappedFromByHeaderId = new Map();
+    for (const slot of fileSlots) {
+      for (const m of slot.mappings || []) {
+        mappedFromByHeaderId.set(m.headerId, { slot: slot.id, sheetHeader: m.sheetHeader });
+      }
+    }
+    const headers = (globalConfig.headers || []).map((h) => ({
+      ...h,
+      mappedFrom: mappedFromByHeaderId.get(h.id) || null,
+    }));
+    return {
+      ...globalConfig,
+      headers,
+      marketplace: activeMarketplace.config?.marketplace || {},
+      fileSlots,
+    };
+  }, [globalConfig, activeMarketplace]);
 
   // Every tab the template defines, in template order — the full list the
   // sidebar's edit-mode "Tabs" dropdown reorders/hides from.
@@ -75,17 +113,71 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
   const [skuCost, setSkuCost] = useState(null); // { map, count, fileName }
   const [busy, setBusy] = useState(false);
+  // The most recently uploaded raw File (any slot, or the SKU Cost button) —
+  // fed to the embedded SheetDebugger below the toolbar so it always shows
+  // the real upload just made, no picker of its own needed there. debugSlotId
+  // (null for a SKU Cost upload, which isn't a marketplace file slot) lets
+  // the debugger check the file's headers against that exact slot's saved
+  // sample + mapping, the same check a real upload runs.
+  const [debugFile, setDebugFile] = useState(null);
+  const [debugSlotId, setDebugSlotId] = useState(null);
+  const debugSlot = useMemo(
+    () => (config.fileSlots || []).find((s) => s.id === debugSlotId) || null,
+    [config, debugSlotId],
+  );
 
+  // Upload dedup: keyed off the two reserved global headers (Order Id +
+  // Transaction Id), not the platform mapper's own canonical `orderId` —
+  // re-uploading an overlapping settlement export shouldn't double-count a
+  // row. An Order Id can legitimately repeat across several line items of
+  // one order, so it alone never proves a duplicate; only an identical
+  // Order Id + Transaction Id pair (both mapped and both present) does —
+  // anything short of that (Transaction Id missing/unmapped) is always kept.
+  const orderIdHeader = useMemo(
+    () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.orderId) || null,
+    [config],
+  );
+  const transactionIdHeader = useMemo(
+    () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.transactionId) || null,
+    [config],
+  );
   const canonicalRows = useMemo(() => {
-    const byId = new Map();
-    for (const u of uploads) for (const r of u.rows) byId.set(r.rowId, r);
-    return [...byId.values()];
-  }, [uploads]);
+    const seen = new Set();
+    const out = [];
+    for (const u of uploads) {
+      for (const r of u.rows) {
+        const orderVal = orderIdHeader ? readHeaderFromRow(orderIdHeader, r) : null;
+        const txnVal = transactionIdHeader ? readHeaderFromRow(transactionIdHeader, r) : null;
+        const orderKey = orderVal != null && String(orderVal).trim() !== '' ? String(orderVal).trim() : null;
+        const txnKey = txnVal != null && String(txnVal).trim() !== '' ? String(txnVal).trim() : null;
+        if (orderKey && txnKey) {
+          const dupKey = `${orderKey}::${txnKey}`;
+          if (seen.has(dupKey)) continue;
+          seen.add(dupKey);
+        }
+        out.push(r);
+      }
+    }
+    return out;
+  }, [uploads, orderIdHeader, transactionIdHeader]);
 
   // ── filters (pending vs applied) ────────────────────────────────────────
-  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
-  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  // rowLimit + dateRange are both "getting data" limits, not scoping filters
+  // like company/platform — Download PDF/Excel bypasses both of them (see
+  // fullResolved below) but still respects company/platform.
+  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS });
   const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
+
+  // No "Apply" button — every change above debounces into effect on its own
+  // after a short pause, so picking a date/company or typing a row-limit/ads
+  // value doesn't recompute the whole dashboard on every keystroke.
+  // resetFilters (below) sets `applied` directly for an instant reset,
+  // bypassing this.
+  useEffect(() => {
+    const t = setTimeout(() => setApplied(pending), 500);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   // ── brand (toolbar setup step, not a view filter) ───────────────────────
   // Market Place, then Brand — picking/creating one here is what unlocks the
@@ -107,6 +199,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     loggedIn, myColumns, onMyColumnsChange,
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
+    onSkuCostsChange,
     editMode, setEditMode, saveLayout, savingLayout,
   } = useDashboardSettings({
     ads: pending.ads,
@@ -115,6 +208,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     onLoadedPreferences: (p) => {
       if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
       if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
+      // A returning signed-in user's manually-typed SKU costs, saved (debounced)
+      // from the table's Cost column — restored here so they don't have to
+      // retype them every session. A later SKU-cost sheet upload still wins
+      // (onUploadSkuCost replaces the whole map wholesale, same as today).
+      if (p.skuCosts && typeof p.skuCosts === 'object' && Object.keys(p.skuCosts).length) {
+        setSkuCost({ map: p.skuCosts, count: Object.keys(p.skuCosts).length, fileName: null });
+      }
     },
   });
 
@@ -137,6 +237,20 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
   }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
 
+  // The "smart limit" — only the N most-recently-ordered rows (default 100,
+  // set via the header bar's RowLimitControl) feed the live dashboard, so a
+  // huge sheet doesn't recompute every KPI/graph/table off thousands of rows
+  // on every Apply. Undated rows sort last (never silently dropped, just
+  // deprioritized). Download PDF/Excel bypasses this entirely — see
+  // `fullResolved` below.
+  const limitedRows = useMemo(() => {
+    const limit = applied.rowLimit || DEFAULT_ROW_LIMIT;
+    if (canonicalRows.length <= limit) return canonicalRows;
+    return [...canonicalRows]
+      .sort((a, b) => (b.orderDate || '').localeCompare(a.orderDate || ''))
+      .slice(0, limit);
+  }, [canonicalRows, applied.rowLimit]);
+
   // ── resolve ─────────────────────────────────────────────────────────────
   // Always resolved from the config — even with zero rows uploaded — so the
   // sidebar's tabs, title cards, graphs and table headers are visible (in
@@ -146,7 +260,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!config.headers?.length) return emptyResolved;
     try {
       return resolveTemplate(config, {
-        canonicalRows,
+        canonicalRows: limitedRows,
         skuCostMap: skuCost?.map || {},
         ads: applied.ads,
         dateFrom: applied.dateRange.from,
@@ -158,7 +272,33 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTemplate failed:', err);
       return emptyResolved;
     }
-  }, [config, canonicalRows, skuCost, applied]);
+  }, [config, limitedRows, skuCost, applied]);
+
+  // The complete, unlimited dataset — every uploaded row, no date bound —
+  // resolved once so Download PDF/Excel can pull "all data" regardless of
+  // the live view's row-limit/date-range. Still respects an intentional
+  // Company/Platform scope, since those are a deliberate choice, not a
+  // performance limit. Only computed lazily inside doExport (not on every
+  // keystroke) would be nicer, but the dashboard's own uploads are already
+  // capped to what a browser can hold in memory, so resolving it here is
+  // cheap enough to just keep current.
+  const fullResolved = useMemo(() => {
+    if (!config.headers?.length) return emptyResolved;
+    try {
+      return resolveTemplate(config, {
+        canonicalRows,
+        skuCostMap: skuCost?.map || {},
+        ads: applied.ads,
+        dateFrom: null,
+        dateTo: null,
+        platform: applied.platform,
+        company: applied.company,
+      });
+    } catch (err) {
+      console.error('resolveTemplate (export) failed:', err);
+      return emptyResolved;
+    }
+  }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
 
   const hasData = uploads.length > 0;
 
@@ -182,12 +322,15 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     setBusy(true);
     try {
       const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
+      const rowOverride = rowOverrideFor(slotDef);
       const tag = { brand: selectedBrand, company: `${config.marketplace?.name || 'Marketplace'}_${selectedBrand}` };
       const added = [];
       for (const file of files) {
+        setDebugFile(file);
+        setDebugSlotId(slotId);
         let wb;
         try {
-          wb = await readAnyFile(file);
+          wb = await readAnyFile(file, rowOverride);
         } catch {
           addToast(`${file.name}: could not be read`, 'error');
           continue;
@@ -218,6 +361,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
+    setDebugFile(file);
+    setDebugSlotId(null); // not a marketplace file slot — nothing to match against
     setBusy(true);
     try {
       const { map, count } = await parseSkuCostSheet(file);
@@ -233,8 +378,32 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     downloadSkuCostTemplate([...new Set(canonicalRows.map((r) => r.sku))]);
   }, [canonicalRows]);
 
+  // The table's inline Cost input — updates the live skuCostMap immediately
+  // (so Product Cost / COGS / Profit-Loss recompute as the user types) and
+  // hands the fresh map to the debounced-save hook for signed-in users.
+  const onCostChange = useCallback((sku, rawValue) => {
+    const map = { ...(skuCost?.map || {}) };
+    const trimmed = String(rawValue ?? '').trim();
+    if (trimmed === '') delete map[sku];
+    else {
+      const n = Number(trimmed);
+      if (Number.isFinite(n)) map[sku] = n;
+    }
+    setSkuCost({ map, count: Object.keys(map).length, fileName: skuCost?.fileName ?? null });
+    onSkuCostsChange(map);
+  }, [skuCost, onSkuCostsChange]);
+
+  // The table's "Company" column header control — the same BrandPicker the
+  // toolbar uses, shrunk down. Whatever brand is picked/created here is the
+  // same `selectedBrand` the toolbar's own picker drives, so it's what the
+  // *next* upload gets tagged with — every row of new data comes in under
+  // one company, per how uploads are already tagged (see onUpload below).
+  const companyControl = (
+    <BrandPicker compact brands={brands} value={selectedBrand} onChange={setSelectedBrand} onCreate={addBrand} />
+  );
+
   const resetFilters = () => {
-    const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
+    const fresh = { dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS };
     setPending(fresh);
     setApplied(fresh);
   };
@@ -247,31 +416,38 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const activeOverviewTab = (config.overviewTabs || []).find((o) => o.id === activeTabId) || null;
 
   // ── build the "current tab" view for export + save ──────────────────────
-  const buildView = useCallback(() => {
-    const overview = activeOverview || { name: 'Overview', fixedHeader: null, headers: [], rows: [] };
-    const defs = showOverview
+  // Takes which resolved snapshot to read from — `resolved` (the live,
+  // row-limited/date-filtered view) by default, or `fullResolved` (every
+  // uploaded row, no date bound) when Download PDF/Excel calls it.
+  const buildView = useCallback((source = resolved) => {
+    const ov = source.overviews?.[activeTabId] || null;
+    const isOverview = !!ov;
+    const overview = ov || { name: 'Overview', fixedHeader: null, headers: [], rows: [] };
+    const defs = isOverview
       ? (overview.fixedHeader ? [overview.fixedHeader, ...overview.headers] : [])
-      : (activeTab?.headerIds || []).map((id) => resolved.headers.find((h) => h.id === id)).filter(Boolean);
-    const rows = showOverview ? overview.rows : resolved.tableRows;
-    const cardIds = showOverview ? (activeOverviewTab?.titleCardIds || []) : (activeTab?.titleCardIds || []);
+      : (activeTab?.headerIds || []).map((id) => source.headers.find((h) => h.id === id)).filter(Boolean);
+    const rows = isOverview ? overview.rows : source.tableRows;
+    const cardIds = isOverview ? (activeOverviewTab?.titleCardIds || []) : (activeTab?.titleCardIds || []);
     const cards = cardIds.map((id) => {
       const c = (config.titleCards || []).find((x) => x.id === id);
-      const v = resolved.titleCardValues[id] || {};
+      const v = source.titleCardValues[id] || {};
       return { name: c?.name || id, mainDisplay: v.main?.display, subDisplay: v.sub?.display };
     });
     return {
       label: config.marketplace?.name || 'Dashboard',
-      tabName: showOverview ? (overview.name || 'Overview') : (activeTab?.name || ''),
+      tabName: isOverview ? (overview.name || 'Overview') : (activeTab?.name || ''),
       cards,
       table: {
         columns: defs.map((d) => d.name),
         rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
       },
     };
-  }, [showOverview, activeOverview, activeOverviewTab, config, activeTab, resolved]);
+  }, [activeTabId, activeTab, activeOverviewTab, config, resolved]);
 
+  // Excel/PDF always pull "all data" — every uploaded row, no date bound —
+  // regardless of the live view's row-limit/date-filter (see fullResolved).
   const doExport = async (kind) => {
-    const view = buildView();
+    const view = buildView(fullResolved);
     if (!view.table.columns.length) { addToast('Nothing to export on this tab', 'error'); return; }
     try {
       await (kind === 'pdf' ? downloadTemplatePdf(view) : downloadTemplateXlsx(view));
@@ -313,8 +489,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   if (templates.length === 0) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1">
-        <NoTemplateSidebar />
-        <NoMarketplaces />
+        <NoTemplateSidebar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
+        <NoMarketplaces showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
       </div>
     );
   }
@@ -363,11 +539,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           savingLayout={savingLayout}
         />
 
+        {/* Right below the upload toolbar — template builders can inspect
+            exactly what any file (including one they haven't mapped yet)
+            parses to without leaving the dashboard. Same gate as Template
+            Settings; a regular seller never sees it. */}
+        {canManageTemplates && (
+          <div className="max-h-[60vh] shrink-0 overflow-y-auto border-b border-divider bg-surface">
+            <SheetDebugger externalFile={debugFile} showPicker={false} slot={debugSlot} headers={config.headers || []} />
+          </div>
+        )}
+
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           <DashboardHeaderBar
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}
+            rowLimit={pending.rowLimit}
+            onRowLimitChange={(n) => setPending((s) => ({ ...s, rowLimit: n }))}
             companyOptions={companyOptions}
             company={pending.company}
             onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
@@ -375,8 +563,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
             ads={pending.ads}
             onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
-            onApply={() => setApplied({ ...pending })}
-            dirty={dirty}
+            updating={dirty}
             hasData={hasData}
             onExportExcel={() => doExport('xlsx')}
             onExportPdf={() => doExport('pdf')}
@@ -396,6 +583,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
+                costBySku={skuCost?.map || {}}
+                onCostChange={onCostChange}
+                companyControl={companyControl}
               />
             ) : (
               <TabView
@@ -409,6 +599,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
+                costBySku={skuCost?.map || {}}
+                onCostChange={onCostChange}
+                companyControl={companyControl}
               />
             )}
           </div>

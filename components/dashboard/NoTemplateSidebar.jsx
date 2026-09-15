@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Layers, Sparkles } from 'lucide-react';
+import { Layers, Settings, Sparkles } from 'lucide-react';
 
 const ITEMS = [
   { key: 'no-template', label: 'No template', icon: Layers },
@@ -12,7 +12,11 @@ const ITEMS = [
 // marketplace template is published yet — just the two placeholder tabs,
 // "Automatic" active by default since there's nothing configured to pick
 // between; both lead to the same "No marketplaces yet" message on the right.
-export default function NoTemplateSidebar() {
+// For master_admin / a granted user, also the ONLY way to reach Template
+// Settings from a blank dashboard — the real sidebar's own Template Settings
+// row (DashboardSidebar.jsx) never renders at all here, since this component
+// replaces it entirely while zero marketplaces exist.
+export default function NoTemplateSidebar({ showTemplateSettings = false, onOpenTemplateSettings }) {
   const [active, setActive] = useState('automatic');
 
   return (
@@ -32,6 +36,20 @@ export default function NoTemplateSidebar() {
           </button>
         ))}
       </nav>
+
+      {showTemplateSettings && (
+        <>
+          <div className="my-2 border-t border-divider" />
+          <button
+            type="button"
+            onClick={onOpenTemplateSettings}
+            className="mx-2 flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13.5px] font-medium text-foreground/75 transition-colors hover:bg-foreground/5 hover:text-foreground"
+          >
+            <Settings size={16} className="shrink-0" />
+            <span className="truncate">Template Settings</span>
+          </button>
+        </>
+      )}
     </aside>
   );
 }

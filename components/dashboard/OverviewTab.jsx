@@ -25,7 +25,7 @@ function SectionLabel({ text, hidden, onShow }) {
 //
 // Edit mode works exactly like TabView's — layout.perTab[tab.id] — the
 // fixed/key column stays pinned, same rule as a regular Tab's first column.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {} }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, companyControl }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -85,7 +85,15 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
           Pick a fixed header for this Overview tab in Template Settings.
         </div>
       ) : columns.length > 1 ? (
-        <DetailsTable columns={columns} rows={ov.rows} editMode={editMode} arrange={headersArrange} />
+        <DetailsTable
+          columns={columns}
+          rows={ov.rows}
+          editMode={editMode}
+          arrange={headersArrange}
+          costBySku={costBySku}
+          onCostChange={onCostChange}
+          companyControl={companyControl}
+        />
       ) : (
         <div className="rounded-xl border border-divider bg-background px-4 py-10 text-center text-sm text-muted">
           No headers selected for this Overview tab yet — add some in Template Settings.

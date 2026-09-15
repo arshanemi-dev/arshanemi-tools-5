@@ -10,7 +10,7 @@ import Popover from './Popover';
 // per-user in preferences.brands) and lets them type a new one and create it
 // on the spot. Selecting or creating a brand is what unlocks the file upload
 // buttons and tags the next upload with it (see DashboardWorkspace.onUpload).
-export default function BrandPicker({ brands = [], value, onChange, onCreate }) {
+export default function BrandPicker({ brands = [], value, onChange, onCreate, compact = false }) {
   const [q, setQ] = useState('');
 
   const filtered = useMemo(() => {
@@ -28,14 +28,20 @@ export default function BrandPicker({ brands = [], value, onChange, onCreate }) 
       trigger={() => (
         <button
           type="button"
-          className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors ${
-            value ? 'border-accent bg-accent/5 text-foreground' : 'border-action bg-action/5 text-action'
-          }`}
-          title={value ? `Brand: ${value}` : 'Pick or create a brand before uploading'}
+          className={
+            compact
+              ? `inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-medium transition-colors ${
+                  value ? 'border-accent bg-accent/5 text-foreground' : 'border-divider-light bg-background text-muted'
+                }`
+              : `inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors ${
+                  value ? 'border-accent bg-accent/5 text-foreground' : 'border-action bg-action/5 text-action'
+                }`
+          }
+          title={value ? `Company brand: ${value}` : 'Pick or create a brand before uploading'}
         >
-          <Tag size={14} className="shrink-0" />
-          <span className="max-w-[9rem] truncate">{value || 'Select Brand'}</span>
-          <ChevronDown size={13} className="shrink-0" />
+          <Tag size={compact ? 12 : 14} className="shrink-0" />
+          <span className={compact ? 'max-w-[6rem] truncate' : 'max-w-[9rem] truncate'}>{value || 'Select Brand'}</span>
+          <ChevronDown size={compact ? 11 : 13} className="shrink-0" />
         </button>
       )}
     >

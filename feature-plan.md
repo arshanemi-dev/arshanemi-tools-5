@@ -8,6 +8,42 @@
 >
 > ---
 >
+> ## Rev 4 (2026‑09‑14) — Global Template Settings, versioning moved to Global Settings
+>
+> Rev 3 (below) gave each marketplace its own fully independent config —
+> Headers/Title Cards/Graphs/Tabs/Overview Tabs all duplicated per
+> marketplace, so switching Market Place on the dashboard swapped the entire
+> UI, and a new marketplace meant rebuilding everything from zero. Rev 4
+> splits that one `config` in two: a single **global config**
+> (`data/templateSchema.js` `makeEmptyGlobalConfig`/`validateGlobalConfig` —
+> Headers/Title Cards/Graphs/Tabs/Overview Tabs, shared verbatim by every
+> marketplace) and a much smaller **marketplace config** per marketplace
+> (`makeEmptyMarketplaceConfig`/`validateMarketplaceConfig` — just
+> file-upload slots + the mapping from that marketplace's raw sheet columns
+> to the global headers). Two headers are now built-in and locked —
+> `hdr_order_id` / `hdr_transaction_id`.
+>
+> Versioning swapped sides from where a first pass put it: **Global
+> Settings** is the one that now versions (draft → save version →
+> publish/live, Version Page, change log) — it's just one more
+> `marketplace_templates` row under the hood (`is_global = true`, lazily
+> created by `getOrCreateGlobalTemplate` in the hub's `lib/db.js`), reusing
+> the exact same `[id]/versions/*` routes a marketplace always had, nothing
+> new built for it. **Marketplaces dropped versioning** — "always show, no
+> hide": `config` saves directly via `PUT /api/marketplace-templates/[id]`,
+> active the instant it's saved, no draft/live toggle. New migration
+> `scripts/profit_loss_global_versioning_migration.sql` (additive columns
+> `marketplace_templates.is_global`/`.config`, on the existing table — no new
+> table). `GET .../live` returns `{ global, templates }` — global = the
+> singleton's live version; templates = every non-global row's config
+> directly, unfiltered. `DashboardWorkspace.jsx` merges the two at render
+> time — resolveTemplate.js itself stays marketplace-agnostic.
+> Existing marketplaces' Rev-3-era per-marketplace Headers/Tabs/Graphs are
+> dead data after this — not migrated, per an explicit decision to start the
+> global config blank.
+>
+> ---
+>
 > ## Rev 3 (2026‑09‑10) — Template‑driven dashboard + Template Settings builder
 >
 > Rev 1–2 shipped a fixed‑layout P&L dashboard (browser sheet parsing, canonical

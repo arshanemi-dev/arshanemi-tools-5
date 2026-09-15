@@ -1,12 +1,16 @@
-// The shape of a marketplace-template `config` (feature-plan.md §3) plus the
+// The shapes of the two config objects Template Settings now edits, plus the
 // factory + validation helpers the builder uses. The hub has a parallel
 // structural gate in lib/templateConfig.js — keep the two in sync.
 //
-// A `config` fully describes one marketplace's dashboard: its upload slots +
-// column mappings, its header list + formulas, its Title Cards, its Graphs
-// (chart type + the headers they plot), its Tabs, and its Overview Tabs (one
-// or more pivots, each on its own fixed header). The dashboard is a pure
-// renderer of this; lib/profitLoss/engine.js only supplies base metrics.
+// Split in two (previously one per-marketplace `config` held everything):
+//   - the GLOBAL config — Headers, Title Cards, Graphs, Tabs, Overview Tabs —
+//     one shared definition every marketplace's dashboard renders identically.
+//   - a MARKETPLACE config — just its file-upload slots + the mapping from
+//     that marketplace's raw sheet columns to the global headers.
+// Switching marketplace on the dashboard therefore only changes where the
+// data comes from, never what's shown. lib/profitLoss/engine.js still
+// supplies base metrics; the dashboard is a pure renderer of {global config +
+// active marketplace's fileSlots}.
 
 import { nanoid } from 'nanoid';
 
@@ -21,10 +25,43 @@ export const TIME_UNITS = ['day', 'week', 'month'];
 
 // Scalar tokens the resolver injects into every formula scope (row + aggregate)
 // on top of the template's own headers — see data/defaultHeaders.js
-// AGGREGATE_BUILTINS. Kept here too so validateConfig accepts them as refs.
+// AGGREGATE_BUILTINS. Kept here too so validateGlobalConfig accepts them as refs.
 export const AGGREGATE_BUILTIN_NAMES = ['Ads %', 'SKU Count', 'Settled SKU Count', 'Row Count'];
 
 export const FILE_SLOT_KINDS = ['payment', 'order', 'aux'];
+
+// ── reserved global headers ─────────────────────────────────────────────────
+// Every marketplace must map both to a sheet column before it can be
+// published live (see validateMarketplaceConfig) — they're the canonical
+// join/identity keys the P&L tool relies on regardless of marketplace. Fixed
+// (not generated) ids so the check always has something stable to look for;
+// the builder disables Delete (and locks name/type) for these two.
+export const RESERVED_HEADER_IDS = {
+  orderId: 'hdr_order_id',
+  transactionId: 'hdr_transaction_id',
+};
+export const RESERVED_HEADER_ID_LIST = Object.values(RESERVED_HEADER_IDS);
+
+function makeReservedHeader(id, name) {
+  return {
+    id,
+    name,
+    type: 'text',
+    formula: '',
+    source: 'default',
+    primitive: null,
+    mappedFrom: null,
+    note: '',
+    format: 'text',
+    signed: false,
+    showInTable: true,
+    reserved: true,
+  };
+}
+
+export function isReservedHeaderId(id) {
+  return RESERVED_HEADER_ID_LIST.includes(id);
+}
 
 // ── id helper ──────────────────────────────────────────────────────────────
 export function newId(prefix = 'x') {
@@ -32,7 +69,25 @@ export function newId(prefix = 'x') {
 }
 
 // ── factories ──────────────────────────────────────────────────────────────
-export function makeEmptyConfig(marketplaceName = '') {
+
+// The one shared config — Headers, Title Cards, Graphs, Tabs, Overview Tabs.
+export function makeEmptyGlobalConfig() {
+  return {
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    headers: [
+      makeReservedHeader(RESERVED_HEADER_IDS.orderId, 'Order Id'),
+      makeReservedHeader(RESERVED_HEADER_IDS.transactionId, 'Transaction Id'),
+    ],
+    titleCards: [],
+    graphs: [],
+    tabs: [],
+    overviewTabs: [],
+  };
+}
+
+// One marketplace's config — just its files + column mapping. `headerId` in
+// fileSlots[].mappings always points at a header from the global config.
+export function makeEmptyMarketplaceConfig(marketplaceName = '') {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     marketplace: {
@@ -42,11 +97,6 @@ export function makeEmptyConfig(marketplaceName = '') {
       groupByHeaderId: null,
     },
     fileSlots: [],
-    headers: [],
-    titleCards: [],
-    graphs: [],
-    tabs: [],
-    overviewTabs: [],
   };
 }
 
@@ -75,7 +125,7 @@ export function makeHeader({ name = 'Header', type = 'number', source = 'manual'
     formula: '',
     source, // default | extracted | manual
     primitive: null, // default headers bind to an engine base metric
-    mappedFrom: null, // { slot, sheetHeader }
+    mappedFrom: null, // { slot, sheetHeader } — set per marketplace at resolve time, not stored on the global header itself
     note: '',
     format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money',
     signed: false,
@@ -193,16 +243,13 @@ export function isDuplicateName(list, id, name, field = 'name') {
   return (list || []).some((it) => it?.id !== id && String(it?.[field] || '').trim().toLowerCase() === key);
 }
 
-export function validateConfig(config) {
+// Headers / Title Cards / Graphs / Tabs / Overview Tabs — the shared config.
+export function validateGlobalConfig(config) {
   const errors = [];
   const push = (m) => errors.push(m);
   if (!config || typeof config !== 'object') return { ok: false, errors: ['config must be an object'] };
 
-  const {
-    marketplace = {}, fileSlots = [], headers = [], titleCards = [], graphs = [],
-    tabs = [], overviewTabs = [],
-  } = config;
-  checkUniqueNames(fileSlots, 'file', push, 'label');
+  const { headers = [], titleCards = [], graphs = [], tabs = [], overviewTabs = [] } = config;
 
   const headerIds = new Set();
   const headerNames = new Set();
@@ -212,6 +259,9 @@ export function validateConfig(config) {
     headerIds.add(h.id);
     if (h.name) headerNames.add(String(h.name).trim().toLowerCase());
     if (h.type && !HEADER_TYPES.includes(h.type)) push(`header "${h.name || h.id}": bad type ${h.type}`);
+  }
+  for (const id of RESERVED_HEADER_ID_LIST) {
+    if (!headerIds.has(id)) push(`missing required reserved header: ${id}`);
   }
   const knownRef = (ref) =>
     headerNames.has(ref.toLowerCase()) ||
@@ -266,9 +316,39 @@ export function validateConfig(config) {
     for (const id of ov.graphIds || []) if (!graphIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown graph`);
   }
 
+  return { ok: errors.length === 0, errors };
+}
+
+// One marketplace's file slots + mapping. `globalHeaderIds` (a Set) is the
+// live global config's header id set, so a mapping can be checked against it
+// — `strict` additionally requires both reserved headers to be mapped
+// (publish-time only; a draft can still be saved without them).
+export function validateMarketplaceConfig(config, globalHeaderIds, { strict = false } = {}) {
+  const errors = [];
+  const push = (m) => errors.push(m);
+  if (!config || typeof config !== 'object') return { ok: false, errors: ['config must be an object'] };
+
+  const { marketplace = {}, fileSlots = [] } = config;
+  checkUniqueNames(fileSlots, 'file', push, 'label');
+
+  const knownHeaderIds = globalHeaderIds instanceof Set ? globalHeaderIds : new Set(globalHeaderIds || []);
+  const mappedHeaderIds = new Set();
+  for (const slot of fileSlots) {
+    for (const m of slot?.mappings || []) {
+      if (!knownHeaderIds.has(m.headerId)) push(`file "${slot.label || slot.id}" maps "${m.sheetHeader}" to an unknown header`);
+      mappedHeaderIds.add(m.headerId);
+    }
+  }
+
+  if (strict) {
+    for (const id of RESERVED_HEADER_ID_LIST) {
+      if (!mappedHeaderIds.has(id)) push(`"${id === RESERVED_HEADER_IDS.orderId ? 'Order Id' : 'Transaction Id'}" must be mapped to a sheet column before this marketplace can be published`);
+    }
+  }
+
   for (const key of ['companyHeaderId', 'brandHeaderId', 'groupByHeaderId']) {
     const id = marketplace?.[key];
-    if (id && !headerIds.has(id)) push(`marketplace.${key} references unknown header`);
+    if (id && !knownHeaderIds.has(id)) push(`marketplace.${key} references unknown header`);
   }
 
   return { ok: errors.length === 0, errors };

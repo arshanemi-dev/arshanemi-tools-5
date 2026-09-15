@@ -2,47 +2,47 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Check, ChevronDown, ChevronRight, Loader2, Pencil, Plus, Search, Settings, Store, Trash2, X,
+  Check, ChevronDown, ChevronRight, Globe, Loader2, Pencil, Plus, Search, Settings, Store, Trash2, X,
 } from 'lucide-react';
 import {
   makeFileSlot, makeGraph, makeHeader, makeOverviewTab, makeTab, makeTitleCard,
 } from '@/data/templateSchema';
 
-// One left rail for the whole builder (image 2). The top block lists every
-// marketplace (add / rename / delete / switch). Below it, for the active
-// marketplace, one collapsible group per section lists its entities — files,
-// headers, title cards, tabs, graphs — each with its own search box and
-// inline rename / delete, plus an "add" on the group header. `overview` and
-// `version` are read-only jump rows.
+// One left rail for the whole builder. Two top-level areas:
+//   - Global Settings — Header / Graph / Title Card / Tab / Overview Tab.
+//     One shared definition every marketplace's dashboard renders
+//     identically. No per-marketplace duplication anymore.
+//   - Market Place — add / rename / delete / switch marketplaces; the active
+//     one only shows its Files group (upload slots + column mapping against
+//     the global headers).
+// Each group is a collapsible accordion (one open at a time) with its own
+// search box and inline rename / delete, plus an "add" on the group header.
+// `version` is a read-only jump row, per-marketplace only (no version
+// history for the global config in v1).
 //
-// The Settings toggle at the top puts every group into reorder mode: each row
-// becomes a dropdown you can swap another item into (picking one swaps the
-// two positions — a poor man's drag-and-drop). Tabs reorder by swapping their
-// `order` field (that's what the live dashboard actually sorts by); every
-// other group swaps its raw array position (cosmetic — those lists don't
-// have an inherent order, tab/title-card/header/graph *display* order inside
-// a Tab is its own reorderable strip via HeaderPickerStrip). While reorder
-// mode is on, each group's "+Add" button turns into a "Save" (done) button.
+// The Settings toggle at the top puts every group in the active area into
+// reorder mode: each row becomes a dropdown you can swap another item into
+// (picking one swaps the two positions — a poor man's drag-and-drop). Tabs
+// reorder by swapping their `order` field (that's what the live dashboard
+// actually sorts by); every other group swaps its raw array position
+// (cosmetic — those lists don't have an inherent order, tab/title-card/
+// header/graph *display* order inside a Tab is its own reorderable strip via
+// HeaderPickerStrip). While reorder mode is on, each group's "+Add" button
+// turns into a "Save" (done) button.
 
-const GROUPS = [
+const GLOBAL_GROUPS = [
    {
     key: 'header', label: 'Header', anchor: 'section-header',
     listKey: 'headers', nameField: 'name', addLabel: 'Add New Header',
     make: (n) => makeHeader({ name: `Header ${n}`, type: 'number', source: 'manual' }),
-    canDelete: (it) => it.source !== 'default',
-    meta: (it) => (it.source === 'default' ? 'default' : it.source === 'extracted' ? 'sheet' : ''),
+    canDelete: (it) => !it.reserved,
+    meta: (it) => (it.reserved ? 'required' : it.source === 'default' ? 'default' : it.source === 'extracted' ? 'sheet' : ''),
   },
    {
     key: 'graph', label: 'Graph', anchor: 'section-graph',
     listKey: 'graphs', nameField: 'name', addLabel: 'Add Graph',
     make: (n) => makeGraph(`Graph ${n}`, 'line'),
   },
-  {
-    key: 'file', label: 'Files', anchor: 'section-market-place',
-    listKey: 'fileSlots', nameField: 'label', addLabel: 'Add File',
-    make: (n) => makeFileSlot(`File ${n}`, 'aux'),
-  },
- 
   {
     key: 'titleCard', label: 'Title Card', anchor: 'section-title-card',
     listKey: 'titleCards', nameField: 'name', addLabel: 'Add Title Card',
@@ -61,6 +61,14 @@ const GROUPS = [
     make: (n) => makeOverviewTab(`Overview ${n}`, n - 1),
     orderField: 'order',
     sortBy: (a, b) => (a.order ?? 0) - (b.order ?? 0),
+  },
+];
+
+const MARKETPLACE_GROUPS = [
+  {
+    key: 'file', label: 'Files', anchor: 'section-market-place',
+    listKey: 'fileSlots', nameField: 'label', addLabel: 'Add File',
+    make: (n) => makeFileSlot(`File ${n}`, 'aux'),
   },
 ];
 
@@ -106,6 +114,22 @@ function SearchBox({ value, onChange }) {
         className="w-full rounded-md border border-divider bg-background py-1 pl-6 pr-2 text-[11.5px] focus:border-accent focus:outline-none"
       />
     </div>
+  );
+}
+
+// ── Global Settings (top block) — one shared config, no list to pick from ──
+function GlobalSettingsBlock({ active, onOpen }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`flex w-full items-center gap-1.5 border-b border-divider px-3.5 py-2.5 text-left text-[12.5px] font-bold hover:bg-card-hover ${
+        active ? 'bg-accent/10 text-foreground' : 'text-foreground'
+      }`}
+    >
+      <Globe size={13} /> Global Settings
+      <span className="text-[11px] font-normal text-subtle">· Header · Graph · Title Card · Tab · Overview</span>
+    </button>
   );
 }
 
@@ -339,11 +363,14 @@ function StaticRow({ label, count, active, onClick }) {
 }
 
 export default function BuilderSidebar({
+  activeArea, onOpenGlobal, globalDraft,
   draft, selection, onSelect,
   templates, activeTemplateId, onSwitchTemplate, onAddMarketplace, onRenameMarketplace, onDeleteMarketplace,
   mobileOpen = false, onCloseMobile = () => {},
 }) {
-  const hasActive = !!activeTemplateId;
+  const isGlobal = activeArea === 'global';
+  const isMarketplace = activeArea === 'marketplace' && !!activeTemplateId;
+  const hasActive = isGlobal || isMarketplace;
   const jumpOnly = (anchor) => onSelect('__jump__', null, anchor);
 
   // Accordion — one section open at a time; all collapsed by default.
@@ -356,8 +383,11 @@ export default function BuilderSidebar({
     }
   };
 
-  // Settings toggle — reorder mode for every group at once (see GROUPS comment).
+  // Settings toggle — reorder mode for every group in the active area at
+  // once (see GLOBAL_GROUPS/MARKETPLACE_GROUPS comment).
   const [reorderMode, setReorderMode] = useState(false);
+  const activeGroups = isGlobal ? GLOBAL_GROUPS : MARKETPLACE_GROUPS;
+  const activeDraft = isGlobal ? globalDraft : draft;
 
   return (
     <>
@@ -400,9 +430,11 @@ export default function BuilderSidebar({
           </div>
         </div>
 
+        <GlobalSettingsBlock active={isGlobal} onOpen={onOpenGlobal} />
+
         <MarketplacesBlock
           templates={templates}
-          activeId={activeTemplateId}
+          activeId={isMarketplace ? activeTemplateId : null}
           onSwitch={onSwitchTemplate}
           onAdd={onAddMarketplace}
           onRename={onRenameMarketplace}
@@ -413,11 +445,11 @@ export default function BuilderSidebar({
 
         {hasActive && (
           <>
-            {GROUPS.map((g) => (
+            {activeGroups.map((g) => (
               <GroupBlock
                 key={g.key}
                 group={g}
-                draft={draft}
+                draft={activeDraft}
                 selectedId={selection[g.selectionKey || g.key]}
                 onSelect={onSelect}
                 open={openKey === g.key}
@@ -426,11 +458,13 @@ export default function BuilderSidebar({
                 onExitReorder={() => setReorderMode(false)}
               />
             ))}
-            <StaticRow
-              label="Version Page"
-              count={draft.versions?.length ?? 0}
-              onClick={() => jumpOnly('section-version')}
-            />
+            {isGlobal && (
+              <StaticRow
+                label="Version Page"
+                count={globalDraft.versions?.length ?? 0}
+                onClick={() => jumpOnly('section-version')}
+              />
+            )}
           </>
         )}
       </aside>

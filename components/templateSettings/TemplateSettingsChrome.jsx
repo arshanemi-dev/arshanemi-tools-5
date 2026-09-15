@@ -6,10 +6,12 @@ import { ArrowLeft } from 'lucide-react';
 import { getStoredUser, clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
-// Shell for every /profit-loss/template-settings page — the shared navbar +
-// a "back to dashboard" bar + a scroll container. Mirrors ProfitLossShell's
-// session bootstrap.
-export default function TemplateSettingsChrome({ children }) {
+// Shell for every /profit-loss/template-settings (and /profit-loss/debug)
+// page — the shared navbar + a "back to dashboard" bar + a scroll container.
+// Mirrors ProfitLossShell's session bootstrap. `page` picks the breadcrumb
+// label and which of the two builder-area links to show (never a self-link).
+export default function TemplateSettingsChrome({ children, page = 'template-settings' }) {
+  const isDebug = page === 'debug';
   const [user, setUser] = useState(() => (isLoggedIn() ? getStoredUser() : null));
 
   useEffect(() => {
@@ -37,7 +39,13 @@ export default function TemplateSettingsChrome({ children }) {
           <ArrowLeft size={15} /> Back to dashboard
         </Link>
         <span className="text-subtle">/</span>
-        <span className="text-sm font-semibold text-foreground">Template Settings</span>
+        <span className="text-sm font-semibold text-foreground">{isDebug ? 'Sheet Debugger' : 'Template Settings'}</span>
+        <Link
+          href={isDebug ? '/profit-loss/template-settings?t=global' : '/profit-loss/debug'}
+          className="ml-auto text-sm font-medium text-muted hover:text-foreground"
+        >
+          {isDebug ? 'Template Settings' : 'Sheet Debugger'}
+        </Link>
       </div>
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>

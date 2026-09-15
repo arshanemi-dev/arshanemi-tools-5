@@ -11,9 +11,12 @@ const FORMATS = ['money', 'int', 'pct', 'text'];
 
 // image 2 · Header — the template's header list (default headers bound to an
 // engine metric, sheet-mapped columns, and manually added ones all live
-// together here). Extracted headers appear only for sheet columns that were
-// NOT mapped to a default one in the Market Place section (the "union"
-// rule). Formula headers reference other headers by [name], plus
+// together here). An "extracted" header auto-created from a sheet column
+// (Market Place > uploading a sample) is pruned again the moment that same
+// column gets mapped to some OTHER header and nothing else still points at
+// it (see TemplateBuilder.reconcileExtractedHeader) — so this list never
+// needs its own filter for that, it just reflects config.headers directly.
+// Formula headers reference other headers by [name], plus
 // SUM([..]) / COUNT([..]). Left column = every header as a compact card
 // (name + Delete, default headers excepted) — click one to open its full
 // editor on the right. Picking one in the sidebar does the same.
@@ -67,15 +70,22 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
                     value={active.name}
                     onChange={(e) => patchItem('headers', active.id, { name: e.target.value })}
                     placeholder="Enter Header name"
-                    className="min-w-[12rem] flex-1 rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
+                    disabled={active.reserved}
+                    title={active.reserved ? 'Required by every marketplace — name is locked' : undefined}
+                    className="min-w-[12rem] flex-1 rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-subtle">
-                    {active.source === 'default' ? 'Default header' : active.source === 'extracted' ? 'Sheet header' : 'Header'}
+                    {active.reserved ? 'Required header' : active.source === 'default' ? 'Default header' : active.source === 'extracted' ? 'Sheet header' : 'Header'}
                   </span>
                 </div>
+                {active.reserved && (
+                  <p className="text-[11px] text-subtle">
+                    Every marketplace must map this to a sheet column before it can be published live.
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <TypeToggle value={active.type} onChange={(type) => patchItem('headers', active.id, { type })} />
+                  <TypeToggle value={active.type} onChange={active.reserved ? () => {} : (type) => patchItem('headers', active.id, { type })} />
                   <label className="flex items-center gap-1.5 text-xs text-muted">
                     Format
                     <select
@@ -106,14 +116,9 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
                   />
                 )}
 
-                {active.source === 'default' && (
+                {active.source === 'default' && active.primitive && (
                   <p className="text-[11px] text-subtle">
                     Bound to the <code>{active.primitive}</code> engine metric{active.note ? ` — ${active.note}` : ''}.
-                  </p>
-                )}
-                {active.mappedFrom && (
-                  <p className="text-[11px] text-subtle">
-                    Filled from <code>{active.mappedFrom.slot}</code> · <code>{active.mappedFrom.sheetHeader}</code>.
                   </p>
                 )}
               </div>

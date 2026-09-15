@@ -4,10 +4,20 @@ import { useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 
 // Template-driven details table. `columns` = resolved header defs
-// ({ id, name, format, signed }) in display order; `rows` =
-// resolveTemplate().tableRows ({ key, cells: { [headerId]: { raw, display } } }).
-// First column is sticky/linked, rest sortable + per-column filterable.
-export default function DetailsTable({ columns = [], rows = [], editMode = false, arrange }) {
+// ({ id, name, format, signed, primitive }) in display order; `rows` =
+// resolveTemplate().tableRows ({ key, company, cells: { [headerId]: {
+// raw, display } } }). First real header column is sticky/linked, rest
+// sortable + per-column filterable.
+//
+// Two extra columns aren't part of the template config — they're rendered
+// unconditionally by this component: a "Company" column always pinned at
+// the very start (read-only — shows the brand tag every row was uploaded
+// with; `companyControl` in its header lets the user pick/create the brand
+// new uploads get tagged with, same list the toolbar's BrandPicker uses),
+// and a "Cost" input column injected immediately after whichever header is
+// bound to the `sku` engine primitive, if any — a per-SKU unit-cost the
+// user can type directly instead of only via the SKU-cost sheet upload.
+export default function DetailsTable({ columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
     key: h.id,
@@ -15,7 +25,15 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
     type: h.format === 'text' ? 'text' : 'num',
     sticky: i === 0,
     signed: !!h.signed,
+    isSku: h.primitive === 'sku',
   }));
+
+  const showCost = cols.some((c) => c.isSku);
+  const displayCols = [{ id: '__company__', key: '__company__', kind: 'company' }];
+  for (const c of cols) {
+    displayCols.push({ ...c, kind: 'header' });
+    if (c.isSku && showCost) displayCols.push({ id: '__cost__', key: '__cost__', kind: 'cost' });
+  }
 
   const [sort, setSort] = useState(null); // { key, dir }
   const [filters, setFilters] = useState({});
@@ -77,29 +95,48 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
               <th className="w-10 px-3 py-2.5">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
-              {cols.map((col) => (
-                <th key={col.key} className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
-                  <ColumnHeaderCell
-                    col={col}
-                    sort={sort}
-                    onSortChange={setSort}
-                    filter={filters[col.key]}
-                    onFilterChange={(f) => setFilters((prev) => ({ ...prev, [col.key]: f }))}
-                    editMode={editMode}
-                    showArrange={editMode && !col.sticky}
-                    items={arrange?.allItems}
-                    hiddenIds={arrange?.hiddenIds}
-                    onSwapWith={(targetId) => arrange?.swapWith(col.id, targetId)}
-                    onHide={() => arrange?.hide(col.id)}
-                  />
-                </th>
-              ))}
+              {displayCols.map((col) => {
+                if (col.kind === 'company') {
+                  return (
+                    <th key="__company__" className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span>Company</span>
+                        {companyControl}
+                      </div>
+                    </th>
+                  );
+                }
+                if (col.kind === 'cost') {
+                  return (
+                    <th key="__cost__" className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                      Cost
+                    </th>
+                  );
+                }
+                return (
+                  <th key={col.key} className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                    <ColumnHeaderCell
+                      col={col}
+                      sort={sort}
+                      onSortChange={setSort}
+                      filter={filters[col.key]}
+                      onFilterChange={(f) => setFilters((prev) => ({ ...prev, [col.key]: f }))}
+                      editMode={editMode}
+                      showArrange={editMode && !col.sticky}
+                      items={arrange?.allItems}
+                      hiddenIds={arrange?.hiddenIds}
+                      onSwapWith={(targetId) => arrange?.swapWith(col.id, targetId)}
+                      onHide={() => arrange?.hide(col.id)}
+                    />
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {view.length === 0 && (
               <tr>
-                <td colSpan={cols.length + 1} className="px-4 py-10 text-center text-sm text-muted">
+                <td colSpan={displayCols.length + 1} className="px-4 py-10 text-center text-sm text-muted">
                   {rows.length === 0 ? 'No data yet — upload a sheet to see rows here.' : 'No rows match the current filters.'}
                 </td>
               </tr>
@@ -109,7 +146,32 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
                 <td className="px-3 py-2.5">
                   <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
                 </td>
-                {cols.map((col) => {
+                {displayCols.map((col) => {
+                  if (col.kind === 'company') {
+                    return (
+                      <td key="__company__" className="px-3 py-2.5 whitespace-nowrap text-muted">
+                        {r.company || '—'}
+                      </td>
+                    );
+                  }
+                  if (col.kind === 'cost') {
+                    const val = costBySku[r.key];
+                    return (
+                      <td key="__cost__" className="px-3 py-2.5 whitespace-nowrap">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          value={val ?? ''}
+                          onChange={(e) => onCostChange?.(r.key, e.target.value)}
+                          placeholder="—"
+                          aria-label={`Cost for ${r.key}`}
+                          className="w-24 rounded-lg border border-divider bg-background px-2 py-1 text-sm focus:border-accent focus:outline-none"
+                        />
+                      </td>
+                    );
+                  }
                   const cell = r.cells[col.key] || {};
                   const neg = col.signed && Number(cell.raw) < 0;
                   return (

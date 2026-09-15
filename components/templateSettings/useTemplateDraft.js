@@ -1,16 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { makeEmptyConfig, validateConfig } from '@/data/templateSchema';
-import {
-  getTemplate, getVersion, createTemplate, saveDraftVersion, updateDraftVersion,
-  publishVersion, patchTemplate,
-} from '@/lib/profitLoss/templatesApi';
+import { makeEmptyMarketplaceConfig, validateMarketplaceConfig } from '@/data/templateSchema';
+import { getTemplate, createTemplate, putTemplateConfig, patchTemplate } from '@/lib/profitLoss/templatesApi';
 
-// Owns the whole builder `config` draft + the save / publish flow. `templateId`
-// null = create mode (first Save creates the template). Generic array mutators
-// (`add`/`patch`/`remove`) keep the 8 section editors from each needing their
-// own copy.
+// Owns one MARKETPLACE's config draft — files + column mapping only
+// (Headers/Title Cards/Graphs/Tabs/Overview Tabs live in the global config,
+// see useGlobalTemplateDraft.js, the one thing that still versions).
+// Marketplaces save directly and are active the instant they're saved —
+// "always show, no hide": no draft/publish distinction, no Version Page.
+// `templateId` null = create mode (first Save creates the template).
+// `globalHeaderIds` (from the global draft) is what mappings validate
+// against.
 const LS_PREFIX = 'mp-tpl-draft:';
 
 function initialConfig(templateId) {
@@ -20,61 +21,37 @@ function initialConfig(templateId) {
       if (raw) return JSON.parse(raw);
     } catch { /* ignore */ }
   }
-  return makeEmptyConfig();
+  return makeEmptyMarketplaceConfig();
 }
 
-export default function useTemplateDraft(templateId) {
+export default function useTemplateDraft(templateId, { globalHeaderIds } = {}) {
   const [loading, setLoading] = useState(!!templateId);
   const [loadError, setLoadError] = useState(false);
   const [template, setTemplate] = useState(null);
-  const [versions, setVersions] = useState([]);
-  const [activeVersionId, setActiveVersionId] = useState(null);
-  const [editingDraft, setEditingDraft] = useState(false);
   const [config, setConfig] = useState(() => initialConfig(templateId));
-  const [savedJson, setSavedJson] = useState(() => JSON.stringify(makeEmptyConfig()));
+  const [savedJson, setSavedJson] = useState(() => JSON.stringify(makeEmptyMarketplaceConfig()));
   const [saving, setSaving] = useState(false);
 
   const lsKey = `${LS_PREFIX}${templateId || 'new'}`;
 
   // ── load existing ───────────────────────────────────────────────────────
-  const reloadMeta = useCallback(async () => {
-    if (!templateId) return null;
-    const { ok, data } = await getTemplate(templateId);
-    if (!ok || !data?.template) { setLoadError(true); return null; }
-    setTemplate(data.template);
-    setVersions(data.versions || []);
-    return data;
-  }, [templateId]);
-
   useEffect(() => {
     let alive = true;
     if (!templateId) return () => { alive = false; }; // create mode — config seeded from LS at init
     (async () => {
-      const data = await reloadMeta();
-      if (!alive || !data) { setLoading(false); return; }
-      const vs = data.versions || [];
-      const newestDraft = vs.find((v) => v.status === 'draft');
-      const target = newestDraft || vs.find((v) => v.id === data.template.liveVersionId) || vs[0];
-      if (target) {
-        const res = await getVersion(templateId, target.id);
-        if (alive && res.ok) {
-          const cfg = res.data.version?.config && Object.keys(res.data.version.config).length
-            ? res.data.version.config
-            : makeEmptyConfig(data.template.marketplaceName);
-          setConfig(cfg);
-          setSavedJson(JSON.stringify(cfg));
-          setActiveVersionId(target.id);
-          setEditingDraft(target.status === 'draft');
-        }
-      } else {
-        const cfg = makeEmptyConfig(data.template.marketplaceName);
-        setConfig(cfg);
-        setSavedJson(JSON.stringify(cfg));
-      }
-      if (alive) setLoading(false);
+      const { ok, data } = await getTemplate(templateId);
+      if (!alive) return;
+      if (!ok || !data?.template) { setLoadError(true); setLoading(false); return; }
+      setTemplate(data.template);
+      const cfg = data.template.config && Object.keys(data.template.config).length
+        ? data.template.config
+        : makeEmptyMarketplaceConfig(data.template.marketplaceName);
+      setConfig(cfg);
+      setSavedJson(JSON.stringify(cfg));
+      setLoading(false);
     })();
     return () => { alive = false; };
-  }, [templateId, reloadMeta, lsKey]);
+  }, [templateId]);
 
   // ── local crash backup ─────────────────────────────────────────────────
   const lsTimer = useRef(null);
@@ -87,7 +64,10 @@ export default function useTemplateDraft(templateId) {
   }, [config, lsKey]);
 
   const dirty = JSON.stringify(config) !== savedJson;
-  const validation = useMemo(() => validateConfig(config), [config]);
+  const validation = useMemo(
+    () => validateMarketplaceConfig(config, globalHeaderIds || new Set()),
+    [config, globalHeaderIds],
+  );
 
   // ── generic mutators ───────────────────────────────────────────────────
   const patchConfig = useCallback((patch) => {
@@ -109,8 +89,8 @@ export default function useTemplateDraft(templateId) {
     setConfig((c) => ({ ...c, marketplace: { ...c.marketplace, ...patch } }));
   }, []);
 
-  // ── save / publish ─────────────────────────────────────────────────────
-  const saveDraft = useCallback(async ({ major = false, note = '' } = {}) => {
+  // ── save (direct — no versions) ─────────────────────────────────────────
+  const save = useCallback(async () => {
     setSaving(true);
     try {
       if (!templateId) {
@@ -120,29 +100,15 @@ export default function useTemplateDraft(templateId) {
         try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
         return { ok: true, created: true, templateId: data.template.id };
       }
-      let res;
-      if (activeVersionId && editingDraft && !major) {
-        res = await updateDraftVersion(templateId, activeVersionId, { config, note });
-      } else {
-        res = await saveDraftVersion(templateId, { config, note, major });
-      }
-      if (!res.ok) return { ok: false, status: res.status, error: res.data?.error, details: res.data?.details };
-      const v = res.data.version;
-      setActiveVersionId(v.id);
-      setEditingDraft(true);
+      const { ok, status, data } = await putTemplateConfig(templateId, config);
+      if (!ok) return { ok: false, status, error: data?.error, details: data?.details };
+      setTemplate(data.template);
       setSavedJson(JSON.stringify(config));
-      await reloadMeta();
-      return { ok: true, version: v };
+      return { ok: true };
     } finally {
       setSaving(false);
     }
-  }, [templateId, config, activeVersionId, editingDraft, reloadMeta, lsKey]);
-
-  const publish = useCallback(async (versionId, live = true) => {
-    const res = await publishVersion(templateId, versionId, { live });
-    if (res.ok) await reloadMeta();
-    return res;
-  }, [templateId, reloadMeta]);
+  }, [templateId, config, lsKey]);
 
   const savePatchTemplate = useCallback(async (patch) => {
     const res = await patchTemplate(templateId, patch);
@@ -152,10 +118,10 @@ export default function useTemplateDraft(templateId) {
 
   return {
     loading, loadError, saving,
-    template, versions, activeVersionId, editingDraft,
+    template,
     config, dirty, errors: validation.errors, valid: validation.ok,
     setConfig, patchConfig, addItem, patchItem, removeItem,
     updateMarketplace,
-    saveDraft, publish, patchTemplate: savePatchTemplate, reloadMeta,
+    save, patchTemplate: savePatchTemplate,
   };
 }
