@@ -4,10 +4,12 @@ import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import Popover from './Popover';
 
 // "My Details ▾" / "All Details ▾" — pick the active column set for the table.
-//  - All Details = every header the current tab includes.
-//  - My Details  = the user's saved subset (checklist here; persisted to
-//    /api/profit-loss/settings when signed in). The first header is always
-//    shown (it's the row key / sticky column).
+//  - All Details = every saved (global) header, not just the ones the admin
+//    bound to this tab — see TabView's restHeaderDefs.
+//  - My Details  = the user's saved subset (checklist here, drawn from that
+//    same full header list; persisted to /api/profit-loss/settings when
+//    signed in). The first header is always shown (it's the row key / sticky
+//    column).
 function Pill({ label, active, count, onClick, children }) {
   return (
     <Popover
@@ -56,7 +58,7 @@ export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], 
       </Pill>
 
       <Pill label="All Details" active={mode === 'all'} onClick={() => onModeChange('all')}>
-        <div className="px-2 py-2 text-sm text-muted">Shows every column on this tab.</div>
+        <div className="px-2 py-2 text-sm text-muted">Shows every saved header.</div>
       </Pill>
     </div>
   );

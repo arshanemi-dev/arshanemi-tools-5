@@ -41,17 +41,15 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
     return set;
   }, [slots]);
 
-  const unmapped = useMemo(() => {
-    const rows = [];
-    for (const s of slots) {
-      for (const h of s.extractedHeaders || []) {
-        if (!mappedSheetHeaders.has(`${s.id}::${h}`)) rows.push({ slotId: s.id, slotLabel: s.label, sheetHeader: h });
-      }
-    }
-    return rows;
-  }, [slots, mappedSheetHeaders]);
-
-  const mappings = useMemo(() => {
+  // The Unmap/Map grids below are scoped to whichever file is currently
+  // selected on the left — a marketplace with several files (e.g. a Payment
+  // sheet + an Orders sheet) would otherwise mix every file's columns into
+  // one list with no clear sense of which file a row even belongs to.
+  // `allMappings` (every slot) stays separate for the "Our Header" pool's
+  // "mapped" badge and the reserved Order Id/Transaction Id status at the
+  // top — those are marketplace-wide completeness checks, not per-file, so
+  // they must NOT narrow to just the active slot.
+  const allMappings = useMemo(() => {
     const rows = [];
     for (const s of slots) for (const m of s.mappings || []) {
       rows.push({ slotId: s.id, slotLabel: s.label, sheetHeader: m.sheetHeader, headerId: m.headerId, headerName: globalHeaders.find((x) => x.id === m.headerId)?.name || '(deleted)' });
@@ -59,7 +57,19 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
     return rows;
   }, [slots, globalHeaders]);
 
-  const mappedHeaderIds = useMemo(() => new Set(mappings.map((m) => m.headerId)), [mappings]);
+  const unmapped = useMemo(() => {
+    if (!activeSlot) return [];
+    return (activeSlot.extractedHeaders || [])
+      .filter((h) => !mappedSheetHeaders.has(`${activeSlot.id}::${h}`))
+      .map((h) => ({ slotId: activeSlot.id, slotLabel: activeSlot.label, sheetHeader: h }));
+  }, [activeSlot, mappedSheetHeaders]);
+
+  const mappings = useMemo(
+    () => allMappings.filter((m) => m.slotId === activeSlotId),
+    [allMappings, activeSlotId],
+  );
+
+  const mappedHeaderIds = useMemo(() => new Set(allMappings.map((m) => m.headerId)), [allMappings]);
   const reservedStatus = [
     { id: RESERVED_HEADER_IDS.orderId, name: 'Order Id' },
     { id: RESERVED_HEADER_IDS.transactionId, name: 'Transaction Id' },
@@ -199,12 +209,17 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
           </div>
         )}
 
-        {/* Mapping grid */}
+        {/* Mapping grid — Unmap/Map scoped to activeSlot only, see unmapped/
+            mappings above; "Our Header" stays the full shared pool. */}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <div className="rounded-lg border border-divider bg-card p-3">
-            <div className="mb-2 text-[12.5px] font-semibold text-foreground">Unmap Header ({unmapped.length})</div>
+            <div className="mb-2 flex items-center justify-between gap-2 text-[12.5px] font-semibold text-foreground">
+              <span>Unmap Header ({unmapped.length})</span>
+              {activeSlot && <span className="truncate text-[10.5px] font-normal text-subtle">{activeSlot.label}</span>}
+            </div>
             <ul className="max-h-64 space-y-1 overflow-y-auto">
-              {unmapped.length === 0 && <li className="text-[11px] text-subtle">Upload a sample file to extract columns.</li>}
+              {!activeSlot && <li className="text-[11px] text-subtle">Pick a file on the left to see its columns.</li>}
+              {activeSlot && unmapped.length === 0 && <li className="text-[11px] text-subtle">Upload a sample file to extract columns.</li>}
               {unmapped.map((u) => (
                 <li key={`${u.slotId}::${u.sheetHeader}`} className="rounded-md border border-divider bg-background p-1.5">
                   <div className="flex items-center justify-between gap-2">
@@ -237,9 +252,13 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
           </div>
 
           <div className="rounded-lg border border-divider bg-card p-3">
-            <div className="mb-2 text-[12.5px] font-semibold text-foreground">Map Header ({mappings.length})</div>
+            <div className="mb-2 flex items-center justify-between gap-2 text-[12.5px] font-semibold text-foreground">
+              <span>Map Header ({mappings.length})</span>
+              {activeSlot && <span className="truncate text-[10.5px] font-normal text-subtle">{activeSlot.label}</span>}
+            </div>
             <ul className="max-h-64 space-y-1 overflow-y-auto">
-              {mappings.length === 0 && <li className="text-[11px] text-subtle">Nothing mapped yet.</li>}
+              {!activeSlot && <li className="text-[11px] text-subtle">Pick a file on the left to see its mappings.</li>}
+              {activeSlot && mappings.length === 0 && <li className="text-[11px] text-subtle">Nothing mapped yet.</li>}
               {mappings.map((m) => (
                 <li key={`${m.slotId}::${m.sheetHeader}`} className="flex items-center justify-between gap-2 rounded-md border border-divider bg-background p-1.5 text-[12px]">
                   <span className="min-w-0 truncate">

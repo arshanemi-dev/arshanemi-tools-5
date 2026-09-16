@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 
 // Template-driven details table. `columns` = resolved header defs
@@ -17,7 +18,26 @@ import ColumnHeaderCell from './ColumnHeaderCell';
 // and a "Cost" input column injected immediately after whichever header is
 // bound to the `sku` engine primitive, if any — a per-SKU unit-cost the
 // user can type directly instead of only via the SKU-cost sheet upload.
-export default function DetailsTable({ columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null }) {
+//
+// Row selection (the checkboxes) is controlled from DashboardWorkspace, not
+// local state — the header bar's Delete button acts on `selectedKeys`
+// regardless of which tab/table it was checked in.
+//
+// `dirtyKeys` (a Set of row keys, e.g. SKUs with a just-typed Cost) tints a
+// row light blue — "edited, not saved yet". It clears back to normal once
+// DashboardWorkspace's debounced save actually succeeds; for a signed-out
+// user nothing ever saves, so it correctly stays on.
+//
+// Paginated client-side — `PAGE_SIZE` rows at a time, with Prev/Next + a
+// page-size picker in the footer. The page resets whenever the underlying
+// row set, a filter, or the sort changes, so it never gets stuck showing an
+// out-of-range empty page.
+const PAGE_SIZES = [25, 50, 100];
+
+export default function DetailsTable({
+  columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys,
+}) {
   const cols = columns.map((h, i) => ({
     id: h.id,
     key: h.id,
@@ -37,7 +57,10 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
 
   const [sort, setSort] = useState(null); // { key, dir }
   const [filters, setFilters] = useState({});
-  const [selected, setSelected] = useState(() => new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const selected = selectedKeys || new Set();
+  const dirty = dirtyKeys || new Set();
 
   const view = useMemo(() => {
     let out = rows.filter((r) =>
@@ -63,20 +86,22 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
     return out;
   }, [rows, filters, sort]);
 
-  const allChecked = view.length > 0 && view.every((r) => selected.has(r.key));
-  const toggleAll = () =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (allChecked) view.forEach((r) => next.delete(r.key));
-      else view.forEach((r) => next.add(r.key));
-      return next;
-    });
-  const toggleOne = (k) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k); else next.add(k);
-      return next;
-    });
+  // Reset to page 1 whenever the filtered/sorted set changes shape, so a
+  // filter that shrinks the result set can't strand the view on an
+  // out-of-range page.
+  useEffect(() => { setPage(1); }, [rows, filters, sort, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(view.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = view.slice(pageStart, pageStart + pageSize);
+
+  // "Select all" scopes to the current page, like Delete already scopes to
+  // whatever's selected — selecting hundreds of off-screen rows in one click
+  // would be a surprising way to load the confirm dialog.
+  const allChecked = pageRows.length > 0 && pageRows.every((r) => selected.has(r.key));
+  const toggleAll = () => onToggleAll(pageRows.map((r) => r.key));
+  const toggleOne = (k) => onToggleRow(k);
 
   if (!cols.length) {
     return (
@@ -88,17 +113,17 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
 
   return (
     <div className="overflow-hidden rounded-xl border border-divider bg-background">
-      <div className="overflow-x-auto">
+      <div className="max-h-[65vh] overflow-auto">
         <table className="w-full min-w-max text-sm">
           <thead>
-            <tr className="border-b border-divider bg-th">
-              <th className="w-10 px-3 py-2.5">
+            <tr className="border-b border-divider">
+              <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
               {displayCols.map((col) => {
                 if (col.kind === 'company') {
                   return (
-                    <th key="__company__" className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                    <th key="__company__" className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <span>Company</span>
                         {companyControl}
@@ -108,13 +133,13 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
                 }
                 if (col.kind === 'cost') {
                   return (
-                    <th key="__cost__" className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                    <th key="__cost__" className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
                       Cost
                     </th>
                   );
                 }
                 return (
-                  <th key={col.key} className="px-3 py-2.5 text-left font-medium text-muted whitespace-nowrap">
+                  <th key={col.key} className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}
@@ -141,8 +166,12 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
                 </td>
               </tr>
             )}
-            {view.map((r) => (
-              <tr key={r.key} className="border-t border-divider transition-colors hover:bg-card-hover">
+            {pageRows.map((r) => (
+              <tr
+                key={r.key}
+                className={`border-t border-divider transition-colors hover:bg-card-hover ${dirty.has(r.key) ? 'bg-link/10' : ''}`}
+                title={dirty.has(r.key) ? 'Edited — not saved yet' : undefined}
+              >
                 <td className="px-3 py-2.5">
                   <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
                 </td>
@@ -194,11 +223,41 @@ export default function DetailsTable({ columns = [], rows = [], editMode = false
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between border-t border-divider px-3 py-2 text-xs text-subtle">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider px-3 py-2 text-xs text-subtle">
         <span>
-          {view.length} row{view.length === 1 ? '' : 's'}
+          {view.length === 0 ? '0 rows' : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} row${view.length === 1 ? '' : 's'}`}
           {selected.size > 0 && ` · ${selected.size} selected`}
         </span>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            aria-label="Rows per page"
+            className="rounded-lg border border-divider-light bg-background px-1.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
+          >
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / page</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1}
+            aria-label="Previous page"
+            className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="tabular-nums text-foreground">Page {currentPage} of {pageCount}</span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            disabled={currentPage >= pageCount}
+            aria-label="Next page"
+            className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

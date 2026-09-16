@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSpreadsheet, FileText, RotateCcw, Settings } from 'lucide-react';
+import { FileSpreadsheet, FileText, RotateCcw, Settings, Trash2 } from 'lucide-react';
 import ValueFilter from './ValueFilter';
 import DateRangeFilter from './DateRangeFilter';
 import AdsCostControl from './AdsCostControl';
@@ -8,14 +8,14 @@ import RowLimitControl from './RowLimitControl';
 import IconButton from './IconButton';
 
 // Row B: "Dashboard" title + Reset / row-limit / Company filter / Date, then
-// the output actions (Excel / PDF) on the far right — matching the reference
-// header row. No Apply button — every change here debounces into effect on
-// its own (see DashboardWorkspace's pending -> applied effect); `updating`
-// shows a brief "Updating…" hint while that debounce is in flight. Save /
-// History are hidden for now (props still flow down from DashboardWorkspace
-// so they're a one-line change to bring back). Excel/PDF always export every
-// uploaded row regardless of the row-limit or date filter shown here — see
-// DashboardWorkspace's doExport.
+// Delete (selected rows) + the output actions (Excel / PDF) on the far
+// right — matching the reference header row. No Apply button — every change
+// here debounces into effect on its own (see DashboardWorkspace's
+// pending -> applied effect); `updating` shows a brief "Updating…" hint
+// while that debounce is in flight. Save / History are hidden for now (props
+// still flow down from DashboardWorkspace so they're a one-line change to
+// bring back). Excel/PDF always export every uploaded row regardless of the
+// row-limit or date filter shown here — see DashboardWorkspace's doExport.
 export default function DashboardHeaderBar({
   onReset,
   showSetting,
@@ -31,6 +31,8 @@ export default function DashboardHeaderBar({
   onAdsChange,
   updating,
   hasData,
+  selectedCount = 0,
+  onDeleteClick,
   onExportExcel,
   onExportPdf,
 }) {
@@ -48,6 +50,15 @@ export default function DashboardHeaderBar({
 
         <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
 
+        <IconButton
+          icon={Trash2}
+          label="Delete"
+          title={selectedCount ? `Delete ${selectedCount} selected row${selectedCount === 1 ? '' : 's'}` : 'Select rows in the table to delete them'}
+          tone="outline"
+          badge={selectedCount || null}
+          disabled={!selectedCount}
+          onClick={onDeleteClick}
+        />
         <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData} />
         <IconButton icon={FileText} label="PDF" title="Export to PDF" onClick={onExportPdf} disabled={!hasData} />
       </div>

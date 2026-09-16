@@ -12,11 +12,13 @@ import { detectPlatform } from '@/data/platforms/detect';
 import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
+import { mergeCanonicalRows } from '@/lib/profitLoss/mergeRows';
 import { downloadTemplateXlsx, downloadTemplatePdf } from '@/lib/profitLoss/exportTemplate';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
 
 import DashboardSidebar from './DashboardSidebar';
 import DashboardToolbar from './DashboardToolbar';
@@ -74,6 +76,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // maps to a different sheet column per marketplace) — it's reconstructed
   // here from the active marketplace's fileSlots[].mappings before
   // resolveTemplate (which stays marketplace-agnostic) ever sees it.
+  //
+  // Every saved global header always shows here, mapped for this marketplace
+  // or not — switching Market Place changes where the data comes from, never
+  // what's shown (see CLAUDE.md). A header this marketplace hasn't mapped
+  // anything to just renders blank for it, same as any other header with no
+  // data yet; that's preferable to a column that silently disappears and
+  // reappears as the user switches marketplaces.
   const config = useMemo(() => {
     if (!globalConfig || !activeMarketplace) return {};
     const fileSlots = activeMarketplace.config?.fileSlots || [];
@@ -83,10 +92,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         mappedFromByHeaderId.set(m.headerId, { slot: slot.id, sheetHeader: m.sheetHeader });
       }
     }
-    const headers = (globalConfig.headers || []).map((h) => ({
-      ...h,
-      mappedFrom: mappedFromByHeaderId.get(h.id) || null,
-    }));
+    const headers = (globalConfig.headers || [])
+      .map((h) => ({ ...h, mappedFrom: mappedFromByHeaderId.get(h.id) || null }));
     return {
       ...globalConfig,
       headers,
@@ -116,23 +123,31 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // The most recently uploaded raw File (any slot, or the SKU Cost button) —
   // fed to the embedded SheetDebugger below the toolbar so it always shows
   // the real upload just made, no picker of its own needed there. debugSlotId
-  // (null for a SKU Cost upload, which isn't a marketplace file slot) lets
-  // the debugger check the file's headers against that exact slot's saved
-  // sample + mapping, the same check a real upload runs.
+  // (null for a SKU Cost upload, which isn't a marketplace file slot) travels
+  // WITH that file — SheetDebugger captures it onto that file's own tab the
+  // moment the tab is created, not as a single value applied to whichever
+  // tab happens to be showing, so uploading a second file to a different
+  // slot afterward can't retroactively change what the first file's tab is
+  // checked against.
   const [debugFile, setDebugFile] = useState(null);
   const [debugSlotId, setDebugSlotId] = useState(null);
-  const debugSlot = useMemo(
-    () => (config.fileSlots || []).find((s) => s.id === debugSlotId) || null,
-    [config, debugSlotId],
-  );
 
-  // Upload dedup: keyed off the two reserved global headers (Order Id +
-  // Transaction Id), not the platform mapper's own canonical `orderId` —
-  // re-uploading an overlapping settlement export shouldn't double-count a
-  // row. An Order Id can legitimately repeat across several line items of
-  // one order, so it alone never proves a duplicate; only an identical
-  // Order Id + Transaction Id pair (both mapped and both present) does —
-  // anything short of that (Transaction Id missing/unmapped) is always kept.
+  // Cross-sheet match + merge: keyed off the two reserved global headers
+  // (Order Id + Transaction Id), not the platform mapper's own canonical
+  // `orderId`. Uploading several files for one marketplace (e.g. a Payment
+  // file + an Order file, each mapped to its own headers) is meant to
+  // enrich one row per transaction, not produce two disconnected ones — so
+  // a row from a DIFFERENT file slot with the same Order Id (and Transaction
+  // Id too, when both sheets have one) gets merged into whichever row for
+  // that transaction was seen first (mergeCanonicalRows — every mapped
+  // header's value carried over from both sheets). Within the SAME file,
+  // Order Id alone never merges/collapses anything — one order can
+  // legitimately repeat across separate line items in a single sheet, and
+  // without a Transaction Id to confirm it there's no safe way to tell that
+  // apart from a real duplicate re-upload, so it's always kept as its own
+  // row. An identical Order Id + Transaction Id pair from the SAME slot (a
+  // literal re-upload of overlapping data) is the one case actually treated
+  // as a duplicate and dropped.
   const orderIdHeader = useMemo(
     () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.orderId) || null,
     [config],
@@ -141,24 +156,43 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.transactionId) || null,
     [config],
   );
+  // A header bound to the `sku` engine primitive (if the admin created one)
+  // — used the same way as Order Id below, to seed the manual-mapper
+  // fallback with the marketplace's own real mapping instead of only a
+  // name guess.
+  const skuHeader = useMemo(
+    () => (config.headers || []).find((h) => h.primitive === 'sku') || null,
+    [config],
+  );
   const canonicalRows = useMemo(() => {
-    const seen = new Set();
-    const out = [];
+    const keyFor = (r) => {
+      const orderVal = orderIdHeader ? readHeaderFromRow(orderIdHeader, r) : null;
+      const txnVal = transactionIdHeader ? readHeaderFromRow(transactionIdHeader, r) : null;
+      const orderKey = orderVal != null && String(orderVal).trim() !== '' ? String(orderVal).trim() : null;
+      const txnKey = txnVal != null && String(txnVal).trim() !== '' ? String(txnVal).trim() : null;
+      if (!orderKey) return null;
+      return { key: txnKey ? `${orderKey}::${txnKey}` : orderKey, hasTxn: !!txnKey };
+    };
+
+    const byKey = new Map(); // matchKey -> { row, slotId, hasTxn }
+    const kept = [];
     for (const u of uploads) {
       for (const r of u.rows) {
-        const orderVal = orderIdHeader ? readHeaderFromRow(orderIdHeader, r) : null;
-        const txnVal = transactionIdHeader ? readHeaderFromRow(transactionIdHeader, r) : null;
-        const orderKey = orderVal != null && String(orderVal).trim() !== '' ? String(orderVal).trim() : null;
-        const txnKey = txnVal != null && String(txnVal).trim() !== '' ? String(txnVal).trim() : null;
-        if (orderKey && txnKey) {
-          const dupKey = `${orderKey}::${txnKey}`;
-          if (seen.has(dupKey)) continue;
-          seen.add(dupKey);
+        const k = keyFor(r);
+        if (!k) { kept.push(r); continue; } // no Order Id mapped/present — nothing to match on, always kept
+
+        const existing = byKey.get(k.key);
+        if (!existing) { byKey.set(k.key, { row: r, slotId: u.slotId, hasTxn: k.hasTxn }); continue; }
+
+        if (existing.slotId === u.slotId) {
+          if (!k.hasTxn) kept.push(r); // same sheet, Order Id repeats, unconfirmed — keep as its own row
+          // same sheet + same Order Id + same Transaction Id = a real duplicate — dropped
+          continue;
         }
-        out.push(r);
+        existing.row = mergeCanonicalRows(existing.row, r); // matched across two different files — enrich, don't duplicate
       }
     }
-    return out;
+    return [...[...byKey.values()].map((v) => v.row), ...kept];
   }, [uploads, orderIdHeader, transactionIdHeader]);
 
   // ── filters (pending vs applied) ────────────────────────────────────────
@@ -199,7 +233,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     loggedIn, myColumns, onMyColumnsChange,
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
-    onSkuCostsChange,
+    onSkuCostsChange, skuCostsSaveTick,
     editMode, setEditMode, saveLayout, savingLayout,
   } = useDashboardSettings({
     ads: pending.ads,
@@ -381,6 +415,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // The table's inline Cost input — updates the live skuCostMap immediately
   // (so Product Cost / COGS / Profit-Loss recompute as the user types) and
   // hands the fresh map to the debounced-save hook for signed-in users.
+  // `dirtySkuKeys` marks the row light blue ("unsaved") the moment a Cost is
+  // typed; it clears (back to normal) once useDashboardSettings' debounced
+  // PUT actually succeeds (skuCostsSaveTick below) — for a signed-out user
+  // that never happens, so the highlight correctly stays on forever (it
+  // really isn't being saved anywhere for them).
+  const [dirtySkuKeys, setDirtySkuKeys] = useState(() => new Set());
   const onCostChange = useCallback((sku, rawValue) => {
     const map = { ...(skuCost?.map || {}) };
     const trimmed = String(rawValue ?? '').trim();
@@ -391,7 +431,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     }
     setSkuCost({ map, count: Object.keys(map).length, fileName: skuCost?.fileName ?? null });
     onSkuCostsChange(map);
+    setDirtySkuKeys((prev) => new Set(prev).add(sku));
   }, [skuCost, onSkuCostsChange]);
+
+  useEffect(() => {
+    if (skuCostsSaveTick > 0) (() => setDirtySkuKeys(new Set()))();
+  }, [skuCostsSaveTick]);
 
   // The table's "Company" column header control — the same BrandPicker the
   // toolbar uses, shrunk down. Whatever brand is picked/created here is the
@@ -414,6 +459,50 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const showOverview = !!activeOverview;
   const activeTab = visibleTabs.find((t) => t.id === activeTabId) || null;
   const activeOverviewTab = (config.overviewTabs || []).find((o) => o.id === activeTabId) || null;
+
+  // ── row selection + delete ───────────────────────────────────────────────
+  // Checkboxes in the table (DetailsTable) are controlled from here so the
+  // header bar's Delete button can act on them regardless of which tab they
+  // were checked in. A table row is a group (by SKU on a regular tab, or by
+  // the Overview's fixed header on an Overview tab), not a single uploaded
+  // record — deleting one removes every underlying uploaded row that fell
+  // into that group. Selection resets on tab switch since a key from one
+  // grouping (a SKU) has no meaning in the other (a fixed-header value).
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  useEffect(() => {
+    (() => setSelectedKeys(new Set()))();
+  }, [activeTabId]);
+
+  const onToggleRow = useCallback((key) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  const onToggleAll = useCallback((keys) => {
+    setSelectedKeys((prev) => {
+      const allIn = keys.every((k) => prev.has(k));
+      const next = new Set(prev);
+      keys.forEach((k) => (allIn ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  }, []);
+
+  const onDeleteSelected = useCallback(() => {
+    const count = selectedKeys.size;
+    if (!count) return;
+    const matchRawRow = showOverview && activeOverview?.fixedHeader
+      ? (r) => String(readHeaderFromRow(activeOverview.fixedHeader, r) ?? '').trim()
+      : (r) => r.sku;
+    setUploads((prev) => prev
+      .map((u) => ({ ...u, rows: u.rows.filter((r) => !selectedKeys.has(matchRawRow(r))) }))
+      .filter((u) => u.rows.length > 0));
+    addToast(`Deleted ${count} row${count === 1 ? '' : 's'}`);
+    setSelectedKeys(new Set());
+    setConfirmDeleteOpen(false);
+  }, [selectedKeys, showOverview, activeOverview, addToast]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
@@ -539,16 +628,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           savingLayout={savingLayout}
         />
 
-        {/* Right below the upload toolbar — template builders can inspect
-            exactly what any file (including one they haven't mapped yet)
-            parses to without leaving the dashboard. Same gate as Template
-            Settings; a regular seller never sees it. */}
-        {canManageTemplates && (
-          <div className="max-h-[60vh] shrink-0 overflow-y-auto border-b border-divider bg-surface">
-            <SheetDebugger externalFile={debugFile} showPicker={false} slot={debugSlot} headers={config.headers || []} />
-          </div>
-        )}
-
+     
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           <DashboardHeaderBar
             onReset={resetFilters}
@@ -565,6 +645,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
             updating={dirty}
             hasData={hasData}
+            selectedCount={selectedKeys.size}
+            onDeleteClick={() => setConfirmDeleteOpen(true)}
             onExportExcel={() => doExport('xlsx')}
             onExportPdf={() => doExport('pdf')}
             onOpenHistory={() => setHistoryOpen(true)}
@@ -586,6 +668,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 costBySku={skuCost?.map || {}}
                 onCostChange={onCostChange}
                 companyControl={companyControl}
+                selectedKeys={selectedKeys}
+                onToggleRow={onToggleRow}
+                onToggleAll={onToggleAll}
+                dirtyKeys={dirtySkuKeys}
               />
             ) : (
               <TabView
@@ -602,13 +688,43 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 costBySku={skuCost?.map || {}}
                 onCostChange={onCostChange}
                 companyControl={companyControl}
+                selectedKeys={selectedKeys}
+                onToggleRow={onToggleRow}
+                onToggleAll={onToggleAll}
+                dirtyKeys={dirtySkuKeys}
               />
             )}
           </div>
+             {/* Right below the upload toolbar — template builders can inspect
+            exactly what any file (including one they haven't mapped yet)
+            parses to without leaving the dashboard. Same gate as Template
+            Settings; a regular seller never sees it. */}
+        {canManageTemplates && (
+          <div className="max-h-[60vh] shrink-0 overflow-y-auto border-b border-divider bg-surface">
+            <SheetDebugger
+              externalFile={debugFile}
+              externalSlotId={debugSlotId}
+              showPicker={false}
+              fileSlots={config.fileSlots || []}
+              headers={config.headers || []}
+            />
+          </div>
+        )}
+
         </main>
+        
       </div>
 
       <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} onOpenRun={() => {}} />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={`Delete ${selectedKeys.size} row${selectedKeys.size === 1 ? '' : 's'}?`}
+        description="Removes the underlying uploaded rows from this session's loaded data. This can't be undone."
+        confirmLabel="Delete"
+        onConfirm={onDeleteSelected}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 }
