@@ -10,10 +10,14 @@ import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { detectPlatform } from '@/data/platforms/detect';
 import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
+import { guessMapping } from '@/data/platforms/manual';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { mergeCanonicalRows } from '@/lib/profitLoss/mergeRows';
-import { downloadTemplateXlsx, downloadTemplatePdf } from '@/lib/profitLoss/exportTemplate';
+import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData } from '@/lib/profitLoss/extractedDataStore';
+import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
+import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
+import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
@@ -35,6 +39,13 @@ const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
 const DEFAULT_ROW_LIMIT = 100;
 const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], rowCount: 0, platforms: [] };
+// The synthetic `uploads` entry a signed-in user's own previously-saved
+// rows (GET /api/profit-loss/rows) land in on load — never a real file
+// slot id, so it's easy to tell apart from an actual upload.
+const RESTORED_SLOT_ID = 'restored';
+// 2000 rows at 100/page — a sane cap so a very large saved history can't
+// hang the browser while auto-loading everything for accurate sort/search.
+const RESTORE_MAX_PAGES = 20;
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
@@ -234,6 +245,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
     onSkuCostsChange, skuCostsSaveTick,
+    extractedData, onExtractedDataChange,
     editMode, setEditMode, saveLayout, savingLayout,
   } = useDashboardSettings({
     ads: pending.ads,
@@ -251,6 +263,77 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       }
     },
   });
+
+  // Every Marketplace x Brand combo ("company") this user has actually used,
+  // from the dedicated market_place_companies table — reloaded on every
+  // mount so a returning session's Brand picker isn't limited to only what
+  // preferences.brands happens to remember. Merged with `brands` (never
+  // replaces it) since the two lists can diverge (a brand typed before this
+  // table existed, say).
+  const [savedCompanies, setSavedCompanies] = useState([]);
+  useEffect(() => {
+    if (!loggedIn) return;
+    listCompanies().then(({ ok, data }) => {
+      if (ok && Array.isArray(data?.companies)) setSavedCompanies(data.companies);
+    });
+  }, [loggedIn]);
+  const effectiveBrands = useMemo(
+    () => [...new Set([...brands, ...savedCompanies.map((c) => c.brand)])],
+    [brands, savedCompanies],
+  );
+
+  // Every previously-saved row (GET /api/profit-loss/rows) for this user —
+  // ALL pages of it, not just the first, auto-loaded on load before any
+  // fresh upload. It becomes just another `uploads` entry (RESTORED_SLOT_ID)
+  // feeding the exact same canonicalRows / resolveTemplate pipeline a real
+  // file would, so the SAME default filters (7-day date range, 100-row
+  // smart limit) apply to it automatically — nothing special-cased. Loading
+  // EVERY page (not just one) matters specifically for the table's own
+  // per-column sort/search: that's local, in-browser filtering over
+  // whatever's already in canonicalRows — it only ever looked "wrong" once
+  // rows started living in the database instead of entirely in memory,
+  // because it was silently sorting/searching just the one loaded page.
+  // Capped at RESTORE_MAX_PAGES so a very large history can't hang the
+  // browser — past that, narrowing Date/Company (like "Show all dates"
+  // above, in reverse) is how to reach the rest. Sorted newest-saved-first
+  // by the API; covers every company for this user, not just the active
+  // marketplace.
+  const [restorePaging, setRestorePaging] = useState(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreCapped, setRestoreCapped] = useState(false);
+  const loadRestoredPage = useCallback(async (page) => {
+    const { ok, data } = await listExtractedRows({ page, limit: DEFAULT_ROW_LIMIT });
+    if (!ok) return null;
+    const rows = rowsFromExtractedPayload(data.rows || []);
+    setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
+      ? prev.map((u) => (u.slotId === RESTORED_SLOT_ID ? { ...u, rows: [...u.rows, ...rows] } : u))
+      : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
+    return data;
+  }, []);
+  useEffect(() => {
+    if (!loggedIn) return;
+    let cancelled = false;
+    (async () => {
+      setRestoring(true);
+      try {
+        let page = 1;
+        let data = await loadRestoredPage(page);
+        while (data && !cancelled && page < data.totalPages && page < RESTORE_MAX_PAGES) {
+          setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
+          page += 1;
+          data = await loadRestoredPage(page);
+        }
+        if (!cancelled && data) {
+          setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
+          setRestoreCapped(page < data.totalPages);
+        }
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedIn]);
 
   const visibleTabs = useMemo(
     () => applyLayout(allTabsSorted, layout.tabs || emptySection()),
@@ -334,6 +417,50 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     }
   }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
 
+  // Every mapped (non-computed) header's per-SKU value the FULL dataset
+  // currently has — persisted (debounced, merge-only-where-non-empty; see
+  // extractedDataStore.js) so a header this session's upload doesn't happen
+  // to touch still shows what it was last known to be, without ever
+  // freezing a computed metric (Profit/Loss, COGS, ...) from a stale
+  // session. Uses fullResolved (every row, no row-limit) rather than the
+  // live/limited `resolved` so an older row falling outside the "smart
+  // limit" doesn't look like its data disappeared.
+  useEffect(() => {
+    if (!loggedIn || !fullResolved.tableRows.length) return;
+    const snapshot = buildExtractedSnapshot(fullResolved.tableRows, fullResolved.headers);
+    if (!Object.keys(snapshot).length) return;
+    const merged = mergeExtractedData(extractedData, snapshot);
+    if (JSON.stringify(merged) === JSON.stringify(extractedData)) return;
+    (() => onExtractedDataChange(merged))();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullResolved, loggedIn]);
+
+  // The live table's rows, with any header this SKU has no CURRENT value
+  // for filled in from that same saved snapshot — display only (aggregate/
+  // title cards/graphs/export still read the live, un-filled `resolved`).
+  const displayTableRows = useMemo(
+    () => fillFromExtractedData(resolved.tableRows, resolved.headers, extractedData),
+    [resolved, extractedData],
+  );
+
+  // Automatic, unmetered per-ROW persistence (Task: "save all my headers
+  // data user-wise... one row one json") — distinct from the per-SKU
+  // extractedData snapshot above. Debounced against canonicalRows churn (a
+  // multi-file upload fires setUploads more than once); best-effort — a
+  // failure here is silent (never a toast) since this is background
+  // enrichment, not the deliberate, coin-metered Save to History.
+  useEffect(() => {
+    // Nothing freshly uploaded this session — everything on screen is what
+    // was just fetched back from this same table, so writing it straight
+    // back would be a pointless (if harmless) round-trip.
+    if (!loggedIn || !canonicalRows.length || !uploads.some((u) => u.slotId !== RESTORED_SLOT_ID)) return;
+    const t = setTimeout(() => {
+      const payload = buildExtractedRowsPayload(canonicalRows, orderIdHeader, transactionIdHeader);
+      if (payload.length) saveExtractedRows(payload).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [canonicalRows, uploads, orderIdHeader, transactionIdHeader, loggedIn]);
+
   const hasData = uploads.length > 0;
 
   // "All Companies" always lists every saved brand as "MarketPlace_Brand" for
@@ -342,9 +469,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // row was tagged with a brand no longer in the saved list).
   const companyOptions = useMemo(() => {
     const marketplaceName = config.marketplace?.name || 'Marketplace';
-    const fromBrands = brands.map((b) => `${marketplaceName}_${b}`);
+    const fromBrands = effectiveBrands.map((b) => `${marketplaceName}_${b}`);
     return [...new Set([...fromBrands, ...(resolved.companyOptions || [])])].sort();
-  }, [brands, config, resolved.companyOptions]);
+  }, [effectiveBrands, config, resolved.companyOptions]);
 
   // ── ingest ──────────────────────────────────────────────────────────────
   // Every upload is checked against the slot's saved headers (extracted in
@@ -357,7 +484,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     try {
       const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
       const rowOverride = rowOverrideFor(slotDef);
-      const tag = { brand: selectedBrand, company: `${config.marketplace?.name || 'Marketplace'}_${selectedBrand}` };
+      const marketplaceName = config.marketplace?.name || 'Marketplace';
+      const tag = { brand: selectedBrand, company: `${marketplaceName}_${selectedBrand}` };
+      // Record this Marketplace x Brand combo in the backend the moment it's
+      // actually used — fire-and-forget, never blocks the upload; a brand
+      // already-known to this table just gets its updated_at bumped.
+      if (loggedIn) saveCompany({ marketplace: marketplaceName, brand: selectedBrand }).catch(() => {});
       const added = [];
       for (const file of files) {
         setDebugFile(file);
@@ -380,7 +512,18 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           continue;
         }
         const rawRows = wb.byTab[tab]?.rows ?? [];
-        const rows = mapRowsForPlatform(platform, rawRows, { tag });
+        // A best-effort {canonicalField: sheetHeader} mapping so a row still
+        // gets placed even when the detected platform's own fixed mapper
+        // can't do it (an unrecognized/'manual' marketplace, or a real
+        // platform's Orders file when its mapper expects a Payments shape —
+        // see mapRowsForPlatform's fallback). Name-guessed as a baseline
+        // (lib/data/platforms/manual.js's GUESSES), then the marketplace's
+        // own real Order Id / Sku header mappings win where they exist,
+        // since those are authoritative, not a guess.
+        const mapping = guessMapping(headerRow);
+        if (orderIdHeader?.mappedFrom?.sheetHeader) mapping.orderId = orderIdHeader.mappedFrom.sheetHeader;
+        if (skuHeader?.mappedFrom?.sheetHeader) mapping.sku = skuHeader.mappedFrom.sheetHeader;
+        const rows = mapRowsForPlatform(platform, rawRows, { tag, mapping });
         added.push({ id: crypto.randomUUID(), slotId, fileName: file.name, platform, rows });
       }
       if (added.length) {
@@ -391,7 +534,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     } finally {
       setBusy(false);
     }
-  }, [addToast, config, selectedBrand]);
+  }, [addToast, config, selectedBrand, orderIdHeader, skuHeader, loggedIn]);
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
@@ -444,7 +587,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // *next* upload gets tagged with — every row of new data comes in under
   // one company, per how uploads are already tagged (see onUpload below).
   const companyControl = (
-    <BrandPicker compact brands={brands} value={selectedBrand} onChange={setSelectedBrand} onCreate={addBrand} />
+    <BrandPicker compact brands={effectiveBrands} value={selectedBrand} onChange={setSelectedBrand} onCreate={addBrand} />
   );
 
   const resetFilters = () => {
@@ -508,38 +651,57 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Takes which resolved snapshot to read from — `resolved` (the live,
   // row-limited/date-filtered view) by default, or `fullResolved` (every
   // uploaded row, no date bound) when Download PDF/Excel calls it.
-  const buildView = useCallback((source = resolved) => {
-    const ov = source.overviews?.[activeTabId] || null;
-    const isOverview = !!ov;
-    const overview = ov || { name: 'Overview', fixedHeader: null, headers: [], rows: [] };
-    const defs = isOverview
+  // One tab's export view — the table respects "My Details"/"All Details"
+  // (the same viewMode/myColumns toggle the screen itself uses): only the
+  // fields currently selected as My Details when that's the active view,
+  // every header when it's All Details. Shared by the single-tab
+  // Save-to-History payload (buildView, below) and the multi-tab PDF/Excel
+  // export (doExport) — "what you're looking at is what gets saved/exported".
+  const buildTabView = useCallback((tabDef, isOverview, source) => {
+    const ov = isOverview ? (source.overviews?.[tabDef?.id] || null) : null;
+    const overview = ov || { name: tabDef?.name, fixedHeader: null, headers: [], rows: [] };
+    let defs = isOverview
       ? (overview.fixedHeader ? [overview.fixedHeader, ...overview.headers] : [])
-      : (activeTab?.headerIds || []).map((id) => source.headers.find((h) => h.id === id)).filter(Boolean);
+      : (tabDef?.headerIds || []).map((id) => source.headers.find((h) => h.id === id)).filter(Boolean);
+    if (!isOverview && viewMode === 'my' && defs.length) {
+      defs = [defs[0], ...defs.slice(1).filter((h) => myColumns.includes(h.id))];
+    }
     const rows = isOverview ? overview.rows : source.tableRows;
-    const cardIds = isOverview ? (activeOverviewTab?.titleCardIds || []) : (activeTab?.titleCardIds || []);
-    const cards = cardIds.map((id) => {
+    const cards = (tabDef?.titleCardIds || []).map((id) => {
       const c = (config.titleCards || []).find((x) => x.id === id);
       const v = source.titleCardValues[id] || {};
       return { name: c?.name || id, mainDisplay: v.main?.display, subDisplay: v.sub?.display };
     });
     return {
-      label: config.marketplace?.name || 'Dashboard',
-      tabName: isOverview ? (overview.name || 'Overview') : (activeTab?.name || ''),
+      tabName: isOverview ? (overview.name || tabDef?.name || 'Overview') : (tabDef?.name || ''),
       cards,
       table: {
         columns: defs.map((d) => d.name),
         rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
       },
     };
-  }, [activeTabId, activeTab, activeOverviewTab, config, resolved]);
+  }, [config, viewMode, myColumns]);
 
-  // Excel/PDF always pull "all data" — every uploaded row, no date bound —
-  // regardless of the live view's row-limit/date-filter (see fullResolved).
+  const buildView = useCallback((source = resolved) => ({
+    label: config.marketplace?.name || 'Dashboard',
+    ...buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source),
+  }), [buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
+
+  // Excel/PDF always pull "all data" — every uploaded row, no date bound
+  // (fullResolved) — and every visible Tab + Overview Tab, not just the
+  // active one, each its own sheet/section. Chart images aren't embedded
+  // yet — every tab's title cards and table are, in full (or My Details-
+  // trimmed, per buildTabView above).
   const doExport = async (kind) => {
-    const view = buildView(fullResolved);
-    if (!view.table.columns.length) { addToast('Nothing to export on this tab', 'error'); return; }
+    if (restoring) { addToast('Still loading your saved data — try again in a moment', 'error'); return; }
+    const tabs = [
+      ...visibleTabs.map((t) => buildTabView(t, false, fullResolved)),
+      ...visibleOverviewTabs.map((t) => buildTabView(t, true, fullResolved)),
+    ].filter((v) => v.table.columns.length);
+    if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
     try {
-      await (kind === 'pdf' ? downloadTemplatePdf(view) : downloadTemplateXlsx(view));
+      const label = config.marketplace?.name || 'Dashboard';
+      await (kind === 'pdf' ? downloadMultiTabPdf({ label, tabs }) : downloadMultiTabXlsx({ label, tabs }));
     } catch {
       addToast(`${kind.toUpperCase()} export failed`, 'error');
     }
@@ -610,7 +772,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           templates={templates}
           activeTemplateId={activeTemplateId}
           onSelectTemplate={setActiveTemplateId}
-          brands={brands}
+          brands={effectiveBrands}
           brand={selectedBrand}
           onBrandChange={setSelectedBrand}
           onCreateBrand={addBrand}
@@ -653,6 +815,44 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy }}
           />
 
+          {/* Rows were uploaded and mapped fine, but every one of them falls
+              outside the selected date range — the table would otherwise
+              look identical to "nothing was ever uploaded", with no clue
+              why. Settlement exports are almost always older than the
+              default 7-day window. */}
+          {hasData && canonicalRows.length > 0 && !showOverview && resolved.tableRows.length === 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neg/10 px-3 py-2 text-[13px] text-neg">
+              <span>
+                {canonicalRows.length} row{canonicalRows.length === 1 ? '' : 's'} uploaded, but none fall in the selected date range.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const wide = { preset: 'custom', from: null, to: null };
+                  setPending((s) => ({ ...s, dateRange: wide }));
+                  setApplied((s) => ({ ...s, dateRange: wide }));
+                }}
+                className="shrink-0 rounded-full bg-neg px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90"
+              >
+                Show all dates
+              </button>
+            </div>
+          )}
+
+          {restoring && restorePaging && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">
+              <Loader2 size={14} className="shrink-0 animate-spin" />
+              <span>
+                Loading your saved data for accurate sorting/search — {Math.min(restorePaging.page * DEFAULT_ROW_LIMIT, restorePaging.totalCount)} of {restorePaging.totalCount} rows…
+              </span>
+            </div>
+          )}
+          {!restoring && restoreCapped && restorePaging && (
+            <div className="mt-4 rounded-lg bg-card px-3 py-2 text-[12.5px] text-subtle">
+              Showing the most recent {restorePaging.page * DEFAULT_ROW_LIMIT} of {restorePaging.totalCount} saved rows (sort/search only cover these) — narrow the date range or Company to bring the rest within reach.
+            </div>
+          )}
+
           <div className="mt-6 space-y-5">
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
@@ -677,7 +877,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               <TabView
                 config={config}
                 tab={activeTab}
-                resolved={resolved}
+                resolved={resolved.tableRows === displayTableRows ? resolved : { ...resolved, tableRows: displayTableRows }}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
                 myColumns={myColumns}

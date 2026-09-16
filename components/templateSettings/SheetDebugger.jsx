@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
+import { FileSpreadsheet, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { readAnyFile, ACCEPT } from '@/lib/sheet/readAnyFile';
+import { isLoggedIn } from '@/lib/tokenStore';
+import { deleteAllExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useToast } from '@/components/admin/Toast';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SheetDebugFilePanel from './SheetDebugFilePanel';
 
 // Raw sheet inspector — see exactly what lib/sheet/parseWorkbook.js (via
@@ -40,6 +43,27 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
   const lastExternalFileRef = useRef(null);
+
+  // Debug-only escape hatch — wipes every row this user has auto-saved
+  // (profit_loss_extracted_rows), so a re-upload during testing starts from
+  // a clean slate instead of merging into what's already there. Doesn't
+  // touch anything else (settings, brands, the coin-metered Save to History
+  // runs) — see the hub's DELETE /api/profit-loss/rows.
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const onDeleteAllHistory = async () => {
+    setDeletingAll(true);
+    try {
+      const { ok, data } = await deleteAllExtractedRows();
+      if (ok) addToast(`Deleted ${data.deleted ?? 0} saved row${data.deleted === 1 ? '' : 's'}`);
+      else addToast(data?.error || 'Could not delete', 'error');
+    } catch {
+      addToast('Network error while deleting', 'error');
+    } finally {
+      setDeletingAll(false);
+      setConfirmDeleteAll(false);
+    }
+  };
 
   const newRecord = (file, slotId = null) => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -126,14 +150,27 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
   const activeRecord = files.find((r) => r.id === activeFileId) || null;
 
   return (
+    <>
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-      <div>
-        <h1 className="text-[15px] font-bold text-foreground">Sheet Debugger</h1>
-        <p className="mt-0.5 text-[12.5px] text-subtle">
-          {showPicker
-            ? "Add any settlement/order/aux files and see every sheet each has, its header row + raw data, and what the real upload pipeline would detect from it. Nothing here is saved or mapped."
-            : "Every file uploaded from the toolbar above lands here as its own tab — every sheet it has, its header row + raw data, and what the real upload pipeline detected. Nothing here is saved or mapped."}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[15px] font-bold text-foreground">Sheet Debugger</h1>
+          <p className="mt-0.5 text-[12.5px] text-subtle">
+            {showPicker
+              ? "Add any settlement/order/aux files and see every sheet each has, its header row + raw data, and what the real upload pipeline would detect from it. Nothing here is saved or mapped."
+              : "Every file uploaded from the toolbar above lands here as its own tab — every sheet it has, its header row + raw data, and what the real upload pipeline detected. Nothing here is saved or mapped."}
+          </p>
+        </div>
+        {isLoggedIn() && (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteAll(true)}
+            title="Debug only — wipes every row you've auto-saved (profit_loss_extracted_rows) for this account"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-neg/30 px-3 py-1.5 text-[12px] font-medium text-neg hover:bg-neg/10"
+          >
+            <Trash2 size={13} /> Delete All Saved Data
+          </button>
+        )}
       </div>
 
       {/* ── file picker — only in standalone mode; embedded under the
@@ -219,5 +256,16 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
         />
       )}
     </div>
+    <ConfirmDialog
+      open={confirmDeleteAll}
+      title="Delete ALL saved data?"
+      description="Debug only. Permanently deletes every row you've auto-saved for this account (profit_loss_extracted_rows) — not your settings, brands, or Save to History runs. This cannot be undone."
+      confirmText="DELETE"
+      confirmLabel="Delete All"
+      loading={deletingAll}
+      onConfirm={onDeleteAllHistory}
+      onCancel={() => setConfirmDeleteAll(false)}
+    />
+    </>
   );
 }

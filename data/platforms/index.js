@@ -1,5 +1,6 @@
 import { normHeader, num, absNum, toISODate, classifyStatus, canonicalRow } from './canonical.js';
 import { getPlatform, detectPlatform } from './detect.js';
+import manual from './manual.js';
 
 export { PLATFORMS, PLATFORM_BY_ID, getPlatform, detectPlatform } from './detect.js';
 
@@ -25,21 +26,36 @@ export function pickBestTab(platformId, byTab, sheetNames) {
 }
 
 // Map a batch of raw sheet rows to canonical rows for one platform, then apply
-// the user's Sheet Settings header-map overrides on top. `mapping` is only
-// consulted by the 'manual' platform's own mapper; `headerMap` is the generic
-// override layer that works for every platform. `tag` (the brand picked in
-// the toolbar before this upload, plus the "MarketPlace_Brand" combo derived
-// from it) is stamped onto every row the same way regardless of platform.
+// the user's Sheet Settings header-map overrides on top. `mapping` is a
+// {canonicalField: sheetHeaderText} object — consulted directly by the
+// 'manual' platform's own mapper, and also tried as a FALLBACK for any other
+// platform whose own fixed mapper couldn't place a row (its usual ID column
+// isn't in this file — e.g. an Orders export uploaded where the mapper
+// expects a Payments-shaped one, or a marketplace that doesn't match any
+// built-in fingerprint at all: see DashboardWorkspace.onUpload, which builds
+// `mapping` from a name-guess plus this marketplace's own Order Id / Sku
+// header mappings). `headerMap` is a separate, older override layer that
+// works for every platform. `tag` (the brand picked in the toolbar before
+// this upload, plus the "MarketPlace_Brand" combo derived from it) is
+// stamped onto every row the same way regardless of platform.
 export function mapRowsForPlatform(platformId, rawRows, { headerMap = {}, mapping, tag } = {}) {
   const plat = getPlatform(platformId);
   const hasOverrides = headerMap && Object.keys(headerMap).length > 0;
+  const hasMapping = mapping && Object.keys(mapping).length > 0;
   const out = [];
   rawRows.forEach((raw, idx) => {
     let c = plat.toCanonical(raw, mapping);
-    // The platform mapper bailed (its ID column isn't in this file — e.g. an
-    // "Orders" export vs a "Payments" export). If the user has mapped columns
-    // in Sheet Settings, drive it from a blank row instead so their mapping
-    // still works.
+    // This platform's own fixed mapper couldn't place the row — fall back to
+    // the manual mapper against this marketplace's own mapping before giving
+    // up on it entirely. Re-stamp `platform` since manual.toCanonical always
+    // marks its output 'manual', which would otherwise mask which real
+    // platform this row was actually uploaded as.
+    if (!c && plat.id !== 'manual' && hasMapping) {
+      c = manual.toCanonical(raw, mapping);
+      if (c) c.platform = platformId;
+    }
+    // Still nothing, but the user has mapped columns in Sheet Settings —
+    // drive it from a blank row instead so their mapping still works.
     if (!c && hasOverrides) {
       c = canonicalRow({ platform: platformId, rowId: `${platformId}:r${idx}`, orderId: `r${idx}` });
     }
