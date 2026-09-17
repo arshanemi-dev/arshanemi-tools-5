@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Search, Settings, Undo2, X, Layers,
+  Search, Settings, Undo2, X, Layers, Receipt,
   LayoutDashboard, ShoppingCart, TrendingUp, LineChart, Package, Map as MapIcon, ClipboardCheck,
 } from 'lucide-react';
 import ArrangeControl from './ArrangeControl';
@@ -98,6 +98,14 @@ export default function DashboardSidebar({
   allOverviewTabs = [],
   overviewTabsSection,
   onOverviewTabsSectionChange = () => {},
+  // The always-available, non-configurable "one row per Order Id +
+  // Transaction Id" view (see resolveTransactionRows) — only shown once
+  // Order Id is actually mapped, since there's nothing to key rows by
+  // otherwise. Lives outside the arrangeable tabs/overview lists (edit mode
+  // never touches it), same spot Template Settings sits in.
+  showTransactions = false,
+  transactionsActive = false,
+  onOpenTransactions,
 }) {
   const [q, setQ] = useState('');
   const filtered = useMemo(() => {
@@ -183,6 +191,13 @@ export default function DashboardSidebar({
                 ))}
               </>
             )}
+          </nav>
+        )}
+
+        {showTransactions && (
+          <nav className="mt-3 flex flex-col gap-0.5 px-2">
+            <div className="mb-1 border-t border-divider" />
+            <NavRow active={transactionsActive} icon={Receipt} label="Transactions" onClick={onOpenTransactions} />
           </nav>
         )}
 

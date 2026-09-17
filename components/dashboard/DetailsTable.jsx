@@ -36,7 +36,7 @@ const PAGE_SIZES = [25, 50, 100];
 
 export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null,
-  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, disableCostColumn = false, totalCount = null,
 }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
@@ -48,7 +48,10 @@ export default function DetailsTable({
     isSku: h.primitive === 'sku',
   }));
 
-  const showCost = cols.some((c) => c.isSku);
+  // A Cost input keyed by SKU only makes sense on a table actually grouped
+  // by SKU — never on a per-transaction table (see resolveTransactionRows),
+  // where the row key is an Order Id, not a SKU.
+  const showCost = !disableCostColumn && cols.some((c) => c.isSku);
   const displayCols = [{ id: '__company__', key: '__company__', kind: 'company' }];
   for (const c of cols) {
     displayCols.push({ ...c, kind: 'header' });
@@ -89,7 +92,7 @@ export default function DetailsTable({
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
   // out-of-range page.
-  useEffect(() => { setPage(1); }, [rows, filters, sort, pageSize]);
+  useEffect(() => { (() => setPage(1))(); }, [rows, filters, sort, pageSize]);
 
   const pageCount = Math.max(1, Math.ceil(view.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -226,6 +229,9 @@ export default function DetailsTable({
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider px-3 py-2 text-xs text-subtle">
         <span>
           {view.length === 0 ? '0 rows' : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} row${view.length === 1 ? '' : 's'}`}
+          {totalCount != null && totalCount > view.length && (
+            <span className="ml-1 font-semibold text-action">(Total Extracted Dataset: {totalCount} rows)</span>
+          )}
           {selected.size > 0 && ` · ${selected.size} selected`}
         </span>
 

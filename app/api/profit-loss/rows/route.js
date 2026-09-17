@@ -46,15 +46,20 @@ export async function POST(req) {
   }
 }
 
-// DELETE — debug-only: wipes every saved row for the caller. See the Sheet
-// Debugger's "Delete All Saved Data" button.
+// DELETE — forwards straight through to the hub, body included: a JSON
+// { keys: [...] } body deletes just those saved rows (the dashboard's
+// "Delete selected rows" action), no body wipes everything (the Sheet
+// Debugger's debug-only "Delete All Saved Data" button). See that route's
+// own comment for the full split.
 export async function DELETE(req) {
   const payload = await getAuthPayload(req)
   if (!payload?.userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const body = await req.json().catch(() => undefined)
   try {
     const { status, data } = await proxyAdminCall('/api/profit-loss/rows', {
       method: 'DELETE',
+      body,
       authHeader: authHeaderFrom(req),
     })
     return NextResponse.json(data, { status })

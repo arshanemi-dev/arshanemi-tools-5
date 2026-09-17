@@ -5,6 +5,8 @@ import { Copy, Loader2 } from 'lucide-react';
 import { detectPlatform, getPlatform, pickBestTab } from '@/data/platforms/index';
 import { normHeader } from '@/data/platforms/canonical';
 import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
+import { normalizeOrderId } from '@/lib/profitLoss/resolveTemplate';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 
 // One uploaded file's full debug breakdown — everything SheetDebugger used
@@ -65,6 +67,67 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
     });
     return { ok, missing, columns, hasSample: savedHeaders.length > 0 };
   }, [activeTab, slot, headers]);
+
+  // The OTHER direction from headerMatch above — that one walks THIS
+  // file's own ~30 columns; this walks EVERY global header (all 50+, from
+  // every file slot combined) and says what each one would actually
+  // extract from THIS file specifically: its own mapped value (with real
+  // samples), mapped to a different file entirely (nothing to see here),
+  // computed rather than read from any sheet, or simply not mapped
+  // anywhere yet. Answers "where did header X actually go" directly,
+  // instead of only "which of this file's columns matched something".
+  const templateHeaderRows = useMemo(() => {
+    if (!activeTab || !headers.length) return [];
+    return headers.map((h) => {
+      const isComputed = !!h.primitive || h.type === 'formula';
+      const mappedHere = !isComputed && h.mappedFrom && slot && h.mappedFrom.slot === slot.id;
+      const mappedElsewhere = !isComputed && h.mappedFrom && (!slot || h.mappedFrom.slot !== slot.id);
+      let samples = [];
+      if (mappedHere) {
+        const col = h.mappedFrom.sheetHeader;
+        samples = [...new Set(
+          activeTab.rows.slice(0, 200).map((r) => r[col]).filter((v) => v != null && String(v).trim() !== ''),
+        )].slice(0, 3);
+      }
+      const status = isComputed ? 'computed' : mappedHere ? 'here' : mappedElsewhere ? 'elsewhere' : 'unmapped';
+      return { id: h.id, name: h.name, reserved: !!h.reserved, status, sheetHeader: mappedHere ? h.mappedFrom.sheetHeader : null, samples };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [activeTab, headers, slot]);
+
+  // A quick sanity check of the Order Id (+ Transaction Id) uniqueness rule
+  // this exact file feeds into DashboardWorkspace's cross-file merge/de-dupe
+  // — only meaningful once Order Id is actually mapped TO THIS file.
+  const uniquenessPreview = useMemo(() => {
+    if (!activeTab) return null;
+    const orderH = headers.find((h) => h.id === RESERVED_HEADER_IDS.orderId);
+    const txnH = headers.find((h) => h.id === RESERVED_HEADER_IDS.transactionId);
+    const orderMappedHere = orderH?.mappedFrom && slot && orderH.mappedFrom.slot === slot.id ? orderH.mappedFrom.sheetHeader : null;
+    if (!orderMappedHere) return { mapped: false };
+    const txnMappedHere = txnH?.mappedFrom && slot && txnH.mappedFrom.slot === slot.id ? txnH.mappedFrom.sheetHeader : null;
+
+    let withOrderId = 0;
+    let withTxnId = 0;
+    const exact = new Set();
+    const normalized = new Set();
+    for (const r of activeTab.rows) {
+      const orderVal = String(r[orderMappedHere] ?? '').trim();
+      if (!orderVal) continue;
+      withOrderId += 1;
+      exact.add(orderVal);
+      normalized.add(normalizeOrderId(orderVal));
+      const txnVal = txnMappedHere ? String(r[txnMappedHere] ?? '').trim() : '';
+      if (txnVal) withTxnId += 1;
+    }
+    return {
+      mapped: true,
+      hasTxnMapping: !!txnMappedHere,
+      totalRows: activeTab.rows.length,
+      withOrderId,
+      distinctExact: exact.size,
+      distinctNormalized: normalized.size,
+      withTxnId,
+    };
+  }, [activeTab, headers, slot]);
 
   const copyHeaders = async () => {
     if (!activeTab) return;
@@ -221,6 +284,80 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
                   </span>
                 );
               })}
+            </div>
+          )}
+
+          {/* ── Template Headers — every global header (all of them, not
+              just this file's own columns) against what THIS file would
+              actually give it: its own mapped value with real samples,
+              mapped somewhere else, computed, or unmapped anywhere. ── */}
+          {templateHeaderRows.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[12.5px] font-semibold text-foreground">
+                Template Headers ({templateHeaderRows.length}) — what this file gives each one
+              </div>
+              <div className="max-h-72 overflow-auto rounded-lg border border-divider">
+                <table className="w-full min-w-max text-[11.5px]">
+                  <thead className="sticky top-0 bg-th">
+                    <tr>
+                      <th className="border-b border-divider px-2 py-1.5 text-left font-medium text-subtle">Header</th>
+                      <th className="border-b border-divider px-2 py-1.5 text-left font-medium text-subtle">Status</th>
+                      <th className="border-b border-divider px-2 py-1.5 text-left font-medium text-subtle">Sample value(s) from this file</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templateHeaderRows.map((t) => (
+                      <tr key={t.id} className="border-t border-divider">
+                        <td className="px-2 py-1.5 text-foreground">
+                          {t.name}{t.reserved && <span className="ml-1 rounded-full bg-card px-1.5 py-0.5 text-[9.5px] font-medium uppercase text-subtle">required</span>}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-medium ${
+                            t.status === 'here' ? 'bg-action-soft text-action'
+                              : t.status === 'computed' ? 'bg-card text-muted'
+                              : t.status === 'elsewhere' ? 'bg-card text-subtle'
+                              : 'bg-neg/10 text-neg'
+                          }`}>
+                            {t.status === 'here' ? `mapped → ${t.sheetHeader}`
+                              : t.status === 'computed' ? 'computed (no mapping needed)'
+                              : t.status === 'elsewhere' ? 'mapped to a different file'
+                              : 'not mapped anywhere'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-muted">
+                          {t.status === 'here'
+                            ? (t.samples.length ? t.samples.join(', ') : <em className="text-subtle">every value blank</em>)
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Uniqueness preview — the same Order Id (+ Transaction Id)
+              rule DashboardWorkspace's cross-file merge/de-dupe uses,
+              checked against just this file's own rows. ── */}
+          {uniquenessPreview && (
+            <div className="space-y-1.5">
+              <div className="text-[12.5px] font-semibold text-foreground">Uniqueness preview</div>
+              {!uniquenessPreview.mapped ? (
+                <p className="rounded-lg bg-card px-3 py-2 text-[12px] text-subtle">
+                  Order Id isn&rsquo;t mapped for this file yet — nothing to check until it is.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Stat label="Rows in this sheet" value={uniquenessPreview.totalRows} />
+                  <Stat label="Rows with Order Id" value={uniquenessPreview.withOrderId} />
+                  <Stat label="Distinct Order Ids" value={uniquenessPreview.distinctExact} />
+                  <Stat label="Distinct (ignoring _1/_2 suffix)" value={uniquenessPreview.distinctNormalized} />
+                  {uniquenessPreview.hasTxnMapping && (
+                    <Stat label="Rows with Transaction Id" value={uniquenessPreview.withTxnId} />
+                  )}
+                </div>
+              )}
             </div>
           )}
 

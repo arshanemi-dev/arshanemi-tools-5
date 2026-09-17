@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
+// title-card/graph/table calculation (resolveTemplate/resolveTransactionRows)
+// runs entirely client-side now — no server compute route to expose here.
+// Every /api/profit-loss/* route is real per-user persistence and stays gated.
 const PUBLIC_PATHS = ['/api/auth/login']
 
 // Same cookie lib/auth.js's makeAuthCookie/ADMIN_COOKIE issue on a normal password login — not

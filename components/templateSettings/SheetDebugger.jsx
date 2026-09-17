@@ -1,13 +1,20 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { FileSpreadsheet, Loader2, Trash2, Upload, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FileSpreadsheet, GitMerge, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { readAnyFile, ACCEPT } from '@/lib/sheet/readAnyFile';
 import { isLoggedIn } from '@/lib/tokenStore';
 import { deleteAllExtractedRows } from '@/lib/profitLoss/apiClient';
+import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SheetDebugFilePanel from './SheetDebugFilePanel';
+import SheetDebugMergedPanel from './SheetDebugMergedPanel';
+
+// Sentinel activeFileId for the "Merged" preview tab — never a real file
+// record id, so it can share the same tab-bar/selection plumbing.
+const MERGED_TAB_ID = '__merged__';
 
 // Raw sheet inspector — see exactly what lib/sheet/parseWorkbook.js (via
 // readAnyFile) produced for a file: every sheet the workbook actually has
@@ -149,6 +156,39 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
 
   const activeRecord = files.find((r) => r.id === activeFileId) || null;
 
+  // What DashboardWorkspace's own cross-file merge would produce from
+  // whichever files are currently open here (each one's OWN active sheet —
+  // the same file/sheet combination its own tab is showing) — the exact
+  // same function real uploads run, never a re-implementation. Needs Order
+  // Id actually mapped somewhere in the global headers; a file with no
+  // `slotId` (added via the standalone picker's own file chooser, so it
+  // has no real marketplace slot) still merges fine, it's just treated as
+  // its own distinct "slot" for the purposes of this preview.
+  const orderIdHeader = useMemo(() => headers.find((h) => h.id === RESERVED_HEADER_IDS.orderId) || null, [headers]);
+  const transactionIdHeader = useMemo(() => headers.find((h) => h.id === RESERVED_HEADER_IDS.transactionId) || null, [headers]);
+  const mergedRows = useMemo(() => {
+    if (!orderIdHeader) return null;
+    const uploadsLike = files
+      .filter((f) => f.parsed && f.activeSheet && f.parsed.byTab[f.activeSheet])
+      .map((f) => ({
+        slotId: f.slotId || f.id,
+        rows: f.parsed.byTab[f.activeSheet].rows.map((raw) => ({ meta: raw })),
+      }));
+    if (uploadsLike.length < 2) return null;
+    return mergeUploadsAcrossSlots(uploadsLike, orderIdHeader, transactionIdHeader);
+  }, [files, orderIdHeader, transactionIdHeader]);
+
+  // Default to the Merged tab the first time it actually has something to
+  // show (2+ files open) — after that, never yank focus away again just
+  // because a third file landed or a sheet got re-picked.
+  const autoSelectedMergedRef = useRef(false);
+  useEffect(() => {
+    if (mergedRows && !autoSelectedMergedRef.current) {
+      autoSelectedMergedRef.current = true;
+      setActiveFileId(MERGED_TAB_ID);
+    }
+  }, [mergedRows]);
+
   return (
     <>
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
@@ -241,10 +281,24 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
             </div>
             );
           })}
+          {mergedRows && (
+            <button
+              type="button"
+              onClick={() => setActiveFileId(MERGED_TAB_ID)}
+              title="What DashboardWorkspace's own cross-file merge would produce from these open files"
+              className={`inline-flex items-center gap-1.5 rounded-full py-1.5 px-3 text-[12px] font-medium ${
+                activeFileId === MERGED_TAB_ID ? 'bg-action text-white' : 'border border-divider bg-background text-muted hover:bg-card-hover'
+              }`}
+            >
+              <GitMerge size={12} /> Merged ({mergedRows.length})
+            </button>
+          )}
         </div>
       )}
 
-      {activeRecord && (
+      {activeFileId === MERGED_TAB_ID ? (
+        mergedRows && <SheetDebugMergedPanel headers={headers} rows={mergedRows} />
+      ) : activeRecord && (
         <SheetDebugFilePanel
           record={activeRecord}
           slot={fileSlots.find((s) => s.id === activeRecord.slotId) || null}

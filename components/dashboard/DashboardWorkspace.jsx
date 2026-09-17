@@ -12,12 +12,12 @@ import { detectPlatform } from '@/data/platforms/detect';
 import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
 import { guessMapping } from '@/data/platforms/manual';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
-import { resolveTemplate, readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
-import { mergeCanonicalRows } from '@/lib/profitLoss/mergeRows';
+import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
+import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
 import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData } from '@/lib/profitLoss/extractedDataStore';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
-import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows } from '@/lib/profitLoss/apiClient';
+import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
@@ -30,22 +30,32 @@ import DashboardHeaderBar from './DashboardHeaderBar';
 import BrandPicker from './BrandPicker';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
+import DetailsTable from './DetailsTable';
+import MergedCommonHeadersTable from './MergedCommonHeadersTable';
 import HistoryDrawer from './HistoryDrawer';
 import NoMarketplaces from './NoMarketplaces';
 import NoTemplateSidebar from './NoTemplateSidebar';
-import SheetDebugger from '@/components/templateSettings/SheetDebugger';
+import NextLevelSheetDebugger from '@/components/templateSettings/NextLevelSheetDebugger';
 
 const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
-const DEFAULT_ROW_LIMIT = 100;
 const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], rowCount: 0, platforms: [] };
 // The synthetic `uploads` entry a signed-in user's own previously-saved
 // rows (GET /api/profit-loss/rows) land in on load — never a real file
 // slot id, so it's easy to tell apart from an actual upload.
 const RESTORED_SLOT_ID = 'restored';
-// 2000 rows at 100/page — a sane cap so a very large saved history can't
-// hang the browser while auto-loading everything for accurate sort/search.
-const RESTORE_MAX_PAGES = 20;
+// Sentinel activeTabId for the always-available "Transactions" view (one
+// row per Order Id + Transaction Id, see resolveTransactionRows) — never a
+// real Tab/Overview Tab id, so it can share the same activeTabId plumbing
+// without colliding with anything Template Settings defines.
+const TRANSACTIONS_TAB_ID = '__transactions__';
+// The hub's own per-page cap (lib/db.js) — used as the restore loop's page
+// size so pulling this user's ENTIRE saved history takes as few round trips
+// as possible. No page-count ceiling: every page gets fetched, however many
+// there are — Date/Company/Platform narrow the DASHBOARD (resolveTemplate
+// below), not what gets loaded, so title cards/graphs/table and the table's
+// own sort/search always see the complete dataset.
+const RESTORE_PAGE_SIZE = 500;
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
@@ -175,50 +185,31 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     () => (config.headers || []).find((h) => h.primitive === 'sku') || null,
     [config],
   );
-  const canonicalRows = useMemo(() => {
-    const keyFor = (r) => {
-      const orderVal = orderIdHeader ? readHeaderFromRow(orderIdHeader, r) : null;
-      const txnVal = transactionIdHeader ? readHeaderFromRow(transactionIdHeader, r) : null;
-      const orderKey = orderVal != null && String(orderVal).trim() !== '' ? String(orderVal).trim() : null;
-      const txnKey = txnVal != null && String(txnVal).trim() !== '' ? String(txnVal).trim() : null;
-      if (!orderKey) return null;
-      return { key: txnKey ? `${orderKey}::${txnKey}` : orderKey, hasTxn: !!txnKey };
-    };
-
-    const byKey = new Map(); // matchKey -> { row, slotId, hasTxn }
-    const kept = [];
-    for (const u of uploads) {
-      for (const r of u.rows) {
-        const k = keyFor(r);
-        if (!k) { kept.push(r); continue; } // no Order Id mapped/present — nothing to match on, always kept
-
-        const existing = byKey.get(k.key);
-        if (!existing) { byKey.set(k.key, { row: r, slotId: u.slotId, hasTxn: k.hasTxn }); continue; }
-
-        if (existing.slotId === u.slotId) {
-          if (!k.hasTxn) kept.push(r); // same sheet, Order Id repeats, unconfirmed — keep as its own row
-          // same sheet + same Order Id + same Transaction Id = a real duplicate — dropped
-          continue;
-        }
-        existing.row = mergeCanonicalRows(existing.row, r); // matched across two different files — enrich, don't duplicate
-      }
-    }
-    return [...[...byKey.values()].map((v) => v.row), ...kept];
-  }, [uploads, orderIdHeader, transactionIdHeader]);
+  // The full logic (normalized cross-file enrichment, then exact Order Id
+  // + Transaction Id match/de-dupe) lives in mergeUploadsAcrossSlots — the
+  // Sheet Debugger's "Merged" preview tab runs that exact same function
+  // against whatever files are open there, so the two can never disagree.
+  const canonicalRows = useMemo(
+    () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader),
+    [uploads, orderIdHeader, transactionIdHeader],
+  );
 
   // ── filters (pending vs applied) ────────────────────────────────────────
-  // rowLimit + dateRange are both "getting data" limits, not scoping filters
-  // like company/platform — Download PDF/Excel bypasses both of them (see
-  // fullResolved below) but still respects company/platform.
-  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS });
-  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
+  // fullResolved below) but still respects company/platform. All three (plus
+  // ads) feed resolveTemplate directly, in-browser (see `resolved` below) —
+  // there's no server round-trip left to protect, so nothing here caps how
+  // many rows feed the calculation anymore; every saved row is always in
+  // play. Column sort/search/pagination of the RESULT stays entirely inside
+  // DetailsTable, which never re-fetches or re-resolves anything.
+  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
   const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
 
   // No "Apply" button — every change above debounces into effect on its own
-  // after a short pause, so picking a date/company or typing a row-limit/ads
-  // value doesn't recompute the whole dashboard on every keystroke.
-  // resetFilters (below) sets `applied` directly for an instant reset,
-  // bypassing this.
+  // after a short pause, so picking a date/company or typing an ads value
+  // doesn't recompute the whole dashboard on every keystroke. resetFilters
+  // (below) sets `applied` directly for an instant reset, bypassing this.
   useEffect(() => {
     const t = setTimeout(() => setApplied(pending), 500);
     return () => clearTimeout(t);
@@ -283,26 +274,24 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   );
 
   // Every previously-saved row (GET /api/profit-loss/rows) for this user —
-  // ALL pages of it, not just the first, auto-loaded on load before any
-  // fresh upload. It becomes just another `uploads` entry (RESTORED_SLOT_ID)
-  // feeding the exact same canonicalRows / resolveTemplate pipeline a real
-  // file would, so the SAME default filters (7-day date range, 100-row
-  // smart limit) apply to it automatically — nothing special-cased. Loading
-  // EVERY page (not just one) matters specifically for the table's own
-  // per-column sort/search: that's local, in-browser filtering over
+  // ALL of it, every page, auto-loaded on load before any fresh upload. No
+  // page-count ceiling: Date/Company/Platform are scoping filters that
+  // resolveTemplate applies AFTER everything is already in memory (see
+  // `resolved` below), not a way to limit what gets fetched — narrowing them
+  // changes what's shown, never what's loaded. It becomes just another
+  // `uploads` entry (RESTORED_SLOT_ID) feeding the exact same canonicalRows
+  // pipeline a real file would. Loading EVERY page (not just one) matters
+  // specifically for the table's own per-column sort/search and for title
+  // cards/graphs: all of that is local, in-browser computation over
   // whatever's already in canonicalRows — it only ever looked "wrong" once
   // rows started living in the database instead of entirely in memory,
-  // because it was silently sorting/searching just the one loaded page.
-  // Capped at RESTORE_MAX_PAGES so a very large history can't hang the
-  // browser — past that, narrowing Date/Company (like "Show all dates"
-  // above, in reverse) is how to reach the rest. Sorted newest-saved-first
-  // by the API; covers every company for this user, not just the active
-  // marketplace.
+  // because it was silently computing off just the one loaded page. Sorted
+  // newest-saved-first by the API; covers every company for this user, not
+  // just the active marketplace.
   const [restorePaging, setRestorePaging] = useState(null);
   const [restoring, setRestoring] = useState(false);
-  const [restoreCapped, setRestoreCapped] = useState(false);
   const loadRestoredPage = useCallback(async (page) => {
-    const { ok, data } = await listExtractedRows({ page, limit: DEFAULT_ROW_LIMIT });
+    const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE });
     if (!ok) return null;
     const rows = rowsFromExtractedPayload(data.rows || []);
     setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
@@ -318,14 +307,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       try {
         let page = 1;
         let data = await loadRestoredPage(page);
-        while (data && !cancelled && page < data.totalPages && page < RESTORE_MAX_PAGES) {
+        while (data && !cancelled && page < data.totalPages) {
           setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
           page += 1;
           data = await loadRestoredPage(page);
         }
         if (!cancelled && data) {
           setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
-          setRestoreCapped(page < data.totalPages);
         }
       } finally {
         if (!cancelled) setRestoring(false);
@@ -349,35 +337,32 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // dangling id (no setState-in-effect).
   const [preferredTabId, setPreferredTabId] = useState(null);
   const activeTabId = useMemo(() => {
+    if (preferredTabId === TRANSACTIONS_TAB_ID) return TRANSACTIONS_TAB_ID;
     if (visibleTabs.some((t) => t.id === preferredTabId)) return preferredTabId;
     if (visibleOverviewTabs.some((o) => o.id === preferredTabId)) return preferredTabId;
     return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
   }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
+  const showTransactions = activeTabId === TRANSACTIONS_TAB_ID;
 
-  // The "smart limit" — only the N most-recently-ordered rows (default 100,
-  // set via the header bar's RowLimitControl) feed the live dashboard, so a
-  // huge sheet doesn't recompute every KPI/graph/table off thousands of rows
-  // on every Apply. Undated rows sort last (never silently dropped, just
-  // deprioritized). Download PDF/Excel bypasses this entirely — see
-  // `fullResolved` below.
-  const limitedRows = useMemo(() => {
-    const limit = applied.rowLimit || DEFAULT_ROW_LIMIT;
-    if (canonicalRows.length <= limit) return canonicalRows;
-    return [...canonicalRows]
-      .sort((a, b) => (b.orderDate || '').localeCompare(a.orderDate || ''))
-      .slice(0, limit);
-  }, [canonicalRows, applied.rowLimit]);
-
-  // ── resolve ─────────────────────────────────────────────────────────────
-  // Always resolved from the config — even with zero rows uploaded — so the
-  // sidebar's tabs, title cards, graphs and table headers are visible (in
-  // their zero/empty state) the moment a marketplace template is selected,
-  // not only after the first file lands.
+  // ── resolve (computed right here in the browser) ────────────────────────
+  // Title cards, graphs, the table, overview pivots — every formula — run
+  // via resolveTemplate/resolveTransactionRows directly against the FULL
+  // canonicalRows, the same way the export-only fullResolved below already
+  // did. Date range, Company and Platform are the only things that narrow
+  // what counts (resolveTemplate's own dateFrom/dateTo/company/platform
+  // filter, unchanged) — everything past that (which columns show, sort
+  // order, per-column search, page size/page) is DetailsTable's own
+  // client-side concern and never touches this. No network round trip
+  // anymore, so no separate debounce/request-race guard is needed beyond
+  // the existing pending->applied one above — a useMemo just recomputes
+  // synchronously whenever an input changes. Falls back to the config's own
+  // zero/empty shape on any failure so tabs/title cards/graphs/table headers
+  // still render — just with blank values.
   const resolved = useMemo(() => {
     if (!config.headers?.length) return emptyResolved;
     try {
       return resolveTemplate(config, {
-        canonicalRows: limitedRows,
+        canonicalRows,
         skuCostMap: skuCost?.map || {},
         ads: applied.ads,
         dateFrom: applied.dateRange.from,
@@ -389,16 +374,33 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTemplate failed:', err);
       return emptyResolved;
     }
-  }, [config, limitedRows, skuCost, applied]);
+  }, [config, canonicalRows, skuCost, applied]);
+
+  const transactionResolved = useMemo(() => {
+    if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
+    try {
+      return resolveTransactionRows(config, {
+        canonicalRows,
+        skuCostMap: skuCost?.map || {},
+        ads: applied.ads,
+        dateFrom: applied.dateRange.from,
+        dateTo: applied.dateRange.to,
+        platform: applied.platform,
+        company: applied.company,
+      });
+    } catch (err) {
+      console.error('resolveTransactionRows failed:', err);
+      return { headers: config.headers || [], rows: [], rowCount: 0 };
+    }
+  }, [orderIdHeader, config, canonicalRows, skuCost, applied]);
 
   // The complete, unlimited dataset — every uploaded row, no date bound —
   // resolved once so Download PDF/Excel can pull "all data" regardless of
-  // the live view's row-limit/date-range. Still respects an intentional
-  // Company/Platform scope, since those are a deliberate choice, not a
-  // performance limit. Only computed lazily inside doExport (not on every
-  // keystroke) would be nicer, but the dashboard's own uploads are already
-  // capped to what a browser can hold in memory, so resolving it here is
-  // cheap enough to just keep current.
+  // the live view's date-range. Still respects an intentional Company/
+  // Platform scope, since those are a deliberate choice, not a performance
+  // limit. Only computed lazily inside doExport (not on every keystroke)
+  // would be nicer, but resolveTemplate is cheap enough over this dataset's
+  // realistic size that resolving it here eagerly is fine.
   const fullResolved = useMemo(() => {
     if (!config.headers?.length) return emptyResolved;
     try {
@@ -416,6 +418,28 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       return emptyResolved;
     }
   }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
+
+  // Transactions' own "all data" counterpart to fullResolved — same reason:
+  // Download PDF/Excel pulls every row regardless of the live view's date
+  // range. Computed unconditionally (not gated on showTransactions) since
+  // export needs it even when some other tab is the one on screen.
+  const fullTransactionResolved = useMemo(() => {
+    if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
+    try {
+      return resolveTransactionRows(config, {
+        canonicalRows,
+        skuCostMap: skuCost?.map || {},
+        ads: applied.ads,
+        dateFrom: null,
+        dateTo: null,
+        platform: applied.platform,
+        company: applied.company,
+      });
+    } catch (err) {
+      console.error('resolveTransactionRows (export) failed:', err);
+      return { headers: config.headers || [], rows: [], rowCount: 0 };
+    }
+  }, [orderIdHeader, config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
@@ -591,7 +615,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   );
 
   const resetFilters = () => {
-    const fresh = { dateRange: DEFAULT_RANGE, rowLimit: DEFAULT_ROW_LIMIT, company: 'all', platform: 'all', ads: DEFAULT_ADS };
+    const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
     setPending(fresh);
     setApplied(fresh);
   };
@@ -636,21 +660,53 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const onDeleteSelected = useCallback(() => {
     const count = selectedKeys.size;
     if (!count) return;
-    const matchRawRow = showOverview && activeOverview?.fixedHeader
+    const matchRawRow = showTransactions
+      ? (r) => transactionKeyFor(r, orderIdHeader, transactionIdHeader)
+      : showOverview && activeOverview?.fixedHeader
       ? (r) => String(readHeaderFromRow(activeOverview.fixedHeader, r) ?? '').trim()
       : (r) => r.sku;
+    const removedRows = uploads.flatMap((u) => u.rows.filter((r) => selectedKeys.has(matchRawRow(r))));
     setUploads((prev) => prev
       .map((u) => ({ ...u, rows: u.rows.filter((r) => !selectedKeys.has(matchRawRow(r))) }))
       .filter((u) => u.rows.length > 0));
     addToast(`Deleted ${count} row${count === 1 ? '' : 's'}`);
     setSelectedKeys(new Set());
     setConfirmDeleteOpen(false);
-  }, [selectedKeys, showOverview, activeOverview, addToast]);
+
+    // Removing rows from `uploads` only clears the in-browser view — every
+    // one of them may already be mirrored in profit_loss_extracted_rows by
+    // the background auto-save effect above, and load-on-refresh reloads
+    // ALL of it, so without this a "deleted" row just comes right back on
+    // the next visit. Keyed off the same {orderId, transactionId} the
+    // auto-save itself uses (buildExtractedRowsPayload), deduped since a
+    // SKU/Overview-group delete can match many raw rows that share one
+    // order. Best-effort like the auto-save, but — unlike that silent
+    // background sync — surfaced as a toast on failure, since this is a
+    // deliberate action the user just took.
+    if (loggedIn && orderIdHeader && removedRows.length) {
+      const seen = new Set();
+      const keys = buildExtractedRowsPayload(removedRows, orderIdHeader, transactionIdHeader)
+        .map((r) => ({ orderId: r.orderId, transactionId: r.transactionId }))
+        .filter((k) => {
+          const sig = `${k.orderId}::${k.transactionId ?? ''}`;
+          if (seen.has(sig)) return false;
+          seen.add(sig);
+          return true;
+        });
+      if (keys.length) {
+        deleteExtractedRows(keys)
+          .then(({ ok }) => {
+            if (!ok) addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error');
+          })
+          .catch(() => addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error'));
+      }
+    }
+  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
-  // row-limited/date-filtered view) by default, or `fullResolved` (every
-  // uploaded row, no date bound) when Download PDF/Excel calls it.
+  // date-filtered view) by default, or `fullResolved` (every uploaded row,
+  // no date bound) when Download PDF/Excel calls it.
   // One tab's export view — the table respects "My Details"/"All Details"
   // (the same viewMode/myColumns toggle the screen itself uses): only the
   // fields currently selected as My Details when that's the active view,
@@ -672,9 +728,21 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       const v = source.titleCardValues[id] || {};
       return { name: c?.name || id, mainDisplay: v.main?.display, subDisplay: v.sub?.display };
     });
+    const graphs = (tabDef?.graphIds || []).map((id) => {
+      const gDef = (config.graphs || []).find((x) => x.id === id);
+      const gData = source.graphSeries?.[id] || null;
+      return {
+        id,
+        name: gDef?.name || id,
+        chartType: gData?.chartType || gDef?.chartType || 'line',
+        series: gData?.series || [],
+      };
+    }).filter((g) => g.series && g.series.length > 0);
+
     return {
       tabName: isOverview ? (overview.name || tabDef?.name || 'Overview') : (tabDef?.name || ''),
       cards,
+      graphs,
       table: {
         columns: defs.map((d) => d.name),
         rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
@@ -682,27 +750,45 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     };
   }, [config, viewMode, myColumns]);
 
+  // Transactions has no Template Settings config of its own (no title
+  // cards, no My Details subset) — always every header, one row per Order
+  // Id + Transaction Id, straight off whichever resolved-transactions
+  // source is passed in.
+  const buildTransactionsView = useCallback((source) => ({
+    tabName: 'Transactions',
+    cards: [],
+    graphs: [],
+    table: {
+      columns: source.headers.map((h) => h.name),
+      rows: source.rows.map((r) => source.headers.map((h) => r.cells[h.id]?.display ?? '')),
+    },
+  }), []);
+
   const buildView = useCallback((source = resolved) => ({
     label: config.marketplace?.name || 'Dashboard',
-    ...buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source),
-  }), [buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
+    ...(showTransactions ? buildTransactionsView(transactionResolved) : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source)),
+  }), [showTransactions, buildTransactionsView, transactionResolved, buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
 
   // Excel/PDF always pull "all data" — every uploaded row, no date bound
-  // (fullResolved) — and every visible Tab + Overview Tab, not just the
-  // active one, each its own sheet/section. Chart images aren't embedded
-  // yet — every tab's title cards and table are, in full (or My Details-
-  // trimmed, per buildTabView above).
+  // (fullResolved/fullTransactionResolved) — and every visible Tab +
+  // Overview Tab, PLUS Transactions (when Order Id is mapped), not just the
+  // active one, each its own sheet/section.
   const doExport = async (kind) => {
     if (restoring) { addToast('Still loading your saved data — try again in a moment', 'error'); return; }
     const tabs = [
       ...visibleTabs.map((t) => buildTabView(t, false, fullResolved)),
       ...visibleOverviewTabs.map((t) => buildTabView(t, true, fullResolved)),
+      ...(orderIdHeader ? [buildTransactionsView(fullTransactionResolved)] : []),
     ].filter((v) => v.table.columns.length);
     if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
     try {
       const label = config.marketplace?.name || 'Dashboard';
-      await (kind === 'pdf' ? downloadMultiTabPdf({ label, tabs }) : downloadMultiTabXlsx({ label, tabs }));
-    } catch {
+      const activeTabName = showTransactions ? 'Transactions' : (showOverview ? activeOverviewTab?.name : activeTab?.name) || 'Dashboard';
+      await (kind === 'pdf'
+        ? downloadMultiTabPdf({ label, activeTabName, tabs })
+        : downloadMultiTabXlsx({ label, activeTabName, tabs }));
+    } catch (err) {
+      console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');
     }
   };
@@ -717,18 +803,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       adsMode: applied.ads.mode,
       adsValue: applied.ads.value,
       rowCount: canonicalRows.length,
-      summary: Object.fromEntries((activeTab?.titleCardIds || []).map((id) => {
+      summary: showTransactions ? {} : Object.fromEntries((activeTab?.titleCardIds || []).map((id) => {
         const c = (config.titleCards || []).find((x) => x.id === id);
         return [c?.name || id, resolved.titleCardValues[id]?.main?.raw ?? null];
       })),
-      skuRows: resolved.tableRows.map((r) => {
+      // Whichever table is actually on screen — the per-SKU one normally,
+      // or (same profit_loss_history.sku_rows column, just a different
+      // shape of flat record) the per-transaction one while Transactions
+      // is the active view. "Save what I'm looking at", same rule buildView
+      // already applies to the label/cards above.
+      skuRows: (showTransactions ? transactionResolved.rows : resolved.tableRows).map((r) => {
         const o = {};
-        for (const h of resolved.headers) { if (r.cells[h.id]) o[h.name] = r.cells[h.id].raw; }
+        for (const h of (showTransactions ? transactionResolved.headers : resolved.headers)) { if (r.cells[h.id]) o[h.name] = r.cells[h.id].raw; }
         return o;
       }),
       sourceFiles: uploads.map((u) => ({ kind: u.slotId, platform: u.platform, name: u.fileName, sizeBytes: 0, rowCount: u.rows.length, contentBase64: null })),
     };
-  }, [buildView, applied, resolved, canonicalRows, activeTab, config, uploads]);
+  }, [buildView, applied, resolved, canonicalRows, activeTab, config, uploads, showTransactions, transactionResolved]);
 
   if (!templatesReady) {
     return (
@@ -765,6 +856,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         allOverviewTabs={allOverviewTabsSorted}
         overviewTabsSection={layout.overviewTabs || emptySection()}
         onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
+        showTransactions={!!orderIdHeader}
+        transactionsActive={showTransactions}
+        onOpenTransactions={() => { setPreferredTabId(TRANSACTIONS_TAB_ID); onCloseMobileNav(); }}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -796,8 +890,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}
-            rowLimit={pending.rowLimit}
-            onRowLimitChange={(n) => setPending((s) => ({ ...s, rowLimit: n }))}
             companyOptions={companyOptions}
             company={pending.company}
             onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
@@ -820,7 +912,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               look identical to "nothing was ever uploaded", with no clue
               why. Settlement exports are almost always older than the
               default 7-day window. */}
-          {hasData && canonicalRows.length > 0 && !showOverview && resolved.tableRows.length === 0 && (
+          {hasData && canonicalRows.length > 0 && !showOverview && !showTransactions && resolved.tableRows.length === 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neg/10 px-3 py-2 text-[13px] text-neg">
               <span>
                 {canonicalRows.length} row{canonicalRows.length === 1 ? '' : 's'} uploaded, but none fall in the selected date range.
@@ -843,13 +935,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">
               <Loader2 size={14} className="shrink-0 animate-spin" />
               <span>
-                Loading your saved data for accurate sorting/search — {Math.min(restorePaging.page * DEFAULT_ROW_LIMIT, restorePaging.totalCount)} of {restorePaging.totalCount} rows…
+                Loading your saved data — {Math.min(restorePaging.page * RESTORE_PAGE_SIZE, restorePaging.totalCount)} of {restorePaging.totalCount} rows…
               </span>
-            </div>
-          )}
-          {!restoring && restoreCapped && restorePaging && (
-            <div className="mt-4 rounded-lg bg-card px-3 py-2 text-[12.5px] text-subtle">
-              Showing the most recent {restorePaging.page * DEFAULT_ROW_LIMIT} of {restorePaging.totalCount} saved rows (sort/search only cover these) — narrow the date range or Company to bring the rest within reach.
             </div>
           )}
 
@@ -857,7 +944,25 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
                 their zero/empty state — only the rows are empty. */}
-            {showOverview ? (
+            {showTransactions ? (
+              <div className="space-y-3">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">Transactions</h2>
+                  <p className="mt-0.5 text-sm text-muted">
+                    One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
+                  </p>
+                </div>
+                <DetailsTable
+                  columns={transactionResolved.headers}
+                  rows={transactionResolved.rows}
+                  disableCostColumn
+                  selectedKeys={selectedKeys}
+                  onToggleRow={onToggleRow}
+                  onToggleAll={onToggleAll}
+                  totalCount={canonicalRows.length}
+                />
+              </div>
+            ) : showOverview ? (
               <OverviewTab
                 config={config}
                 tab={activeOverviewTab}
@@ -892,27 +997,32 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
+                totalCount={canonicalRows.length}
               />
             )}
           </div>
-             {/* Right below the upload toolbar — template builders can inspect
-            exactly what any file (including one they haven't mapped yet)
-            parses to without leaving the dashboard. Same gate as Template
-            Settings; a regular seller never sees it. */}
-        {canManageTemplates && (
-          <div className="max-h-[60vh] shrink-0 overflow-y-auto border-b border-divider bg-surface">
-            <SheetDebugger
-              externalFile={debugFile}
-              externalSlotId={debugSlotId}
-              showPicker={false}
-              fileSlots={config.fileSlots || []}
-              headers={config.headers || []}
-            />
-          </div>
-        )}
 
+          {/* Merged Extracted Common Headers Data Table */}
+          {canonicalRows.length > 0 && (
+            <MergedCommonHeadersTable canonicalRows={canonicalRows} config={config} uploads={uploads} />
+          )}
+
+          {/* Right below the upload toolbar — template builders can inspect
+              exactly what any file (including one they haven't mapped yet)
+              parses to without leaving the dashboard. Same gate as Template
+              Settings; a regular seller never sees it. */}
+          {canManageTemplates && (
+            <div className="mt-6 max-h-[60vh] shrink-0 overflow-y-auto border-t border-divider bg-surface p-4 rounded-xl">
+              <NextLevelSheetDebugger
+                externalFile={debugFile}
+                externalSlotId={debugSlotId}
+                showPicker={false}
+                fileSlots={config.fileSlots || []}
+                headers={config.headers || []}
+              />
+            </div>
+          )}
         </main>
-        
       </div>
 
       <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} onOpenRun={() => {}} />
