@@ -512,14 +512,14 @@ export default function NextLevelSheetDebugger({
                   {dbRows.map((r, idx) => (
                     <tr key={r.id || idx} className="hover:bg-card-hover">
                       <td className="px-3 py-2 font-mono text-subtle">{idx + 1}</td>
-                      <td className="px-3 py-2 font-mono font-medium text-foreground">{r.order_id || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-muted">{r.transaction_id || '—'}</td>
-                      <td className="px-3 py-2 font-medium text-foreground">{r.sku || '—'}</td>
+                      <td className="px-3 py-2 font-mono font-medium text-foreground">{r.orderId || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-muted">{r.transactionId || '—'}</td>
+                      <td className="px-3 py-2 font-medium text-foreground">{r.data?.sku || '—'}</td>
                       <td className="px-3 py-2 text-subtle">
-                        {r.platform} {r.brand && `(${r.brand})`}
+                        {r.data?.platform} {r.data?.brand && `(${r.data.brand})`}
                       </td>
-                      <td className="px-3 py-2 font-mono text-[10.5px] text-muted max-w-[300px] truncate" title={JSON.stringify(r.extracted_data)}>
-                        {JSON.stringify(r.extracted_data || {})}
+                      <td className="px-3 py-2 font-mono text-[10.5px] text-muted max-w-[300px] truncate" title={JSON.stringify(r.data)}>
+                        {JSON.stringify(r.data || {})}
                       </td>
                     </tr>
                   ))}
