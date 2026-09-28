@@ -6,6 +6,8 @@ import { getMyTemplateAccess } from '@/lib/profitLoss/templatesApi';
 import DashboardTopbar from './DashboardTopbar';
 import DashboardWorkspace from './DashboardWorkspace';
 
+const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
+
 // Client shell: owns the topbar session + the mobile nav drawer state, then
 // hands off to <DashboardWorkspace/> (the template-driven dashboard). The page
 // works fully signed-out — sign-in only unlocks My Details + History, and
@@ -37,10 +39,13 @@ export default function ProfitLossShell() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
-      <DashboardTopbar user={user} onLogout={handleLogout} onMenuClick={() => setNavOpen(true)} />
+      {!HEADER_HIDDEN && <DashboardTopbar user={user} onLogout={handleLogout} onMenuClick={() => setNavOpen(true)} />}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <DashboardWorkspace
           canManageTemplates={canManageTemplates}
+          // With the topbar hidden its hamburger goes too — the workspace's
+          // own header row renders one instead so the mobile nav stays reachable.
+          onMenuClick={HEADER_HIDDEN ? () => setNavOpen(true) : undefined}
           mobileNavOpen={navOpen}
           onCloseMobileNav={() => setNavOpen(false)}
         />

@@ -6,6 +6,8 @@ import { ArrowLeft } from 'lucide-react';
 import { getStoredUser, clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
+const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
+
 // Shell for every /profit-loss/template-settings (and /profit-loss/debug)
 // page — the shared navbar + a "back to dashboard" bar + a scroll container.
 // Mirrors ProfitLossShell's session bootstrap. `page` picks the breadcrumb
@@ -33,7 +35,7 @@ export default function TemplateSettingsChrome({ children, page = 'template-sett
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
-      <DashboardTopbar user={user} onLogout={handleLogout} />
+      {!HEADER_HIDDEN && <DashboardTopbar user={user} onLogout={handleLogout} />}
       <div className="flex items-center gap-2 border-b border-divider bg-background px-4 py-2 sm:px-6 lg:px-10">
         <Link href="/profit-loss" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-foreground">
           <ArrowLeft size={15} /> Back to dashboard

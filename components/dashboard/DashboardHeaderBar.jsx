@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSpreadsheet, FileText, RotateCcw, Settings, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, FileText, Menu, RotateCcw, Settings, Trash2 } from 'lucide-react';
 import ValueFilter from './ValueFilter';
 import DateRangeFilter from './DateRangeFilter';
 import AdsCostControl from './AdsCostControl';
@@ -15,8 +15,11 @@ import IconButton from './IconButton';
 // down from DashboardWorkspace so they're a one-line change to bring back).
 // Excel/PDF always export every uploaded row regardless of the date filter
 // shown here — see DashboardWorkspace's doExport. Total row count is shown
-// in DetailsTable's own footer, not up here.
+// in DetailsTable's own footer, not up here. `onMenuClick` is only passed when
+// NEXT_PUBLIC_IS_Header_Hide removed the topbar (and its hamburger) — see
+// ProfitLossShell.
 export default function DashboardHeaderBar({
+  onMenuClick,
   onReset,
   showSetting,
   onOpenSetting,
@@ -37,6 +40,16 @@ export default function DashboardHeaderBar({
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex items-center gap-3">
+        {onMenuClick && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="Open menu"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-card-hover hover:text-foreground lg:hidden"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
       </div>
 

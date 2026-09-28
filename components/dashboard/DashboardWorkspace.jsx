@@ -887,6 +887,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
      
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           <DashboardHeaderBar
+            onMenuClick={onMenuClick}
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}
