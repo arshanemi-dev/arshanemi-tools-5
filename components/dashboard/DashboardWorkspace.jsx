@@ -13,6 +13,7 @@ import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
 import { guessMapping } from '@/data/platforms/manual';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
+import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
 import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
 import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData } from '@/lib/profitLoss/extractedDataStore';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
@@ -660,14 +661,18 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const onDeleteSelected = useCallback(() => {
     const count = selectedKeys.size;
     if (!count) return;
-    const matchRawRow = showTransactions
-      ? (r) => transactionKeyFor(r, orderIdHeader, transactionIdHeader)
-      : showOverview && activeOverview?.fixedHeader
-      ? (r) => String(readHeaderFromRow(activeOverview.fixedHeader, r) ?? '').trim()
-      : (r) => r.sku;
-    const removedRows = uploads.flatMap((u) => u.rows.filter((r) => selectedKeys.has(matchRawRow(r))));
+    // An Overview row is a hierarchy node (Company → Sku → …) keyed by its
+    // path; a raw row is covered when ANY prefix of its own path is
+    // selected — checking a Company removes every row beneath it.
+    const overviewLevels = activeOverview?.levels || [];
+    const isSelected = showTransactions
+      ? (r) => selectedKeys.has(transactionKeyFor(r, orderIdHeader, transactionIdHeader))
+      : showOverview && overviewLevels.length
+      ? (r) => rowPathKeys(overviewLevels, r, readHeaderFromRow).some((k) => selectedKeys.has(k))
+      : (r) => selectedKeys.has(r.sku);
+    const removedRows = uploads.flatMap((u) => u.rows.filter(isSelected));
     setUploads((prev) => prev
-      .map((u) => ({ ...u, rows: u.rows.filter((r) => !selectedKeys.has(matchRawRow(r))) }))
+      .map((u) => ({ ...u, rows: u.rows.filter((r) => !isSelected(r)) }))
       .filter((u) => u.rows.length > 0));
     addToast(`Deleted ${count} row${count === 1 ? '' : 's'}`);
     setSelectedKeys(new Set());
@@ -715,14 +720,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // export (doExport) — "what you're looking at is what gets saved/exported".
   const buildTabView = useCallback((tabDef, isOverview, source) => {
     const ov = isOverview ? (source.overviews?.[tabDef?.id] || null) : null;
-    const overview = ov || { name: tabDef?.name, fixedHeader: null, headers: [], rows: [] };
+    const overview = ov || { name: tabDef?.name, levels: [], headers: [], flatRows: [] };
+    // An Overview exports as a pivot with subtotal rows: one column per
+    // hierarchy level, then the summed headers; every node in depth-first
+    // order (a Company row, then its Sku rows, then each Sku's Order Ids).
     let defs = isOverview
-      ? (overview.fixedHeader ? [overview.fixedHeader, ...overview.headers] : [])
+      ? ((overview.levels || []).length ? [...overview.levels, ...overview.headers] : [])
       : (tabDef?.headerIds || []).map((id) => source.headers.find((h) => h.id === id)).filter(Boolean);
     if (!isOverview && viewMode === 'my' && defs.length) {
       defs = [defs[0], ...defs.slice(1).filter((h) => myColumns.includes(h.id))];
     }
-    const rows = isOverview ? overview.rows : source.tableRows;
+    const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
     const cards = (tabDef?.titleCardIds || []).map((id) => {
       const c = (config.titleCards || []).find((x) => x.id === id);
       const v = source.titleCardValues[id] || {};
@@ -965,6 +973,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               </div>
             ) : showOverview ? (
               <OverviewTab
+                key={activeOverviewTab?.id}
                 config={config}
                 tab={activeOverviewTab}
                 resolved={resolved}

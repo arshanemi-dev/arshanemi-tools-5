@@ -43,6 +43,15 @@
   --color-neg:           #dc2626;
   --color-th:            #f8fafc;
 
+  /* Overview hierarchy — one colour per unique-value level (L1 → L6);
+     components/dashboard/overviewLevelStyles.js maps depth → classes */
+  --color-lvl1:          #7c3aed;
+  --color-lvl2:          #0284c7;
+  --color-lvl3:          #059669;
+  --color-lvl4:          #d97706;
+  --color-lvl5:          #e11d48;
+  --color-lvl6:          #0891b2;
+
   /* RGB channels for rgba() usage */
   --color-accent-rgb:       163, 82, 246;
   --color-accent-light-rgb: 192, 132, 252;
@@ -93,6 +102,14 @@ html[data-theme="dark"] {
   --color-pos:           #4ade80;
   --color-neg:           #f87171;
   --color-th:            #161616;
+
+  /* Overview hierarchy levels — dark overrides (lighter for contrast) */
+  --color-lvl1:          #a78bfa;
+  --color-lvl2:          #38bdf8;
+  --color-lvl3:          #34d399;
+  --color-lvl4:          #fbbf24;
+  --color-lvl5:          #fb7185;
+  --color-lvl6:          #22d3ee;
 
   /* Prose typography — dark overrides */
   --color-heading-3:     #e5e7eb;

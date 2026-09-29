@@ -13,6 +13,7 @@
 // active marketplace's fileSlots}.
 
 import { nanoid } from 'nanoid';
+import { MAX_OVERVIEW_LEVELS, overviewLevelIds } from '@/lib/profitLoss/overviewTree';
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
@@ -168,9 +169,14 @@ export function makeTab(name = 'Tab', order = 0) {
   };
 }
 
-// An Overview tab is a pivot: one Fixed Header (a unique key, e.g. Sku Name —
-// one row per value it takes) plus the other headers that aggregate within
-// each group. There can be several of these, each its own tab in the
+// An Overview tab is a pivot on a "unique value hierarchy": an ordered list of
+// 1–MAX_OVERVIEW_LEVELS key headers (e.g. Brand → Category → Sku Name). Level
+// 1's values become the top of the dashboard's hierarchy sidebar; each next
+// level nests inside the one above, and every other picked header aggregates
+// within each node (lib/profitLoss/overviewTree.js). At least one level is
+// required. `fixedHeaderId` is kept equal to Level 1 so configs saved before
+// hierarchies existed (one fixed header = a 1-level hierarchy) still read
+// the same. There can be several of these, each its own tab in the
 // dashboard sidebar (after the regular Tabs) as soon as it's created — no
 // separate visibility toggle. Same as a Tab, it can also carry its own Title
 // Cards (KPI band) and Graphs — those read the same global titleCardValues /
@@ -180,6 +186,7 @@ export function makeOverviewTab(name = 'Overview', order = 0) {
     id: newId('ov'),
     name,
     order,
+    hierarchyHeaderIds: [],
     fixedHeaderId: null,
     headerIds: [],
     titleCardIds: [],
@@ -310,8 +317,15 @@ export function validateGlobalConfig(config) {
   checkUniqueNames(overviewTabs, 'overview tab', push);
   for (const ov of overviewTabs) {
     if (!ov?.id) { push('every overview tab needs an id'); continue; }
-    for (const id of ov.headerIds || []) if (!headerIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown header`);
-    if (ov.fixedHeaderId && !headerIds.has(ov.fixedHeaderId)) push(`overview tab "${ov.name || ov.id}" fixed header references unknown header`);
+    const label = ov.name || ov.id;
+    for (const id of ov.headerIds || []) if (!headerIds.has(id)) push(`overview tab "${label}" references unknown header`);
+    const levels = overviewLevelIds(ov);
+    if (!levels.length) push(`overview tab "${label}" needs at least 1 unique value level`);
+    if (levels.length > MAX_OVERVIEW_LEVELS) push(`overview tab "${label}" has more than ${MAX_OVERVIEW_LEVELS} levels`);
+    if (Array.isArray(ov.hierarchyHeaderIds) && new Set(ov.hierarchyHeaderIds).size !== ov.hierarchyHeaderIds.length) {
+      push(`overview tab "${label}" uses the same header on two levels`);
+    }
+    for (const id of levels) if (!headerIds.has(id)) push(`overview tab "${label}" hierarchy references unknown header`);
     for (const id of ov.titleCardIds || []) if (!cardIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown title card`);
     for (const id of ov.graphIds || []) if (!graphIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown graph`);
   }

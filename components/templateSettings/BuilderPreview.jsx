@@ -3,15 +3,42 @@
 import { useMemo, useState } from 'react';
 import { Layers } from 'lucide-react';
 import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { normHeader } from '@/data/platforms/canonical';
 import TabView from '@/components/dashboard/TabView';
 import OverviewTab from '@/components/dashboard/OverviewTab';
 
 // A small, deterministic set of fake orders — 3 SKUs × 14 days, a mix of
-// delivered/return/rto/cancelled — run through the REAL resolveTemplate (and
-// so the real P&L engine) so every default header, formula, title card and
-// graph gets a plausible non-zero number. Not the seller's real data; same
-// idea as GraphPreviewChart's seeded demo values, just at the row level.
-function demoCanonicalRows() {
+// delivered/return/rto/cancelled, under two demo brands — run through the
+// REAL resolveTemplate (and so the real P&L engine) so every default header,
+// formula, title card and graph gets a plausible non-zero number. Not the
+// seller's real data; same idea as GraphPreviewChart's seeded demo values,
+// just at the row level.
+const DEMO_BRANDS = ['Aura', 'Nova'];
+const SKU_NAMES = new Set(['sku', 'skuname', 'skucode', 'vendorsku']);
+
+// Mapped (non-engine) headers have no value in fake rows, so an Overview
+// hierarchy built on them (Company → Sku → Order Id, …) would preview as
+// one "(Blank)" node. Seed each with a few deterministic values instead —
+// a unique id per row for Order/Transaction Id, 2–4 repeating labels for a
+// text header, a small number for a number header. Sku / Company / Brand
+// are left to readHeaderFromRow's own fallbacks (row.sku / upload tag).
+function demoMeta(headers, i) {
+  const meta = {};
+  headers.forEach((h, hi) => {
+    if (h.primitive || h.type === 'formula') return;
+    const norm = normHeader(h.name);
+    if (SKU_NAMES.has(norm) || norm.startsWith('company') || norm.startsWith('brand')) return;
+    if (h.id === RESERVED_HEADER_IDS.orderId) { meta[h.id] = `OD-${1001 + i}`; return; }
+    if (h.id === RESERVED_HEADER_IDS.transactionId) { meta[h.id] = `TX-${5001 + i}`; return; }
+    if (h.type === 'number') { meta[h.id] = 10 + ((i * 7 + hi * 13) % 90); return; }
+    const variants = 2 + (hi % 3);
+    meta[h.id] = `${h.name} ${String.fromCharCode(65 + ((Math.floor(i / (hi % 4 + 1)) + hi) % variants))}`;
+  });
+  return meta;
+}
+
+function demoCanonicalRows(headers) {
   const skus = ['SKU-001', 'SKU-002', 'SKU-003'];
   const statuses = ['delivered', 'delivered', 'delivered', 'return', 'rto', 'cancelled', 'delivered'];
   const rows = [];
@@ -22,14 +49,17 @@ function demoCanonicalRows() {
       const status = statuses[(d + si) % statuses.length];
       const gross = 200 + ((d * 17 + si * 31) % 300);
       const settlement = status === 'delivered' ? Math.round(gross * 0.82) : status === 'return' ? -Math.round(gross * 0.2) : 0;
+      const brand = DEMO_BRANDS[(si + d) % 2];
+      const i = id++;
       rows.push({
-        rowId: `demo_${id++}`,
+        rowId: `demo_${i}`,
         sku, qty: 1, status, orderDate: date, platform: 'flipkart',
+        brand, company: `Flipkart_${brand}`,
         grossSale: gross, settlement,
         settlementDate: status === 'delivered' ? date : null,
         fees: { commission: Math.round(gross * 0.08) },
         taxes: { tcs: Math.round(gross * 0.01), tds: 0, gstOnFees: 0 },
-        meta: {},
+        meta: demoMeta(headers, i),
       });
     });
   }
@@ -43,7 +73,8 @@ const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
 // real /profit-loss page uses) driven straight off the draft config, so
 // adding a header, a title card, a graph or a tab shows up immediately.
 export default function BuilderPreview({ config }) {
-  const canonicalRows = useMemo(() => demoCanonicalRows(), []);
+  const headers = config.headers;
+  const canonicalRows = useMemo(() => demoCanonicalRows(headers || []), [headers]);
   const resolved = useMemo(() => {
     try {
       return resolveTemplate(config, { canonicalRows, ads: { mode: 'percent', value: 5 } });
@@ -102,7 +133,7 @@ export default function BuilderPreview({ config }) {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {active?.kind === 'overview' ? (
-              <OverviewTab config={config} tab={overviewTabs.find((o) => o.id === active.id)} resolved={resolved} />
+              <OverviewTab key={active.id} config={config} tab={overviewTabs.find((o) => o.id === active.id)} resolved={resolved} />
             ) : (
               <TabView
                 config={config}

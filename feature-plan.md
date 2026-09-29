@@ -325,6 +325,43 @@
 >   create a file slot: `MarketPlaceSection.jsx`'s own "+ Add File" button
 >   and `BuilderSidebar.jsx`'s `file` group (`make: (n) => …` was ignoring
 >   `n` entirely) — both now do `File ${n}`.
+>
+> ## Rev 12 (2026‑09‑29) — Overview tabs nest on a unique‑value hierarchy
+>
+> Supersedes the single `fixedHeaderId` pivot (Rev 4/5 above).
+>
+> - **Schema:** `overviewTabs[].hierarchyHeaderIds` — ordered Level 1 → N
+>   key headers (e.g. Company → Sku → Order Id), **min 1, max 6**
+>   (`MAX_OVERVIEW_LEVELS`), no header on two levels. `fixedHeaderId` is kept
+>   equal to Level 1, and a config with only `fixedHeaderId` reads as a
+>   1‑level hierarchy (`overviewLevelIds()`). Enforced in both
+>   `data/templateSchema.js` and hub `lib/templateConfig.js`.
+> - **Engine:** `lib/profitLoss/overviewTree.js` (pure) builds nested nodes
+>   `{ key (JSON path), value, depth, cells, children, … }`; every node's
+>   columns are aggregated over exactly its own rows, so parents are true
+>   subtotals. A missing level value becomes a `(Blank)` node (never
+>   dropped). `resolveTemplate().overviews[id]` gains `levels`, `tree`,
+>   `flatRows`; `rows` = Level‑1 nodes. A "Company"/"Brand" header no sheet
+>   column fills now falls back to the upload tag (`row.company`/`row.brand`)
+>   in `readHeaderFromRow`.
+> - **Dashboard + builder preview:** `OverviewTab.jsx` = left
+>   `OverviewHierarchyNav` (Level‑1 values as dropdowns opening onto the next
+>   level; search, expand/collapse all, level legend chips = "open down to
+>   level N") beside `OverviewTreeTable` (DetailsTable features over the
+>   tree). The two share one `expanded` Set, so opening a node in either
+>   opens it in both; a sidebar click also scrolls the table to that row.
+>   One colour per level (`--color-lvl1…6`, light + dark, mapped in
+>   `components/dashboard/overviewLevelStyles.js`) on nav chevrons/guides
+>   and on the table's row tints + left stripe. Side‑by‑side via a
+>   container query (`@lg`), so it works in the half‑width builder preview.
+> - **Builder:** `HierarchyLevelsEditor.jsx` replaces the Fixed Header
+>   select (stepped, colour‑coded levels; last level can't be removed; red
+>   until Level 1 is picked). Promoting a header to a level drops it from
+>   the summed columns. `BuilderPreview` seeds mapped headers with demo
+>   values so the preview tree actually branches.
+> - **Delete / export:** selecting a node deletes every raw row under it
+>   (`rowPathKeys` prefix match); export writes one column per level + the
+>   summed columns, depth‑first (a pivot with subtotal rows).
 
 ---
 
