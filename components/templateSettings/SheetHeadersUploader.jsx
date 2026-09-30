@@ -1,12 +1,23 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, FileSpreadsheet, Loader2, RotateCcw, Upload, X } from 'lucide-react';
+import { Check, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { ACCEPT } from '@/lib/sheet/readAnyFile';
 import { columnLetter } from '@/lib/sheet/sheetLayout';
 import { extractSheetHeaders, readSheetsForHeaders, uniqueNames, withOrientation } from '@/lib/sheet/sheetHeaders';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { useToast } from '@/components/admin/Toast';
+import SheetLinePicker from './SheetLinePicker';
+
+// "Headers rows 1, 2 · values 4–212 · 38 headers" for one saved sheet.
+function savedSheetSummary(s) {
+  const isCol = s.orientation === 'column';
+  const label = (n) => (isCol ? columnLetter(n) : String(n));
+  const lines = (s.headerIndexes?.length ? s.headerIndexes : [s.headerIndex]).filter(Boolean);
+  const unit = isCol ? (lines.length > 1 ? 'columns' : 'column') : (lines.length > 1 ? 'rows' : 'row');
+  const values = s.valueSpec || (s.valueFrom ? `${label(s.valueFrom)}–${label(s.valueTo)}` : 'none');
+  return `Headers ${unit} ${lines.map(label).join(', ') || '—'} · values ${values} · ${(s.headers || []).length} headers`;
+}
 
 const CHIP_LIMIT = 16;
 
@@ -59,7 +70,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
   const { addToast } = useToast();
   const [reading, setReading] = useState(false);
   const [pending, setPending] = useState(null); // { fileName, isPdf, sheets }
-  const [cfg, setCfg] = useState({}); // { [sheetName]: { include, orientation, headerIndex|null } }
+  const [cfg, setCfg] = useState({}); // { [sheetName]: { include, orientation, headerIndexes: number[]|null, valueSpec } }
   const defaults = useMemo(() => rowOverrideFor({ ...slot, sheets: [] }), [slot]);
 
   async function onFile(file) {
@@ -75,7 +86,13 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
       for (const s of wb.sheets) {
         const p = prev[s.name];
         const orientation = p?.orientation === 'column' && !wb.isPdf ? 'column' : 'row';
-        next[s.name] = { include: p ? p.include !== false : true, orientation, headerIndex: p && p.headerIndexAuto === false ? p.headerIndex : null };
+        const savedHeaders = p && p.headerIndexAuto === false ? (p.headerIndexes?.length ? p.headerIndexes : [p.headerIndex].filter(Boolean)) : null;
+        next[s.name] = {
+          include: p ? p.include !== false : true,
+          orientation,
+          headerIndexes: savedHeaders?.length ? savedHeaders : null,
+          valueSpec: p?.valueSpec || '',
+        };
         if (orientation === 'column') sheets = sheets.map((x) => (x.name === s.name ? withOrientation(x, 'column') : x));
       }
       setPending({ ...wb, sheets });
@@ -94,11 +111,13 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
 
   const includedNames = pending ? pending.sheets.filter((s) => cfg[s.name]?.include !== false).map((s) => s.name) : [];
   const uniqueCount = uniqueNames(includedNames.flatMap((n) => results[n]?.headers || [])).length;
+  const badValueSpec = includedNames.some((n) => results[n] && !results[n].valueSpecOk);
 
   const patchCfg = (name, patch) => setCfg((c) => ({ ...c, [name]: { ...c[name], ...patch } }));
+  // Switching direction re-reads the sheet the other way — old picks don't carry over.
   const setOrientation = (name, orientation) => {
     setPending((p) => ({ ...p, sheets: p.sheets.map((s) => (s.name === name ? withOrientation(s, orientation) : s)) }));
-    patchCfg(name, { orientation, headerIndex: null });
+    patchCfg(name, { orientation, headerIndexes: null, valueSpec: '' });
   };
 
   async function saveAll() {
@@ -109,8 +128,12 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
         name: s.name,
         include: c.include !== false,
         orientation: c.orientation || 'row',
-        headerIndex: r.headerIndex,
-        headerIndexAuto: !(c.headerIndex > 0),
+        headerIndex: r.headerIndexes[0] ?? null, // first header line — kept for older readers
+        headerIndexes: r.headerIndexes,
+        headerIndexAuto: !c.headerIndexes?.length,
+        valueSpec: c.valueSpec && r.valueSpecOk ? c.valueSpec.trim() : '',
+        valueFrom: r.valueFrom,
+        valueTo: r.valueTo,
         headers: r.headers,
         dataCount: r.dataCount,
       };
@@ -184,36 +207,30 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[12px] font-medium text-muted">Headers</span>
+                  <span className="w-14 shrink-0 text-[12px] font-medium text-muted">Direction</span>
                   <Pill active={!isCol} disabled={!include} onClick={() => setOrientation(s.name, 'row')}>Row</Pill>
                   <Pill active={isCol} disabled={!include || pending.isPdf} onClick={() => setOrientation(s.name, 'column')}>Column</Pill>
-                  {!pending.isPdf && (
-                    <label className="ml-1 flex items-center gap-1.5 text-[11.5px] text-muted">
-                      {isCol ? 'Column' : 'Row'} #
-                      <input
-                        type="number"
-                        min={1}
-                        disabled={!include}
-                        value={c.headerIndex || r.headerIndex || ''}
-                        onChange={(e) => patchCfg(s.name, { headerIndex: Math.max(1, Number(e.target.value) || 1) })}
-                        className="w-14 rounded-md border border-divider bg-background px-1.5 py-0.5 text-[11.5px] focus:border-accent focus:outline-none disabled:opacity-50"
-                      />
-                      {isCol && (c.headerIndex || r.headerIndex) ? <span className="text-subtle">({columnLetter(c.headerIndex || r.headerIndex)})</span> : null}
-                    </label>
-                  )}
-                  {c.headerIndex > 0 ? (
-                    <button type="button" onClick={() => patchCfg(s.name, { headerIndex: null })} title="Back to auto-detect" className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] text-subtle hover:text-foreground">
-                      <RotateCcw size={11} /> Auto
-                    </button>
-                  ) : (
-                    <span className="text-[11px] text-subtle">auto</span>
-                  )}
+                  <span className="text-[11px] text-subtle">{isCol ? 'headers down a column, values in the columns beside it' : 'headers across a row, values in the rows below'}</span>
                 </div>
+                {!pending.isPdf && (
+                  <SheetLinePicker
+                    isCol={isCol}
+                    disabled={!include}
+                    headerIndexes={r.headerIndexes || []}
+                    explicitHeaders={c.headerIndexes}
+                    onHeaders={(headerIndexes) => patchCfg(s.name, { headerIndexes })}
+                    valueSpec={c.valueSpec || ''}
+                    onValueSpec={(valueSpec) => patchCfg(s.name, { valueSpec })}
+                    valueFrom={r.valueFrom}
+                    valueTo={r.valueTo}
+                    valueSpecOk={r.valueSpecOk !== false}
+                  />
+                )}
 
                 <p className="mt-2 text-[11.5px] text-muted">
                   {r.headers.length
-                    ? `${r.headers.length} headers · ${r.dataCount} data ${isCol ? 'column' : 'row'}${r.dataCount === 1 ? '' : 's'}`
-                    : `No header ${isCol ? 'column' : 'row'} found — set the ${isCol ? 'column' : 'row'} number by hand, or switch to ${isCol ? 'Row' : 'Column'}.`}
+                    ? `${r.headers.length} headers · ${r.dataCount} value ${isCol ? 'column' : 'row'}${r.dataCount === 1 ? '' : 's'}`
+                    : `No header ${isCol ? 'column' : 'row'} found — add the ${isCol ? 'column' : 'row'} number by hand, or switch to ${isCol ? 'Row' : 'Column'}.`}
                 </p>
                 <HeaderChips headers={r.headers} filled={r.filled} />
               </div>
@@ -227,7 +244,8 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
             <button
               type="button"
               onClick={saveAll}
-              disabled={saving || !uniqueCount}
+              disabled={saving || !uniqueCount || badValueSpec}
+              title={badValueSpec ? 'Fix the red Values box first' : undefined}
               className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[12.5px] font-semibold text-white hover:bg-action-hover disabled:opacity-50"
             >
               {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save All Sheets
@@ -241,7 +259,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
               <li key={s.name} className={`flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-[12px] ${s.include === false ? 'text-subtle' : 'text-foreground'}`}>
                 <span className={`flex min-w-0 items-center gap-1.5 truncate ${s.include === false ? 'line-through' : ''}`}><FileSpreadsheet size={12} className="shrink-0 text-subtle" /> {s.name}</span>
                 <span className="text-[11px] text-subtle">
-                  {s.include === false ? 'ignored' : `Headers ${s.orientation === 'column' ? `column ${columnLetter(s.headerIndex)}` : `row ${s.headerIndex}`} · ${(s.headers || []).length} headers`}
+                  {s.include === false ? 'ignored' : savedSheetSummary(s)}
                 </span>
               </li>
             ))}
