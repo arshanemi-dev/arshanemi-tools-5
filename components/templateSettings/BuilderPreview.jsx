@@ -1,12 +1,14 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Layers } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Info, Layers } from 'lucide-react';
 import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { normHeader } from '@/data/platforms/canonical';
 import TabView from '@/components/dashboard/TabView';
 import OverviewTab from '@/components/dashboard/OverviewTab';
+import { HL_BOX, PreviewHighlightContext } from '@/components/dashboard/previewHighlight';
+import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
 
 // A small, deterministic set of fake orders — 3 SKUs × 14 days, a mix of
 // delivered/return/rto/cancelled, under two demo brands — run through the
@@ -68,11 +70,47 @@ function demoCanonicalRows(headers) {
 
 const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
 
+// Which preview slots (Tab / Overview Tab ids) actually show the selected
+// builder item, best match first. A regular Tab's table lists every global
+// header, so any Tab shows any header — but Tabs that pick it themselves,
+// then Overview Tabs using it as a level or column, come first.
+function slotsShowing(hl, tabs, overviewTabs) {
+  if (!hl?.id) return [];
+  const has = (list, id) => (list || []).includes(id);
+  switch (hl.kind) {
+    case 'tab':
+      return tabs.some((t) => t.id === hl.id) ? [hl.id] : [];
+    case 'overview':
+      return overviewTabs.some((o) => o.id === hl.id) ? [hl.id] : [];
+    case 'titleCard':
+      return [...tabs, ...overviewTabs].filter((t) => has(t.titleCardIds, hl.id)).map((t) => t.id);
+    case 'graph':
+      return [...tabs, ...overviewTabs].filter((t) => has(t.graphIds, hl.id)).map((t) => t.id);
+    case 'header': {
+      const own = tabs.filter((t) => has(t.headerIds, hl.id)).map((t) => t.id);
+      const ov = overviewTabs
+        .filter((o) => overviewLevelIds(o).includes(hl.id) || has(o.headerIds, hl.id))
+        .map((o) => o.id);
+      return [...new Set([...own, ...ov, ...tabs.map((t) => t.id)])];
+    }
+    default:
+      return [];
+  }
+}
+
+const KIND_LIST = { titleCard: 'titleCards', graph: 'graphs', header: 'headers' };
+
 // The right-hand "2nd half" of the builder — a live render of the dashboard
 // (same TabView / OverviewTab / KpiCardRow / GraphStrip / DetailsTable the
 // real /profit-loss page uses) driven straight off the draft config, so
 // adding a header, a title card, a graph or a tab shows up immediately.
-export default function BuilderPreview({ config }) {
+//
+// `highlight` = the item currently selected in the builder ({ kind, id },
+// see TemplateBuilder). The preview jumps to a tab that shows it (staying
+// put if the current one already does), outlines it — card, graph, table
+// column, hierarchy level, or the whole tab — and scrolls it into view. An
+// item that isn't placed on any tab yet gets a note saying so instead.
+export default function BuilderPreview({ config, highlight = null }) {
   const headers = config.headers;
   const canonicalRows = useMemo(() => demoCanonicalRows(headers || []), [headers]);
   const resolved = useMemo(() => {
@@ -95,9 +133,33 @@ export default function BuilderPreview({ config }) {
 
   const [activeId, setActiveId] = useState(null);
   const active = slots.find((s) => s.id === activeId) || slots[0] || null;
+  const showing = slotsShowing(highlight, tabs, overviewTabs);
+
+  // Follow a NEW selection to a tab that shows it — adjusted while
+  // rendering (keyed off the selection), so a later manual pill click still
+  // sticks until something else is selected.
+  const hlKey = highlight?.id ? `${highlight.kind}:${highlight.id}` : '';
+  const [seenHl, setSeenHl] = useState('');
+  if (hlKey !== seenHl) {
+    setSeenHl(hlKey);
+    if (showing.length && !showing.includes(active?.id)) setActiveId(showing[0]);
+  }
+
+  const bodyRef = useRef(null);
+  useEffect(() => {
+    if (!hlKey) return;
+    bodyRef.current
+      ?.querySelector('[data-preview-hl]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [hlKey, active?.id]);
 
   const [viewMode, setViewMode] = useState('all');
   const [myColumns, setMyColumns] = useState([]);
+
+  const slotLit = (id) => !!highlight && (highlight.kind === 'tab' || highlight.kind === 'overview') && highlight.id === id;
+  const unplaced = highlight?.id && KIND_LIST[highlight.kind] && !showing.length
+    ? (config[KIND_LIST[highlight.kind]] || []).find((it) => it.id === highlight.id)
+    : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -124,28 +186,40 @@ export default function BuilderPreview({ config }) {
                 onClick={() => setActiveId(s.id)}
                 className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors ${
                   active?.id === s.id ? 'bg-action text-white' : 'bg-card text-muted hover:text-foreground'
-                }`}
+                } ${slotLit(s.id) ? HL_BOX : ''}`}
               >
                 {s.kind === 'overview' && <Layers size={11} />}
                 {s.name || 'Untitled'}
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {active?.kind === 'overview' ? (
-              <OverviewTab key={active.id} config={config} tab={overviewTabs.find((o) => o.id === active.id)} resolved={resolved} />
-            ) : (
-              <TabView
-                config={config}
-                tab={tabs.find((t) => t.id === active?.id)}
-                resolved={resolved}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-                myColumns={myColumns}
-                onMyColumnsChange={setMyColumns}
-              />
-            )}
-          </div>
+          {unplaced && (
+            <div className="flex items-center gap-1.5 border-b border-divider bg-accent/10 px-4 py-2 text-[12px] text-foreground">
+              <Info size={13} className="shrink-0 text-accent" />
+              <span>
+                <b>{unplaced.name || 'This item'}</b> isn&rsquo;t on any Tab or Overview Tab yet — add it to one to see it here.
+              </span>
+            </div>
+          )}
+          <PreviewHighlightContext.Provider value={highlight?.id ? highlight : null}>
+            <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className={`rounded-xl ${slotLit(active?.id) ? `${HL_BOX} p-2` : ''}`}>
+                {active?.kind === 'overview' ? (
+                  <OverviewTab key={active.id} config={config} tab={overviewTabs.find((o) => o.id === active.id)} resolved={resolved} />
+                ) : (
+                  <TabView
+                    config={config}
+                    tab={tabs.find((t) => t.id === active?.id)}
+                    resolved={resolved}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    myColumns={myColumns}
+                    onMyColumnsChange={setMyColumns}
+                  />
+                )}
+              </div>
+            </div>
+          </PreviewHighlightContext.Provider>
         </>
       )}
     </div>

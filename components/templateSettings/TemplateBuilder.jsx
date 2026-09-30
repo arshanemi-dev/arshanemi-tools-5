@@ -7,6 +7,7 @@ import { useToast } from '@/components/admin/Toast';
 import { makeEmptyMarketplaceConfig, makeHeader, isDuplicateName } from '@/data/templateSchema';
 import { listTemplates, createTemplate, patchTemplate, deleteTemplate } from '@/lib/profitLoss/templatesApi';
 import useTemplateDraft from './useTemplateDraft';
+import useMarketplaceMappingSaver from './useMarketplaceMappingSaver';
 import useGlobalTemplateDraft from './useGlobalTemplateDraft';
 import BuilderSidebar from './BuilderSidebar';
 import BuilderPreview from './BuilderPreview';
@@ -18,6 +19,7 @@ import OverviewTabSection from './OverviewTabSection';
 import MarketPlaceSection from './MarketPlaceSection';
 import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
+import { GlobalPublishBanner, PublishButton, usePublishGlobal } from './GlobalPublish';
 
 // The single builder page. One left sidebar has two areas: Global Settings
 // (Header / Graph / Title Card / Tab / Overview Tab — one shared config
@@ -37,6 +39,7 @@ export default function TemplateBuilder() {
   const activeArea = isGlobal ? 'global' : marketplaceId ? 'marketplace' : null;
 
   const globalDraft = useGlobalTemplateDraft();
+  const publishGlobal = usePublishGlobal(globalDraft);
   const draft = useTemplateDraft(marketplaceId, { globalHeaderIds: globalDraft.headerIds });
 
   const [templates, setTemplates] = useState(null);
@@ -95,8 +98,10 @@ export default function TemplateBuilder() {
     addToast('Marketplace deleted');
   };
 
+  // `__focus` remembers which group was picked LAST (sidebar or a section's
+  // own list) — that item is what the live preview highlights.
   const onSelect = useCallback((group, id, anchor) => {
-    if (group && group !== '__jump__') setSelection((s) => ({ ...s, [group]: id }));
+    if (group && group !== '__jump__') setSelection((s) => ({ ...s, [group]: id, __focus: group }));
     if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     setNavOpen(false);
   }, [setSelection]);
@@ -104,8 +109,19 @@ export default function TemplateBuilder() {
   const sectionProps = (group) => ({
     draft: globalDraft,
     activeId: selection[group] ?? null,
-    onActiveId: (id) => setSelection((s) => ({ ...s, [group]: id })),
+    onActiveId: (id) => setSelection((s) => ({ ...s, [group]: id, __focus: group })),
   });
+
+  const previewHighlight = isGlobal && selection.__focus && selection[selection.__focus]
+    ? { kind: selection.__focus, id: selection[selection.__focus] }
+    : null;
+
+  // The live preview only earns its half of the screen while a Tab or an
+  // Overview Tab is the last thing picked (and still exists) — for Header /
+  // Graph / Title Card / Market Place work it's hidden and the settings
+  // column takes the full width.
+  const focusList = { tab: globalDraft.config.tabs, overview: globalDraft.config.overviewTabs }[selection.__focus];
+  const showPreview = isGlobal && !!focusList?.some((it) => it.id === selection[selection.__focus]);
 
   async function saveGlobalDraft({ major = false } = {}) {
     if (!globalDraft.valid) { addToast(`Fix ${globalDraft.errors.length} error(s) first`, 'error'); return; }
@@ -127,7 +143,8 @@ export default function TemplateBuilder() {
       if (res.details?.length) console.error('template validation:', res.details);
       return;
     }
-    if (res.created) { refreshList(); switchTo(res.templateId); }
+    if (res.created) switchTo(res.templateId);
+    refreshList(); // the global Header matrix reads each marketplace's saved headers/mappings from this list
     addToast('Marketplace saved');
   }
 
@@ -149,7 +166,9 @@ export default function TemplateBuilder() {
       globalDraft.addItem('headers', header);
       added += 1;
     }
-    return { added, skipped: (names?.length || 0) - added };
+    // `headers` = the whole pool after import (not yet re-rendered into the
+    // draft) so the caller can auto-map columns onto them by name.
+    return { added, skipped: (names?.length || 0) - added, headers: pool };
   }, [globalDraft]);
 
   // The "union" rule the Header/Market Place sections describe but never
@@ -159,17 +178,25 @@ export default function TemplateBuilder() {
   // own placeholder becomes dead weight — every future upload would keep
   // re-suggesting it as a "new" header even though nobody maps to it anymore.
   // So: once a mapping is made, drop the stale placeholder — but only when
-  // nothing else in this marketplace still points at it (a header genuinely
-  // in use, including one mapped from a different column, is never touched).
-  const reconcileExtractedHeader = useCallback((sheetHeader, mappedToId) => {
+  // nothing else still points at it — in this marketplace or any other
+  // saved one (a header genuinely in use, including one mapped from a
+  // different column, is never touched). The column being remapped right
+  // now is skipped: `draft.config` still shows its old mapping this render.
+  const reconcileExtractedHeader = useCallback((sheetHeader, mappedToId, slotId) => {
+    const key = String(sheetHeader || '').trim().toLowerCase();
     const stale = (globalDraft.config.headers || []).find(
-      (h) => h.source === 'extracted' && h.id !== mappedToId
-        && h.name.trim().toLowerCase() === String(sheetHeader || '').trim().toLowerCase(),
+      (h) => h.source === 'extracted' && h.id !== mappedToId && h.name.trim().toLowerCase() === key,
     );
     if (!stale) return;
-    const stillUsed = (draft.config.fileSlots || []).some((s) => (s.mappings || []).some((m) => m.headerId === stale.id));
+    const uses = (cfg, skipSlotId) => (cfg?.fileSlots || []).some((s) => (s.mappings || []).some(
+      (m) => m.headerId === stale.id && !(s.id === skipSlotId && String(m.sheetHeader).trim().toLowerCase() === key),
+    ));
+    const stillUsed = uses(draft.config, slotId) || (templates || []).some((t) => t.id !== marketplaceId && uses(t.config));
     if (!stillUsed) globalDraft.removeItem('headers', stale.id);
-  }, [globalDraft, draft]);
+  }, [globalDraft, draft, templates, marketplaceId]);
+
+  // The Header section's mapping edits — each one saves that marketplace.
+  const mappingSaver = useMarketplaceMappingSaver(templates, setTemplates, addToast);
 
   // The dashboard's own merge (see DashboardWorkspace.jsx): global config +
   // the active marketplace's own bits. resolveTemplate never reads fileSlots,
@@ -245,12 +272,17 @@ export default function TemplateBuilder() {
         ) : (
           <>
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-              {/* 1st half — settings */}
-              <div className="min-h-0 flex-1 overflow-y-auto bg-surface px-4 py-6 pb-10 sm:px-6 lg:w-1/2 lg:flex-none lg:border-r lg:border-divider lg:px-8">
-                <div className="mx-auto w-full max-w-2xl space-y-5">
+              {/* 1st half — settings (full width while the preview is hidden) */}
+              <div className={`min-h-0 flex-1 overflow-y-auto bg-surface px-4 py-6 pb-10 sm:px-6 lg:px-8 ${showPreview ? 'lg:w-1/2 lg:flex-none lg:border-r lg:border-divider' : ''}`}>
+                <div className="w-full space-y-5">
                   {isGlobal ? (
                     <>
-                      <HeaderSection {...sectionProps('header')} />
+                      <GlobalPublishBanner draft={globalDraft} publish={publishGlobal} />
+                      <HeaderSection
+                        {...sectionProps('header')}
+                        marketplaces={templates}
+                        mappingSaver={mappingSaver}
+                      />
                       <GraphSection {...sectionProps('graph')} />
                       <TitleCardSection {...sectionProps('titleCard')} />
                       <TabSection {...sectionProps('tab')} />
@@ -263,6 +295,7 @@ export default function TemplateBuilder() {
                         globalHeaders={globalDraft.config.headers || []}
                         onImportHeaders={importHeadersFromSheet}
                         onHeaderMapped={reconcileExtractedHeader}
+                        onSheetsSaved={refreshList}
                         activeSlotId={selection.file ?? null}
                         onActiveSlotId={(id) => setSelection((s) => ({ ...s, file: id }))}
                       />
@@ -272,10 +305,12 @@ export default function TemplateBuilder() {
                 </div>
               </div>
 
-              {/* 2nd half — live preview (desktop only; a toggle opens it full-screen below lg) */}
-              <div className="hidden min-h-0 flex-1 flex-col overflow-hidden lg:flex lg:w-1/2">
-                <BuilderPreview config={previewConfig} />
-              </div>
+              {/* 2nd half — live preview, only for a picked Tab / Overview Tab (desktop only; a toggle opens it full-screen below lg) */}
+              {showPreview && (
+                <div className="hidden min-h-0 flex-1 flex-col overflow-hidden lg:flex lg:w-1/2">
+                  <BuilderPreview config={previewConfig} highlight={previewHighlight} />
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider bg-card px-4 py-3 sm:px-6 lg:px-8">
@@ -290,9 +325,11 @@ export default function TemplateBuilder() {
                 {(isGlobal ? globalDraft.dirty : draft.dirty) && <span className="text-subtle">· unsaved changes</span>}
               </div>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setMobilePreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover lg:hidden">
-                  <Eye size={14} /> Preview
-                </button>
+                {showPreview && (
+                  <button type="button" onClick={() => setMobilePreviewOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover lg:hidden">
+                    <Eye size={14} /> Preview
+                  </button>
+                )}
                 <button type="button" onClick={() => setLogsOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover">
                   <History size={14} /> Log
                 </button>
@@ -305,6 +342,7 @@ export default function TemplateBuilder() {
                       {globalDraft.saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                       Save Draft
                     </button>
+                    <PublishButton publish={publishGlobal} />
                   </>
                 ) : (
                   <button type="button" onClick={saveMarketplace} disabled={draft.saving || !draft.dirty} className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50">
@@ -318,7 +356,7 @@ export default function TemplateBuilder() {
         )}
       </div>
 
-      {mobilePreviewOpen && (
+      {mobilePreviewOpen && showPreview && (
         <div className="fixed inset-0 z-50 flex flex-col bg-background lg:hidden">
           <button
             type="button"
@@ -328,7 +366,7 @@ export default function TemplateBuilder() {
             <X size={16} /> Close preview
           </button>
           <div className="min-h-0 flex-1">
-            <BuilderPreview config={previewConfig} />
+            <BuilderPreview config={previewConfig} highlight={previewHighlight} />
           </div>
         </div>
       )}

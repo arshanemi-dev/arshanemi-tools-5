@@ -1,13 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, Loader2, Minus, Plus, Trash2, Upload, X as XIcon } from 'lucide-react';
+import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { readAnyFile } from '@/lib/sheet/readAnyFile';
-import { rowOverrideFor } from '@/lib/sheet/rowOverride';
+import { autoMapByName, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
 import NameField from './NameField';
+import SheetHeadersUploader from './SheetHeadersUploader';
 
 // image 2 · Market Place — the upload slots (which become the dashboard's green
 // buttons) plus the Unmap / Our / Map column-mapping grid. `globalHeaders`
@@ -25,11 +25,19 @@ import NameField from './NameField';
 // full slot editor for whichever one is selected (right) — same
 // master-detail pattern as Header. File names must be unique — a duplicate
 // reddens the input live.
-export default function MarketPlaceSection({ draft, globalHeaders = [], onImportHeaders, onHeaderMapped, activeSlotId = null, onActiveSlotId }) {
+//
+// A file's upload goes through SheetHeadersUploader: every sheet in the
+// workbook is listed with Headers Row / Column buttons, and "Save All Sheets"
+// stores each sheet's settings + the file's unique headers on the slot and
+// saves the marketplace straight away — its unique header list (every file,
+// every included sheet) is what the global Header section's matrix offers
+// in this marketplace's column (`onSheetsSaved` refreshes that list).
+export default function MarketPlaceSection({ draft, globalHeaders = [], onImportHeaders, onHeaderMapped, onSheetsSaved, activeSlotId = null, onActiveSlotId }) {
   const { addToast } = useToast();
-  const { config, setConfig, addItem, patchItem, removeItem, updateMarketplace } = draft;
+  const { config, setConfig, addItem, patchItem, updateMarketplace } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
-  const [busySlot, setBusySlot] = useState(null);
+  const [savingSheets, setSavingSheets] = useState(false);
+  const uniqueHeaders = useMemo(() => marketplaceUniqueHeaders(config), [config]);
   const [pick, setPick] = useState({}); // { [sheetHeader]: headerId }
   const [localSlotId, setLocalSlotId] = useState(null);
   const setActiveSlotId = onActiveSlotId || setLocalSlotId;
@@ -77,36 +85,30 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
 
   const defaultTargets = globalHeaders;
 
-  async function uploadSample(slotId, file) {
-    if (!file) return;
-    setBusySlot(slotId);
+  // "Save All Sheets": the slot takes the per-sheet settings + unique
+  // headers, columns with values are proposed as new global headers (same
+  // rule the single-sheet upload always had — skips existing names), every
+  // column whose name matches a global header gets mapped to it if this
+  // marketplace hasn't mapped that header yet, and the marketplace is saved
+  // right away. The proposed global headers still need Save Draft on Global
+  // Settings, like any header added by hand.
+  async function saveSheets(slotId, { importCandidates = [], ...slotPatch }) {
+    setSavingSheets(true);
     try {
-      const slot = slots.find((s) => s.id === slotId);
-      const wb = await readAnyFile(file, rowOverrideFor(slot));
-      const first = wb.byTab[wb.sheetNames[0]] || { headerRow: [], rows: [] };
-      const extractedHeaders = (first.headerRow || []).map((h) => String(h || '').trim()).filter(Boolean);
-      const sampleValues = {};
-      for (const h of extractedHeaders.slice(0, 40)) {
-        sampleValues[h] = (first.rows || []).slice(0, 3).map((r) => r[h]).filter((v) => v != null && String(v).trim() !== '');
-      }
-      patchItem('fileSlots', slotId, { extractedHeaders, sampleValues, sheetNameHint: wb.sheetNames[0] || '' });
-      // A column with nothing in it in this sample isn't worth proposing as
-      // its own global header — it'd only ever render blank. Checked across
-      // more rows than the 3-row `sampleValues` preview keeps, so a column
-      // that's merely sparse in the first few rows still gets a fair look.
-      const checkRows = (first.rows || []).slice(0, 30);
-      const hasAnyValue = (h) => checkRows.some((r) => r[h] != null && String(r[h]).trim() !== '');
-      const importCandidates = extractedHeaders.filter(hasAnyValue);
-      const { added = 0 } = onImportHeaders ? onImportHeaders(importCandidates) : {};
-      addToast(
-        added
-          ? `${extractedHeaders.length} columns extracted from ${file.name} · ${added} new header${added === 1 ? '' : 's'} added to Global Settings`
-          : `${extractedHeaders.length} columns extracted from ${file.name}`,
-      );
-    } catch {
-      addToast('Could not read that sample file', 'error');
+      const { added = 0, headers: pool } = onImportHeaders ? onImportHeaders(importCandidates) : {};
+      const patched = { ...config, fileSlots: slots.map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) };
+      const { config: next, count: autoMapped } = autoMapByName(patched, slotId, pool || globalHeaders);
+      setConfig(next);
+      const res = await draft.save(next);
+      if (!res.ok) { addToast(res.error || 'Sheets kept locally — saving the marketplace failed', 'error'); return false; }
+      onSheetsSaved?.();
+      const parts = [`${slotPatch.extractedHeaders.length} unique headers saved`];
+      if (autoMapped) parts.push(`${autoMapped} auto-mapped by name`);
+      if (added) parts.push(`${added} new header${added === 1 ? '' : 's'} added to Global Settings (Save Draft there to keep them)`);
+      addToast(parts.join(' · '));
+      return true;
     } finally {
-      setBusySlot(null);
+      setSavingSheets(false);
     }
   }
 
@@ -120,7 +122,7 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
       ...c,
       fileSlots: c.fileSlots.map((s) => (s.id === slotId ? { ...s, mappings: [...(s.mappings || []).filter((m) => m.sheetHeader !== sheetHeader), { sheetHeader, headerId }] } : s)),
     }));
-    onHeaderMapped?.(sheetHeader, headerId);
+    onHeaderMapped?.(sheetHeader, headerId, slotId);
   }
 
   function unmapHeader(slotId, sheetHeader) {
@@ -159,7 +161,9 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
 
         {/* File slots — compact list (left) + the selected one's full editor (right) */}
         <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-foreground">Files</span>
+          <span className="text-[13px] font-semibold text-foreground">
+            Files <span className="font-normal text-subtle">· {uniqueHeaders.length} unique headers across {slots.length} file{slots.length === 1 ? '' : 's'}</span>
+          </span>
           <button
             type="button"
             onClick={() => { const item = makeFileSlot(`File ${slots.length + 1}`, 'aux'); addItem('fileSlots', item); setActiveSlotId(item.id); }}
@@ -187,12 +191,14 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
                     field="label"
                     className="w-full"
                   />
-                  <label className="mt-2 inline-flex cursor-pointer items-center gap-1 rounded-md bg-action px-2 py-1 text-[11px] font-semibold text-white hover:bg-action-hover">
-                    {busySlot === activeSlot.id ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Upload File
-                    <input type="file" hidden accept=".csv,.xlsx,.xls,.pdf" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadSample(activeSlot.id, f); }} />
-                  </label>
-                  <p className="mt-1.5 text-[10.5px] text-subtle">{(activeSlot.extractedHeaders || []).length} columns · sheet “{activeSlot.sheetNameHint || '—'}”</p>
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <SheetHeadersUploader
+                    key={activeSlot.id}
+                    slot={activeSlot}
+                    saving={savingSheets}
+                    onSave={(payload) => saveSheets(activeSlot.id, payload)}
+                  />
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-[10px] text-subtle">Default rows for sheets on auto:</span>
                     {['headerRowIndex', 'valueRowIndex'].map((k) => (
                       <label key={k} className="flex items-center gap-1 text-[10px] text-subtle">
                         {k === 'headerRowIndex' ? 'Header' : 'Value'}

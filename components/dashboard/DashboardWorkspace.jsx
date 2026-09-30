@@ -108,10 +108,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const config = useMemo(() => {
     if (!globalConfig || !activeMarketplace) return {};
     const fileSlots = activeMarketplace.config?.fileSlots || [];
+    // `sheetHeaders` = every column this marketplace merges into the header
+    // (readHeaderFromRow tries each); slot/sheetHeader stay the last one, as before.
     const mappedFromByHeaderId = new Map();
     for (const slot of fileSlots) {
       for (const m of slot.mappings || []) {
-        mappedFromByHeaderId.set(m.headerId, { slot: slot.id, sheetHeader: m.sheetHeader });
+        const prev = mappedFromByHeaderId.get(m.headerId)?.sheetHeaders || [];
+        const sheetHeaders = prev.includes(m.sheetHeader) ? prev : [...prev, m.sheetHeader];
+        mappedFromByHeaderId.set(m.headerId, { slot: slot.id, sheetHeader: m.sheetHeader, sheetHeaders });
       }
     }
     const headers = (globalConfig.headers || [])
@@ -531,7 +535,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         const platform = detectPlatform(first.headerRow, wb.fileName);
         const tab = pickBestTab(platform, wb.byTab, wb.sheetNames);
         const headerRow = wb.byTab[tab]?.headerRow ?? first.headerRow;
-        const { ok, missing } = matchSlotHeaders(slotDef, headerRow);
+        const { ok, missing } = matchSlotHeaders(slotDef, headerRow, { wb });
         if (!ok) {
           addToast(`${file.name}: doesn't match "${slotDef.label}" — missing column${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`, 'error');
           continue;
@@ -545,9 +549,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         // (lib/data/platforms/manual.js's GUESSES), then the marketplace's
         // own real Order Id / Sku header mappings win where they exist,
         // since those are authoritative, not a guess.
+        // A header can merge several columns (one per file) — use the one
+        // THIS file actually has.
         const mapping = guessMapping(headerRow);
-        if (orderIdHeader?.mappedFrom?.sheetHeader) mapping.orderId = orderIdHeader.mappedFrom.sheetHeader;
-        if (skuHeader?.mappedFrom?.sheetHeader) mapping.sku = skuHeader.mappedFrom.sheetHeader;
+        const mappedColFor = (h) => h?.mappedFrom?.sheetHeaders?.find((c) => headerRow.includes(c)) || h?.mappedFrom?.sheetHeader;
+        if (mappedColFor(orderIdHeader)) mapping.orderId = mappedColFor(orderIdHeader);
+        if (mappedColFor(skuHeader)) mapping.sku = mappedColFor(skuHeader);
         const rows = mapRowsForPlatform(platform, rawRows, { tag, mapping });
         added.push({ id: crypto.randomUUID(), slotId, fileName: file.name, platform, rows });
       }

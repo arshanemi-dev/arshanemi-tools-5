@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
+import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
 // Template-driven details table. `columns` = resolved header defs
 // ({ id, name, format, signed, primitive }) in display order; `rows` =
@@ -64,6 +65,7 @@ export default function DetailsTable({
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
+  const hl = usePreviewHighlight();
 
   const view = useMemo(() => {
     let out = rows.filter((r) =>
@@ -141,8 +143,9 @@ export default function DetailsTable({
                     </th>
                   );
                 }
+                const hlCol = isHighlighted(hl, 'header', col.id);
                 return (
-                  <th key={col.key} className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
+                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold whitespace-nowrap ${hlCol ? HL_HEAD : 'text-muted'}`}>
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}
@@ -209,7 +212,7 @@ export default function DetailsTable({
                   return (
                     <td
                       key={col.key}
-                      className={`px-3 py-2.5 whitespace-nowrap ${
+                      className={`px-3 py-2.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''} ${
                         col.sticky
                           ? 'font-medium text-link underline decoration-link/30'
                           : neg

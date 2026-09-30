@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, ListTree, PanelLeftClose, Search, X } from 'lucide-react';
 import { filterTree } from '@/lib/profitLoss/overviewTree';
 import { levelStyle } from './overviewLevelStyles';
+import { HL_BOX, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
 const NAV_PAGE = 50; // nodes per sibling list before "Show more"
 const ROOT = '__root__';
@@ -98,6 +99,7 @@ export default function OverviewHierarchyNav({
   const [q, setQ] = useState('');
   const [limits, setLimits] = useState({});
   const scrollRef = useRef(null);
+  const hl = usePreviewHighlight();
   const needle = q.trim().toLowerCase();
   const nodes = useMemo(
     () => (needle ? filterTree(tree, (n) => n.value.toLowerCase().includes(needle)) : tree),
@@ -145,13 +147,15 @@ export default function OverviewHierarchyNav({
         <div className="flex flex-wrap gap-1">
           {levels.map((h, i) => {
             const st = levelStyle(i);
+            const on = isHighlighted(hl, 'header', h.id);
             return (
               <button
                 key={h.id}
                 type="button"
+                data-preview-hl={on || undefined}
                 onClick={() => onExpandToDepth(i)}
                 title={`Open down to Level ${i + 1} (${h.name})`}
-                className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold transition-opacity hover:opacity-75 ${st.badge}`}
+                className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold transition-opacity hover:opacity-75 ${st.badge} ${on ? HL_BOX : ''}`}
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st.dot}`} />
                 <span className="truncate">L{i + 1} · {h.name}</span>

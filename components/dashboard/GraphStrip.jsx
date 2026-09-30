@@ -2,11 +2,13 @@
 
 import TemplateChart from './TemplateChart';
 import ArrangeControl from './ArrangeControl';
+import { HL_BOX, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
 // A tab's graph row. `graphs` = the tab's ordered [{ id, span }]; `series` =
 // resolveTemplate().graphSeries keyed by graph id. Hidden entirely when the
 // tab defines no graphs.
 export default function GraphStrip({ graphs = [], series = {}, editMode = false, arrange }) {
+  const hl = usePreviewHighlight();
   const items = graphs.map((g) => ({ ...g, data: series[g.id] })).filter((g) => g.data);
   if (!items.length) return null;
 
@@ -15,9 +17,10 @@ export default function GraphStrip({ graphs = [], series = {}, editMode = false,
       {items.map((g) => (
         <div
           key={g.id}
+          data-preview-hl={isHighlighted(hl, 'graph', g.id) || undefined}
           className={`rounded-2xl border border-divider bg-background p-4 ${
             (g.span || 1) >= 2 ? 'lg:col-span-2' : ''
-          }`}
+          } ${isHighlighted(hl, 'graph', g.id) ? HL_BOX : ''}`}
         >
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="truncate text-sm font-semibold text-foreground">{g.data.name}</h3>

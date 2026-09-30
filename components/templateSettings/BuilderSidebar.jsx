@@ -5,7 +5,7 @@ import {
   Check, ChevronDown, ChevronRight, Globe, Loader2, Pencil, Plus, Search, Settings, Store, Trash2, X,
 } from 'lucide-react';
 import {
-  makeFileSlot, makeGraph, makeHeader, makeOverviewTab, makeTab, makeTitleCard,
+  makeFileSlot, makeGraph, makeOverviewTab, makeTab, makeTitleCard,
 } from '@/data/templateSchema';
 
 // One left rail for the whole builder. Two top-level areas:
@@ -31,13 +31,9 @@ import {
 // turns into a "Save" (done) button.
 
 const GLOBAL_GROUPS = [
-   {
-    key: 'header', label: 'Header', anchor: 'section-header',
-    listKey: 'headers', nameField: 'name', addLabel: 'Add New Header',
-    make: (n) => makeHeader({ name: `Header ${n}`, type: 'number', source: 'manual' }),
-    canDelete: (it) => !it.reserved,
-    meta: (it) => (it.reserved ? 'required' : it.source === 'default' ? 'default' : it.source === 'extracted' ? 'sheet' : ''),
-  },
+  // `plain` — a simple jump row, no dropdown list: the Header section's own
+  // "Mapped" table already lists, adds, selects and deletes every header.
+  { key: 'header', label: 'Header', anchor: 'section-header', listKey: 'headers', plain: true },
    {
     key: 'graph', label: 'Graph', anchor: 'section-graph',
     listKey: 'graphs', nameField: 'name', addLabel: 'Add Graph',
@@ -445,7 +441,15 @@ export default function BuilderSidebar({
 
         {hasActive && (
           <>
-            {activeGroups.map((g) => (
+            {activeGroups.map((g) => (g.plain ? (
+              <StaticRow
+                key={g.key}
+                label={g.label}
+                count={(activeDraft.config[g.listKey] || []).length}
+                active={selection.__focus === g.key}
+                onClick={() => { setOpenKey(null); onSelect(g.key, selection[g.key] ?? null, g.anchor); }}
+              />
+            ) : (
               <GroupBlock
                 key={g.key}
                 group={g}
@@ -457,7 +461,7 @@ export default function BuilderSidebar({
                 reorderMode={reorderMode}
                 onExitReorder={() => setReorderMode(false)}
               />
-            ))}
+            )))}
             {isGlobal && (
               <StaticRow
                 label="Version Page"

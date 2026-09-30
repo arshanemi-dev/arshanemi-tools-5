@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import { levelStyle } from './overviewLevelStyles';
+import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { TREE_COL, ancestorKeys, filterTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 
 const PAGE_SIZES = [25, 50, 100];
@@ -42,6 +43,12 @@ export default function OverviewTreeTable({
   const scrollRef = useRef(null);
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
+  const hl = usePreviewHighlight();
+  // A header picked in the builder lights up its column — or the hierarchy
+  // column when it's one of the levels.
+  const hlHead = (col) => (col.key === TREE_COL
+    ? levels.some((h) => isHighlighted(hl, 'header', h.id))
+    : isHighlighted(hl, 'header', col.id));
 
   const activeFilters = Object.entries(filters).filter(([, f]) => f);
   const filtering = activeFilters.length > 0;
@@ -114,7 +121,7 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} className={`sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-muted'} ${extra}`}>
       <ColumnHeaderCell
         col={col}
         sort={sort}
@@ -252,7 +259,7 @@ export default function OverviewTreeTable({
                     const cell = n.cells[c.key] || {};
                     const neg = c.signed && Number(cell.raw) < 0;
                     return (
-                      <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'}`}>
+                      <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
                         {cell.display ?? ''}
                       </td>
                     );

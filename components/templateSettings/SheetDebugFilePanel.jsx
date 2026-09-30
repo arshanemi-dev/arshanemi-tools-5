@@ -46,7 +46,7 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
   // column is then classified against this slot's own mapping.
   const headerMatch = useMemo(() => {
     if (!activeTab || !slot) return null;
-    const { ok, missing } = matchSlotHeaders(slot, activeTab.headerRow);
+    const { ok, missing } = matchSlotHeaders(slot, activeTab.headerRow, { wb: parsed });
     const savedHeaders = slot.extractedHeaders || [];
     const savedSet = new Set(savedHeaders.map(normHeader));
     const mappedByNorm = new Map((slot.mappings || []).map((m) => [normHeader(m.sheetHeader), m]));
@@ -66,7 +66,7 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
       return { name: h, status: 'unsampled', detail: 'This slot has no saved sample yet — nothing to compare against' };
     });
     return { ok, missing, columns, hasSample: savedHeaders.length > 0 };
-  }, [activeTab, slot, headers]);
+  }, [activeTab, slot, headers, parsed]);
 
   // The OTHER direction from headerMatch above — that one walks THIS
   // file's own ~30 columns; this walks EVERY global header (all 50+, from

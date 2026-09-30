@@ -1,6 +1,7 @@
 'use client';
 
 import KpiCard from './KpiCard';
+import { HL_BOX, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
 // The KPI band = the active tab's Title Cards. `cards` = ordered title-card
 // defs (config.titleCards, filtered to the tab); `values` =
@@ -8,14 +9,16 @@ import KpiCard from './KpiCard';
 // wide screen and wrap onto new rows once they no longer fit — no horizontal
 // scrolling — each one bounded between a min and a max width.
 export default function KpiCardRow({ cards = [], values = {}, editMode = false, arrange }) {
+  const hl = usePreviewHighlight();
   if (!cards.length) return null;
 
   return (
     <div className="flex flex-wrap gap-3">
       {cards.map((card) => {
         const v = values[card.id] || {};
+        const on = isHighlighted(hl, 'titleCard', card.id);
         return (
-          <div key={card.id} className="min-w-[180px] max-w-[260px] flex-1">
+          <div key={card.id} data-preview-hl={on || undefined} className={`min-w-[180px] max-w-[260px] flex-1 rounded-2xl ${on ? HL_BOX : ''}`}>
             <KpiCard
               name={card.name}
               mainDisplay={v.main?.display}

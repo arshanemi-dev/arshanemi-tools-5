@@ -115,6 +115,9 @@ export default function useGlobalTemplateDraft() {
       let res;
       if (activeVersionId && editingDraft && !major) {
         res = await updateDraftVersion(templateId, activeVersionId, { config, note });
+        // Published elsewhere since it was loaded (another tab, the Version
+        // Page) — a live version can't be edited, so save a new draft instead.
+        if (res.status === 409) res = await saveDraftVersion(templateId, { config, note, major });
       } else {
         res = await saveDraftVersion(templateId, { config, note, major });
       }
@@ -130,12 +133,42 @@ export default function useGlobalTemplateDraft() {
     }
   }, [templateId, config, activeVersionId, editingDraft, reloadMeta]);
 
+  // After a publish/unpublish, `editingDraft` follows the edited version's
+  // real status — otherwise publishing the version being edited left the
+  // next Save Draft trying to overwrite a live version (hub 409).
   const publish = useCallback(async (versionId, live = true) => {
     if (!templateId) return { ok: false, error: 'Global Settings not loaded yet' };
     const res = await publishVersion(templateId, versionId, { live });
-    if (res.ok) await reloadMeta();
+    if (res.ok) {
+      const data = await reloadMeta();
+      const edited = (data?.versions || []).find((v) => v.id === activeVersionId);
+      if (edited) setEditingDraft(edited.status === 'draft');
+    }
     return res;
-  }, [templateId, reloadMeta]);
+  }, [templateId, reloadMeta, activeVersionId]);
+
+  // What the dashboard shows (the live version) vs. what's being edited —
+  // the dashboard ONLY ever reads the live version, so a saved draft is
+  // invisible there until published.
+  const liveVersion = versions.find((v) => v.id === template?.liveVersionId) || versions.find((v) => v.status === 'live') || null;
+  const activeVersion = versions.find((v) => v.id === activeVersionId) || null;
+  const onDashboard = !dirty && !!activeVersion && activeVersion.id === liveVersion?.id;
+
+  // One click to get the builder's current state onto the dashboard: save
+  // (only if there's something unsaved) then publish that version.
+  const saveAndPublish = useCallback(async () => {
+    let versionId = activeVersionId;
+    if (dirty || !versionId) {
+      const saved = await saveDraft();
+      if (!saved.ok) return saved;
+      versionId = saved.version.id;
+    }
+    const res = await publishVersion(templateId, versionId, { live: true });
+    if (!res.ok) return { ok: false, error: res.data?.error || 'Publish failed' };
+    await reloadMeta();
+    setEditingDraft(false);
+    return { ok: true, versionId };
+  }, [templateId, activeVersionId, dirty, saveDraft, reloadMeta]);
 
   return {
     loading, loadError, saving,
@@ -143,6 +176,7 @@ export default function useGlobalTemplateDraft() {
     config, dirty, errors: validation.errors, valid: validation.ok,
     headerIds,
     setConfig, patchConfig, addItem, patchItem, removeItem,
-    saveDraft, publish, reloadMeta,
+    liveVersion, activeVersion, onDashboard,
+    saveDraft, publish, saveAndPublish, reloadMeta,
   };
 }

@@ -362,6 +362,18 @@
 > - **Delete / export:** selecting a node deletes every raw row under it
 >   (`rowPathKeys` prefix match); export writes one column per level + the
 >   summed columns, depth‑first (a pivot with subtotal rows).
+> - **Live preview follows the builder selection.** Whatever was picked last
+>   (sidebar or a section's own list — `selection.__focus` in
+>   `TemplateBuilder`) is passed to `BuilderPreview` as `highlight: { kind,
+>   id }`. The preview jumps to a Tab / Overview Tab that shows it (stays put
+>   if the current one already does), outlines it and scrolls it into view:
+>   Tab / Overview Tab → the pill + whole tab body; Title Card / Graph → that
+>   card; Header → its table column (or, if it's an Overview level, the
+>   hierarchy column + that level's legend chip). An item on no tab yet gets
+>   a note instead. Mechanism: `components/dashboard/previewHighlight.js`
+>   context (null on the real dashboard → no‑op) read by KpiCardRow /
+>   GraphStrip / DetailsTable / OverviewTreeTable / OverviewHierarchyNav;
+>   one glow pulse via `--animate-hl-flash`.
 
 ---
 

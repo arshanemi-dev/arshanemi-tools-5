@@ -90,20 +90,24 @@ export default function useTemplateDraft(templateId, { globalHeaderIds } = {}) {
   }, []);
 
   // ── save (direct — no versions) ─────────────────────────────────────────
-  const save = useCallback(async () => {
+  // `nextConfig` (optional) saves a config that was just set but hasn't
+  // re-rendered into `config` yet — e.g. "Save All Sheets", which updates
+  // the slot and persists in the same click.
+  const save = useCallback(async (nextConfig) => {
+    const cfg = nextConfig && typeof nextConfig === 'object' && !('nativeEvent' in nextConfig) ? nextConfig : config;
     setSaving(true);
     try {
       if (!templateId) {
-        const name = (config.marketplace?.name || '').trim() || 'Untitled Marketplace';
-        const { ok, status, data } = await createTemplate({ marketplaceName: name, description: '', config });
+        const name = (cfg.marketplace?.name || '').trim() || 'Untitled Marketplace';
+        const { ok, status, data } = await createTemplate({ marketplaceName: name, description: '', config: cfg });
         if (!ok) return { ok: false, status, error: data?.error, details: data?.details };
         try { localStorage.removeItem(lsKey); } catch { /* ignore */ }
         return { ok: true, created: true, templateId: data.template.id };
       }
-      const { ok, status, data } = await putTemplateConfig(templateId, config);
+      const { ok, status, data } = await putTemplateConfig(templateId, cfg);
       if (!ok) return { ok: false, status, error: data?.error, details: data?.details };
       setTemplate(data.template);
-      setSavedJson(JSON.stringify(config));
+      setSavedJson(JSON.stringify(cfg));
       return { ok: true };
     } finally {
       setSaving(false);
