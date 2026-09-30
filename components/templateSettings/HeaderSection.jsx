@@ -18,7 +18,8 @@ import HeaderEditModal from './HeaderEditModal';
 //     Overview Tab / Graph pick). Then Mapped.
 //   - HeaderMappingTable: tick ONE Our Header + any marketplace headers,
 //     press Mapped, and they merge into it — one row with the mapped headers
-//     as boxes on the right; × on a box unmaps it.
+//     as boxes on the right; × on a box unmaps it. Every Our Header row also
+//     has its own Edit (inline rename → Save ✓ / Cancel ×) and Delete.
 // Marketplace columns are never added to Our Headers automatically; headers
 // imported that way before (source 'extracted') get a one-click cleanup.
 // Headers are global (this draft — needs Save Draft / Publish); mappings are
@@ -33,13 +34,14 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const active = headers.find((h) => h.id === activeId) || null;
   const [checked, setChecked] = useState(() => new Set()); // colKey(marketplaceId, sheetHeader)
   const [modal, setModal] = useState(null); // { mode: 'add' } | { mode: 'edit', id }
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteId, setDeleteId] = useState(null); // header awaiting the delete confirm (row or toolbar)
 
   const mappedIds = useMemo(() => new Set((marketplaces || []).flatMap(
     (t) => (t.config?.fileSlots || []).flatMap((s) => (s.mappings || []).map((m) => m.headerId)),
   )), [marketplaces]);
   const autoImported = headers.filter((h) => h.source === 'extracted');
-  const activeUsages = active ? headerUsages(config, active) : [];
+  const deleteTarget = headers.find((h) => h.id === deleteId) || null;
+  const deleteUsages = deleteTarget ? headerUsages(config, deleteTarget) : [];
 
   const onToggleCheck = (key) => setChecked((prev) => {
     const next = new Set(prev);
@@ -75,12 +77,18 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     setModal(null);
   };
 
-  const deleteActive = () => {
-    if (!active || active.reserved) return;
-    setConfig((c) => withoutHeader(c, active.id));
-    addToast(`Header “${active.name}” deleted`);
-    setActiveId(null);
-    setConfirmDelete(false);
+  const confirmDeleteHeader = () => {
+    if (!deleteTarget || deleteTarget.reserved) { setDeleteId(null); return; }
+    setConfig((c) => withoutHeader(c, deleteTarget.id));
+    addToast(`Header “${deleteTarget.name}” deleted`);
+    if (deleteTarget.id === activeId) setActiveId(null);
+    setDeleteId(null);
+  };
+
+  // Row Edit → Save in the table: rename only (type / formula live in the Edit popup).
+  const renameHeader = (id, name) => {
+    patchItem('headers', id, { name });
+    addToast(`Header renamed to “${name}”`);
   };
 
   const cleanupAutoImported = () => {
@@ -110,7 +118,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
                 <Pencil size={13} /> Edit
               </button>
               {!active.reserved && (
-                <button type="button" onClick={() => setConfirmDelete(true)} className={`${btn} border-neg/40 text-neg hover:bg-neg/10`}>
+                <button type="button" onClick={() => setDeleteId(active.id)} className={`${btn} border-neg/40 text-neg hover:bg-neg/10`}>
                   <Trash2 size={13} /> Delete
                 </button>
               )}
@@ -162,6 +170,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           checked={checked}
           onToggleCheck={onToggleCheck}
           onUnmap={unmap}
+          onRename={renameHeader}
+          onDelete={setDeleteId}
           busy={saving}
         />
       </div>
@@ -178,13 +188,13 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
       )}
 
       <ConfirmDialog
-        open={confirmDelete && !!active}
-        title={`Delete header “${active?.name || ''}”?`}
-        description={activeUsages.length
-          ? `It's used in ${activeUsages.join(', ')}. It will be removed from those Tab / Overview Tab / Graph picks; formulas that reference it by name need fixing by hand.`
+        open={!!deleteTarget}
+        title={`Delete header “${deleteTarget?.name || ''}”?`}
+        description={deleteUsages.length
+          ? `It's used in ${deleteUsages.join(', ')}. It will be removed from those Tab / Overview Tab / Graph picks; formulas that reference it by name need fixing by hand.`
           : 'It isn’t used in any Tab, Overview Tab, Graph or formula.'}
-        onConfirm={deleteActive}
-        onCancel={() => setConfirmDelete(false)}
+        onConfirm={confirmDeleteHeader}
+        onCancel={() => setDeleteId(null)}
       />
     </div>
   );

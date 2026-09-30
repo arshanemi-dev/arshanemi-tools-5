@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Filter, X } from 'lucide-react';
+import { Check as CheckIcon, Filter, Lock, Pencil, Trash2, X } from 'lucide-react';
 import Popover from '@/components/dashboard/Popover';
 import { mappedColumnsByHeader, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 
@@ -38,6 +38,14 @@ function ColumnHead({ label, sub, filter, onFilter }) {
   );
 }
 
+function RowBtn({ title, onClick, disabled, tone, children }) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled} className={`shrink-0 rounded p-1 disabled:opacity-30 ${tone}`}>
+      {children}
+    </button>
+  );
+}
+
 function Check({ checked, onChange, label, disabled }) {
   return (
     <input
@@ -61,7 +69,7 @@ function Check({ checked, onChange, label, disabled }) {
 // one). Below that, the Unmapped block lists — independently per column —
 // the Our Headers with no mapping yet and each marketplace's headers not
 // mapped to anything. Every column has a text filter.
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, busy = false }) {
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false }) {
   const [filters, setFilters] = useState({});
   const setFilter = (col) => (q) => setFilters((f) => ({ ...f, [col]: q }));
 
@@ -87,17 +95,56 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   const raggedCount = Math.max(ourUnmapped.length, ...colUnmapped.map((l) => l.length), columns.some((c) => !c.total) ? 1 : 0);
 
   const badge = (h) => (h.reserved ? 'required' : h.source === 'default' ? 'default' : h.source === 'extracted' ? 'sheet' : '');
+
+  // Per-row rename: Edit swaps the name for an input with Save ✓ / Cancel ×
+  // (Enter / Escape too); Delete stays beside them. The two required headers
+  // can't be renamed or deleted — they show a lock instead.
+  const [editing, setEditing] = useState(null); // { id, text }
+  const commitEdit = () => {
+    const text = editing?.text.trim();
+    if (!text) return;
+    onRename(editing.id, text);
+    setEditing(null);
+  };
+
   const ourCell = (h, tint) => {
     const selected = h.id === activeId;
+    const isEditing = editing?.id === h.id;
     return (
       <td className={`sticky left-0 z-[1] border border-divider px-2 py-1.5 ${selected ? 'bg-action-soft' : tint}`}>
-        <label className="flex cursor-pointer items-center gap-2">
-          <Check checked={selected} onChange={() => onSelect(selected ? null : h.id)} label={`Select ${h.name}`} />
-          <span className={`min-w-0 truncate ${selected ? 'font-semibold text-foreground' : 'text-muted'}`} title={h.name}>
-            {h.name || 'Untitled'}
-            {badge(h) && <span className="ml-1.5 text-[9.5px] font-medium uppercase tracking-wide text-subtle">{badge(h)}</span>}
-          </span>
-        </label>
+        {isEditing ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={editing.text}
+              onChange={(e) => setEditing({ id: h.id, text: e.target.value })}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(null); }}
+              aria-label={`Rename ${h.name}`}
+              className="min-w-0 flex-1 rounded-md border border-accent bg-background px-2 py-0.5 text-[12.5px] text-foreground focus:outline-none"
+            />
+            <RowBtn title="Save" onClick={commitEdit} disabled={!editing.text.trim()} tone="text-action hover:bg-action-soft"><CheckIcon size={13} /></RowBtn>
+            <RowBtn title="Cancel" onClick={() => setEditing(null)} tone="text-subtle hover:bg-card-hover hover:text-foreground"><X size={13} /></RowBtn>
+            <RowBtn title="Delete" onClick={() => { setEditing(null); onDelete(h.id); }} tone="text-neg hover:bg-neg/10"><Trash2 size={13} /></RowBtn>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+              <Check checked={selected} onChange={() => onSelect(selected ? null : h.id)} label={`Select ${h.name}`} />
+              <span className={`min-w-0 truncate ${selected ? 'font-semibold text-foreground' : 'text-muted'}`} title={h.name}>
+                {h.name || 'Untitled'}
+                {badge(h) && <span className="ml-1.5 text-[9.5px] font-medium uppercase tracking-wide text-subtle">{badge(h)}</span>}
+              </span>
+            </label>
+            {h.reserved ? (
+              <span title="Required header — can’t be renamed or deleted" className="shrink-0 p-1 text-subtle"><Lock size={12} /></span>
+            ) : (
+              <>
+                <RowBtn title="Edit" onClick={() => setEditing({ id: h.id, text: h.name })} tone="text-subtle hover:bg-card-hover hover:text-foreground"><Pencil size={12} /></RowBtn>
+                <RowBtn title="Delete" onClick={() => onDelete(h.id)} tone="text-subtle hover:bg-neg/10 hover:text-neg"><Trash2 size={12} /></RowBtn>
+              </>
+            )}
+          </div>
+        )}
       </td>
     );
   };
@@ -112,7 +159,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       <table className="w-full border-collapse text-left text-[13px]">
         <thead className="sticky top-0 z-10 bg-background text-muted">
           <tr>
-            <th className="sticky left-0 z-20 min-w-[12rem] border border-divider bg-background px-2 py-1.5">
+            <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
               <ColumnHead label="Our Header" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} />
             </th>
             {columns.map((c) => (
