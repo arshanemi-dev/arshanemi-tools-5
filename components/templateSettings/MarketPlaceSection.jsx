@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react';
 import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { autoMapByName, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
+import { marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
+import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
 import NameField from './NameField';
@@ -13,26 +14,20 @@ import SheetHeadersUploader from './SheetHeadersUploader';
 // buttons) plus the Unmap / Our / Map column-mapping grid. `globalHeaders`
 // (Header/Title Card/Graph/Tab/Overview Tab now all live in the global
 // config, see TemplateBuilder) is the mapping target list — mapping a sheet
-// header to one of them removes it from this marketplace's "extracted" pool
-// (the "union" rule). Uploading a sample also proposes its columns as NEW
-// global headers via `onImportHeaders` (skips anything that's already a
-// global header, case-/whitespace-insensitively) — so a marketplace's file
-// grows the shared "Our Header" pool instead of just sitting unmapped.
-// Mapping a column away to some OTHER header also cleans up its own
-// auto-imported placeholder via `onHeaderMapped`, if nothing else still
-// points at it — otherwise every re-upload would keep proposing headers
-// nobody actually maps to anymore. Files are a compact list (left) + the
-// full slot editor for whichever one is selected (right) — same
-// master-detail pattern as Header. File names must be unique — a duplicate
-// reddens the input live.
+// header to one of them removes it from this marketplace's unmapped pool.
+// Marketplace columns NEVER become "Our Headers" on their own — Our Headers
+// are only what's created in Global Settings › Header; a marketplace's
+// columns stay its own, to be mapped onto them. File names must be unique —
+// a duplicate reddens the input live.
 //
 // A file's upload goes through SheetHeadersUploader: every sheet in the
 // workbook is listed with Headers Row / Column buttons, and "Save All Sheets"
 // stores each sheet's settings + the file's unique headers on the slot and
 // saves the marketplace straight away — its unique header list (every file,
-// every included sheet) is what the global Header section's matrix offers
-// in this marketplace's column (`onSheetsSaved` refreshes that list).
-export default function MarketPlaceSection({ draft, globalHeaders = [], onImportHeaders, onHeaderMapped, onSheetsSaved, activeSlotId = null, onActiveSlotId }) {
+// every included sheet) is what the global Header section offers in this
+// marketplace's column (`onSheetsSaved` refreshes that list). Nothing is
+// mapped automatically.
+export default function MarketPlaceSection({ draft, globalHeaders = [], onSheetsSaved, activeSlotId = null, onActiveSlotId }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem, patchItem, updateMarketplace } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
@@ -83,29 +78,21 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
     { id: RESERVED_HEADER_IDS.transactionId, name: 'Transaction Id' },
   ].map((r) => ({ ...r, mapped: mappedHeaderIds.has(r.id) }));
 
-  const defaultTargets = globalHeaders;
+  const defaultTargets = globalHeaders.filter(isOurHeader); // Our Headers only, never sheet columns
 
   // "Save All Sheets": the slot takes the per-sheet settings + unique
-  // headers, columns with values are proposed as new global headers (same
-  // rule the single-sheet upload always had — skips existing names), every
-  // column whose name matches a global header gets mapped to it if this
-  // marketplace hasn't mapped that header yet, and the marketplace is saved
-  // right away. The proposed global headers still need Save Draft on Global
-  // Settings, like any header added by hand.
-  async function saveSheets(slotId, { importCandidates = [], ...slotPatch }) {
+  // headers and the marketplace is saved right away. Its columns stay this
+  // marketplace's own — never added to Our Headers, never auto-mapped; map
+  // them in Global Settings › Header.
+  async function saveSheets(slotId, slotPatch) {
     setSavingSheets(true);
     try {
-      const { added = 0, headers: pool } = onImportHeaders ? onImportHeaders(importCandidates) : {};
-      const patched = { ...config, fileSlots: slots.map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) };
-      const { config: next, count: autoMapped } = autoMapByName(patched, slotId, pool || globalHeaders);
+      const next = { ...config, fileSlots: slots.map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) };
       setConfig(next);
       const res = await draft.save(next);
       if (!res.ok) { addToast(res.error || 'Sheets kept locally — saving the marketplace failed', 'error'); return false; }
       onSheetsSaved?.();
-      const parts = [`${slotPatch.extractedHeaders.length} unique headers saved`];
-      if (autoMapped) parts.push(`${autoMapped} auto-mapped by name`);
-      if (added) parts.push(`${added} new header${added === 1 ? '' : 's'} added to Global Settings (Save Draft there to keep them)`);
-      addToast(parts.join(' · '));
+      addToast(`${slotPatch.extractedHeaders.length} unique headers saved — map them in Global Settings › Header`);
       return true;
     } finally {
       setSavingSheets(false);
@@ -122,7 +109,6 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onImport
       ...c,
       fileSlots: c.fileSlots.map((s) => (s.id === slotId ? { ...s, mappings: [...(s.mappings || []).filter((m) => m.sheetHeader !== sheetHeader), { sheetHeader, headerId }] } : s)),
     }));
-    onHeaderMapped?.(sheetHeader, headerId, slotId);
   }
 
   function unmapHeader(slotId, sheetHeader) {

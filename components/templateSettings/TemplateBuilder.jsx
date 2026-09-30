@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Check, Eye, Globe, History, Loader2, PanelLeft, Store, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
-import { makeEmptyMarketplaceConfig, makeHeader, isDuplicateName } from '@/data/templateSchema';
+import { makeEmptyMarketplaceConfig } from '@/data/templateSchema';
 import { listTemplates, createTemplate, patchTemplate, deleteTemplate } from '@/lib/profitLoss/templatesApi';
 import useTemplateDraft from './useTemplateDraft';
 import useMarketplaceMappingSaver from './useMarketplaceMappingSaver';
@@ -148,52 +148,10 @@ export default function TemplateBuilder() {
     addToast('Marketplace saved');
   }
 
-  // A marketplace's sample-file upload (MarketPlaceSection.uploadSample)
-  // proposes its raw sheet columns as new global headers — skips anything
-  // that's already a header (case-/whitespace-insensitive, via
-  // isDuplicateName, same rule the name inputs redden live against) so
-  // re-uploading the same or a similar-shaped sheet never creates
-  // duplicates. Only stages them into the local global draft — same as
-  // clicking "+ Add Header" by hand, still needs Save Draft to persist.
-  const importHeadersFromSheet = useCallback((names) => {
-    const pool = [...(globalDraft.config.headers || [])];
-    let added = 0;
-    for (const raw of names || []) {
-      const name = String(raw || '').trim();
-      if (!name || isDuplicateName(pool, null, name)) continue;
-      const header = { ...makeHeader({ name, type: 'text', source: 'extracted' }), format: 'text', showInTable: false };
-      pool.push(header);
-      globalDraft.addItem('headers', header);
-      added += 1;
-    }
-    // `headers` = the whole pool after import (not yet re-rendered into the
-    // draft) so the caller can auto-map columns onto them by name.
-    return { added, skipped: (names?.length || 0) - added, headers: pool };
-  }, [globalDraft]);
-
-  // The "union" rule the Header/Market Place sections describe but never
-  // actually wired up: an auto-imported ("extracted") header only earns its
-  // keep in Global Headers while its own sheet column is still unmapped. The
-  // moment that column gets mapped to a *different* header in the grid, its
-  // own placeholder becomes dead weight — every future upload would keep
-  // re-suggesting it as a "new" header even though nobody maps to it anymore.
-  // So: once a mapping is made, drop the stale placeholder — but only when
-  // nothing else still points at it — in this marketplace or any other
-  // saved one (a header genuinely in use, including one mapped from a
-  // different column, is never touched). The column being remapped right
-  // now is skipped: `draft.config` still shows its old mapping this render.
-  const reconcileExtractedHeader = useCallback((sheetHeader, mappedToId, slotId) => {
-    const key = String(sheetHeader || '').trim().toLowerCase();
-    const stale = (globalDraft.config.headers || []).find(
-      (h) => h.source === 'extracted' && h.id !== mappedToId && h.name.trim().toLowerCase() === key,
-    );
-    if (!stale) return;
-    const uses = (cfg, skipSlotId) => (cfg?.fileSlots || []).some((s) => (s.mappings || []).some(
-      (m) => m.headerId === stale.id && !(s.id === skipSlotId && String(m.sheetHeader).trim().toLowerCase() === key),
-    ));
-    const stillUsed = uses(draft.config, slotId) || (templates || []).some((t) => t.id !== marketplaceId && uses(t.config));
-    if (!stillUsed) globalDraft.removeItem('headers', stale.id);
-  }, [globalDraft, draft, templates, marketplaceId]);
+  // Our Headers are only ever what's created in Global Settings › Header — a
+  // marketplace's sheet columns are never imported into them, and nothing
+  // is mapped automatically (the user maps with the Header section's
+  // checkboxes + Mapped button).
 
   // The Header section's mapping edits — each one saves that marketplace.
   const mappingSaver = useMarketplaceMappingSaver(templates, setTemplates, addToast);
@@ -293,8 +251,6 @@ export default function TemplateBuilder() {
                       <MarketPlaceSection
                         draft={draft}
                         globalHeaders={globalDraft.config.headers || []}
-                        onImportHeaders={importHeadersFromSheet}
-                        onHeaderMapped={reconcileExtractedHeader}
                         onSheetsSaved={refreshList}
                         activeSlotId={selection.file ?? null}
                         onActiveSlotId={(id) => setSelection((s) => ({ ...s, file: id }))}

@@ -187,7 +187,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {!mergedRows.length && !raggedCount && (
             <tr>
               <td colSpan={1 + columns.length} className="px-3 py-6 text-center text-[12px] text-subtle">
-                {headers.length ? 'Nothing matches the filters.' : 'No headers yet — type a name above and press Enter.'}
+                {headers.length ? 'Nothing matches the filters.' : 'No headers yet — press Add to create one.'}
               </td>
             </tr>
           )}

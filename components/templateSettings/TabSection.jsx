@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { makeTab } from '@/data/templateSchema';
+import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
 import Field from './Field';
@@ -25,7 +26,7 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
 
   const cardOpts = (config.titleCards || []).map((c) => ({ id: c.id, name: c.name }));
   const graphOpts = (config.graphs || []).map((g) => ({ id: g.id, name: g.name }));
-  const headerOpts = (config.headers || []).map((h) => ({ id: h.id, name: h.name }));
+  const headerOpts = ourHeaderOptions(config.headers, active?.headerIds); // Our Headers only, never sheet columns
 
   const patchLayout = (patch) => patchItem('tabs', active.id, { layout: { ...active.layout, ...patch } });
 

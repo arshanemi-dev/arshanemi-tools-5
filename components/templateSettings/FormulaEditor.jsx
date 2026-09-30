@@ -15,7 +15,9 @@ const TOKENS = ['+', '-', '*', '/', '(', ')', '%'];
 // the cursor. Sum / Count wrap it as SUM([Name]) / COUNT([Name]) — the two
 // aggregate operators (lib/profitLoss/formula.js) that reduce a column across
 // every row in the current group, instead of just this row/scope.
-export default function FormulaEditor({ value = '', onChange, refNames = [], previewScope, placeholder = 'ed.abc&123*dss', disabled = false }) {
+// `listNames` (optional) narrows only the Header List dropdown — e.g. to Our
+// Headers — while `refNames` stays the full set the live preview resolves.
+export default function FormulaEditor({ value = '', onChange, refNames = [], listNames = refNames, previewScope, placeholder = 'ed.abc&123*dss', disabled = false }) {
   const inputRef = useRef(null);
   const [pick, setPick] = useState('');
   const [open, setOpen] = useState(false);
@@ -54,8 +56,8 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], pre
           </button>
           {open && !disabled && (
             <ul className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-divider-light bg-background p-1 shadow-lg">
-              {refNames.length === 0 && <li className="px-2 py-1 text-[12px] text-subtle">No headers yet.</li>}
-              {refNames.map((n) => (
+              {listNames.length === 0 && <li className="px-2 py-1 text-[12px] text-subtle">No headers yet.</li>}
+              {listNames.map((n) => (
                 <li key={n}>
                   <button
                     type="button"

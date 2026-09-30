@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { AGGREGATE_BUILTIN_NAMES, makeTitleCard } from '@/data/templateSchema';
+import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
@@ -10,7 +11,7 @@ import NameField from './NameField';
 
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
-function ValueEditor({ label, value, onChange, refNames, previewScope }) {
+function ValueEditor({ label, value, onChange, refNames, listNames, previewScope }) {
   return (
     <div className="rounded-lg border border-divider bg-card p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -32,7 +33,7 @@ function ValueEditor({ label, value, onChange, refNames, previewScope }) {
         </label>
       </div>
       {value.type === 'formula' ? (
-        <FormulaEditor value={value.formula || ''} onChange={(formula) => onChange({ ...value, formula })} refNames={refNames} previewScope={previewScope} />
+        <FormulaEditor value={value.formula || ''} onChange={(formula) => onChange({ ...value, formula })} refNames={refNames} listNames={listNames} previewScope={previewScope} />
       ) : (
         <input
           value={value.formula || ''}
@@ -56,7 +57,10 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
   const setActiveId = onActiveId || setLocalId;
   const active = cards.find((c) => c.id === activeId) || null;
 
+  // The Header List offers Our Headers only; the preview still resolves every
+  // header so an older formula referencing a sheet header keeps previewing.
   const refNames = [...(config.headers || []).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
+  const listNames = [...(config.headers || []).filter(isOurHeader).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
   const previewScope = Object.fromEntries(refNames.map((n) => [n, 100]));
 
   const addCard = () => {
@@ -94,6 +98,7 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
                 value={active.mainValue}
                 onChange={(v) => patchItem('titleCards', active.id, { mainValue: v })}
                 refNames={refNames}
+                listNames={listNames}
                 previewScope={previewScope}
               />
               <ValueEditor
@@ -101,6 +106,7 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
                 value={active.subValue}
                 onChange={(v) => patchItem('titleCards', active.id, { subValue: v })}
                 refNames={refNames}
+                listNames={listNames}
                 previewScope={previewScope}
               />
             </>

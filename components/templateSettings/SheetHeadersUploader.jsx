@@ -118,11 +118,9 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
     const included = sheets.filter((s) => s.include);
     const extractedHeaders = uniqueNames(included.flatMap((s) => s.headers));
     const sampleValues = {};
-    const filledAnywhere = new Set();
     for (const s of included) {
       const r = results[s.name];
       for (const h of r.headers) {
-        if (r.filled.has(h)) filledAnywhere.add(h.toLowerCase());
         if (!(h in sampleValues) && Object.keys(sampleValues).length < 40 && r.samples[h]?.length) sampleValues[h] = r.samples[h];
       }
     }
@@ -132,7 +130,6 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
       sampleValues,
       sheetNameHint: included[0]?.name || '',
       sourceFileName: pending.fileName,
-      importCandidates: extractedHeaders.filter((h) => filledAnywhere.has(h.toLowerCase())),
     });
     if (ok) setPending(null);
   }

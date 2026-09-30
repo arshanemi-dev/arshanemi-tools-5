@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { makeOverviewTab } from '@/data/templateSchema';
 import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
+import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
 import HierarchyLevelsEditor from './HierarchyLevelsEditor';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
@@ -30,8 +31,9 @@ export default function OverviewTabSection({ draft, activeId: activeIdProp, onAc
   const setActiveId = onActiveId || setLocalId;
   const active = overviewTabs.find((o) => o.id === activeId) || null;
 
-  const headerOpts = headers.map((h) => ({ id: h.id, name: h.name }));
   const levelIds = overviewLevelIds(active);
+  // Our Headers only, never sheet columns (an existing sheet-header pick still shows, flagged).
+  const headerOpts = ourHeaderOptions(headers, [...levelIds, ...(active?.headerIds || [])]);
   const otherHeaderOpts = headerOpts.filter((h) => !levelIds.includes(h.id));
   const cardOpts = (config.titleCards || []).map((c) => ({ id: c.id, name: c.name }));
   const graphOpts = (config.graphs || []).map((g) => ({ id: g.id, name: g.name }));

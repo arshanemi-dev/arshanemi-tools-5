@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { CHART_TYPES, CHART_LABELS, TIME_UNITS, makeGraph } from '@/data/templateSchema';
+import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import GraphPreviewChart from './GraphPreviewChart';
 import SectionHead from './SectionHead';
@@ -24,7 +25,7 @@ export default function GraphSection({ draft, activeId: activeIdProp, onActiveId
   const setActiveId = onActiveId || setLocalId;
   const active = graphs.find((g) => g.id === activeId) || null;
 
-  const headerOpts = headers.map((h) => ({ id: h.id, name: h.name }));
+  const headerOpts = ourHeaderOptions(headers, active?.headerIds); // Our Headers only, never sheet columns
   const isPie = active?.chartType === 'pie';
   const minNeeded = isPie ? 2 : 1;
   const pickedHeaders = (active?.headerIds || []).map((id) => headers.find((h) => h.id === id)).filter(Boolean);
