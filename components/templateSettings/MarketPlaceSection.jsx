@@ -203,7 +203,7 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
 
         {/* Mapping grid — Unmap/Map scoped to activeSlot only, see unmapped/
             mappings above; "Our Header" stays the full shared pool. */}
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 hidden">
           <div className="rounded-lg border border-divider bg-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[12.5px] font-semibold text-foreground">
               <span>Unmap Header ({unmapped.length})</span>

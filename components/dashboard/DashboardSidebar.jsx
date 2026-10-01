@@ -1,17 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import {
-  Search, Settings, Undo2, X, Layers, Receipt,
-  LayoutDashboard, ShoppingCart, TrendingUp, LineChart, Package, Map as MapIcon, ClipboardCheck,
-} from 'lucide-react';
+import { Search, Settings, X, Layers, Receipt } from 'lucide-react';
 import ArrangeControl from './ArrangeControl';
 import HiddenItemsChip from './HiddenItemsChip';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
+import { DEFAULT_OVERVIEW_ICON, DEFAULT_TAB_ICON, tabIconFor } from './tabIcons';
 
-const ICONS = {
-  LayoutDashboard, ShoppingCart, Undo2, TrendingUp, LineChart, Package, Map: MapIcon, ClipboardCheck,
-};
+// Each Tab / Overview Tab's own icon, picked in Template Settings.
+const tabIcon = (t) => tabIconFor(t.icon, DEFAULT_TAB_ICON);
+const overviewIcon = (o) => tabIconFor(o.icon, DEFAULT_OVERVIEW_ICON);
 
 function NavRow({ active, icon: Icon, label, onClick }) {
   return (
@@ -155,7 +153,7 @@ export default function DashboardSidebar({
               onSectionChange={onTabsSectionChange}
               activeKey={activeKey}
               onSelect={onSelect}
-              iconFor={(t) => ICONS[t.icon] || Layers}
+              iconFor={tabIcon}
             />
             {allOverviewTabs.length > 0 && (
               <>
@@ -166,7 +164,7 @@ export default function DashboardSidebar({
                   onSectionChange={onOverviewTabsSectionChange}
                   activeKey={activeKey}
                   onSelect={onSelect}
-                  iconFor={() => Layers}
+                  iconFor={overviewIcon}
                 />
               </>
             )}
@@ -177,7 +175,7 @@ export default function DashboardSidebar({
               <NavRow
                 key={t.id}
                 active={activeKey === t.id}
-                icon={ICONS[t.icon] || Layers}
+                icon={tabIcon(t)}
                 label={t.name}
                 onClick={() => onSelect(t.id)}
               />
@@ -187,7 +185,7 @@ export default function DashboardSidebar({
               <>
                 <div className="my-1 border-t border-divider" />
                 {filteredOverviews.map((ov) => (
-                  <NavRow key={ov.id} active={activeKey === ov.id} icon={Layers} label={ov.name} onClick={() => onSelect(ov.id)} />
+                  <NavRow key={ov.id} active={activeKey === ov.id} icon={overviewIcon(ov)} label={ov.name} onClick={() => onSelect(ov.id)} />
                 ))}
               </>
             )}

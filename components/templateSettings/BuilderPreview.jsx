@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Info, Layers } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { normHeader } from '@/data/platforms/canonical';
 import TabView from '@/components/dashboard/TabView';
 import OverviewTab from '@/components/dashboard/OverviewTab';
 import { HL_BOX, PreviewHighlightContext } from '@/components/dashboard/previewHighlight';
+import { DEFAULT_OVERVIEW_ICON, DEFAULT_TAB_ICON, tabIconFor } from '@/components/dashboard/tabIcons';
 import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
 
 // A small, deterministic set of fake orders — 3 SKUs × 14 days, a mix of
@@ -125,8 +126,8 @@ export default function BuilderPreview({ config, highlight = null }) {
   const overviewTabs = useMemo(() => [...(config.overviewTabs || [])].sort(byOrder), [config.overviewTabs]);
   const slots = useMemo(
     () => [
-      ...tabs.map((t) => ({ id: t.id, name: t.name, kind: 'tab' })),
-      ...overviewTabs.map((o) => ({ id: o.id, name: o.name, kind: 'overview' })),
+      ...tabs.map((t) => ({ id: t.id, name: t.name, kind: 'tab', Icon: tabIconFor(t.icon, DEFAULT_TAB_ICON) })),
+      ...overviewTabs.map((o) => ({ id: o.id, name: o.name, kind: 'overview', Icon: tabIconFor(o.icon, DEFAULT_OVERVIEW_ICON) })),
     ],
     [tabs, overviewTabs],
   );
@@ -188,7 +189,7 @@ export default function BuilderPreview({ config, highlight = null }) {
                   active?.id === s.id ? 'bg-action text-white' : 'bg-card text-muted hover:text-foreground'
                 } ${slotLit(s.id) ? HL_BOX : ''}`}
               >
-                {s.kind === 'overview' && <Layers size={11} />}
+                <s.Icon size={11} className="shrink-0" />
                 {s.name || 'Untitled'}
               </button>
             ))}

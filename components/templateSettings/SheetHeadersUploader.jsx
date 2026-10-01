@@ -8,6 +8,7 @@ import { extractSheetHeaders, readSheetsForHeaders, uniqueNames, withOrientation
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { useToast } from '@/components/admin/Toast';
 import SheetLinePicker from './SheetLinePicker';
+import HeaderColumns from './HeaderColumns';
 
 // "Headers rows 1, 2 · values 4–212 · 38 headers" for one saved sheet.
 function savedSheetSummary(s) {
@@ -18,8 +19,6 @@ function savedSheetSummary(s) {
   const values = s.valueSpec || (s.valueFrom ? `${label(s.valueFrom)}–${label(s.valueTo)}` : 'none');
   return `Headers ${unit} ${lines.map(label).join(', ') || '—'} · values ${values} · ${(s.headers || []).length} headers`;
 }
-
-const CHIP_LIMIT = 16;
 
 function Pill({ active, disabled, onClick, children }) {
   return (
@@ -33,30 +32,6 @@ function Pill({ active, disabled, onClick, children }) {
     >
       {children}
     </button>
-  );
-}
-
-function HeaderChips({ headers, filled }) {
-  const [all, setAll] = useState(false);
-  if (!headers.length) return null;
-  const shown = all ? headers : headers.slice(0, CHIP_LIMIT);
-  return (
-    <div className="mt-2 flex flex-wrap gap-1">
-      {shown.map((h) => (
-        <span
-          key={h}
-          title={filled && !filled.has(h) ? 'No values in the first rows of this sample' : undefined}
-          className={`rounded-md border border-divider px-1.5 py-0.5 text-[11px] ${filled && !filled.has(h) ? 'text-subtle' : 'text-foreground'}`}
-        >
-          {h}
-        </span>
-      ))}
-      {headers.length > CHIP_LIMIT && (
-        <button type="button" onClick={() => setAll((v) => !v)} className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-action hover:bg-action-soft">
-          {all ? 'Show less' : `+${headers.length - CHIP_LIMIT} more`}
-        </button>
-      )}
-    </div>
   );
 }
 
@@ -110,7 +85,10 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
   }, [pending, cfg, defaults]);
 
   const includedNames = pending ? pending.sheets.filter((s) => cfg[s.name]?.include !== false).map((s) => s.name) : [];
-  const uniqueCount = uniqueNames(includedNames.flatMap((n) => results[n]?.headers || [])).length;
+  // The file's total headers across every included sheet — the one list shown below the sheets.
+  const totalHeaders = uniqueNames(includedNames.flatMap((n) => results[n]?.headers || []));
+  const uniqueCount = totalHeaders.length;
+  const totalFilled = new Set(includedNames.flatMap((n) => [...(results[n]?.filled || [])].map((h) => h.toLowerCase())));
   const badValueSpec = includedNames.some((n) => results[n] && !results[n].valueSpecOk);
 
   const patchCfg = (name, patch) => setCfg((c) => ({ ...c, [name]: { ...c[name], ...patch } }));
@@ -232,10 +210,11 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
                     ? `${r.headers.length} headers · ${r.dataCount} value ${isCol ? 'column' : 'row'}${r.dataCount === 1 ? '' : 's'}`
                     : `No header ${isCol ? 'column' : 'row'} found — add the ${isCol ? 'column' : 'row'} number by hand, or switch to ${isCol ? 'Row' : 'Column'}.`}
                 </p>
-                <HeaderChips headers={r.headers} filled={r.filled} />
               </div>
             );
           })}
+
+          <HeaderColumns headers={totalHeaders} filled={totalFilled} />
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-divider bg-card px-3 py-2">
             <span className="text-[12px] text-muted">
@@ -252,19 +231,21 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
             </button>
           </div>
         </div>
-      ) : saved.length > 0 ? (
+      ) : saved.length > 0 || slot.extractedHeaders?.length > 0 ? (
         <div className="space-y-1.5">
-          <ul className="divide-y divide-divider rounded-lg border border-divider bg-background">
-            {saved.map((s) => (
-              <li key={s.name} className={`flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-[12px] ${s.include === false ? 'text-subtle' : 'text-foreground'}`}>
-                <span className={`flex min-w-0 items-center gap-1.5 truncate ${s.include === false ? 'line-through' : ''}`}><FileSpreadsheet size={12} className="shrink-0 text-subtle" /> {s.name}</span>
-                <span className="text-[11px] text-subtle">
-                  {s.include === false ? 'ignored' : savedSheetSummary(s)}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <HeaderChips headers={slot.extractedHeaders || []} />
+          {saved.length > 0 && (
+            <ul className="divide-y divide-divider rounded-lg border border-divider bg-background">
+              {saved.map((s) => (
+                <li key={s.name} className={`flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-[12px] ${s.include === false ? 'text-subtle' : 'text-foreground'}`}>
+                  <span className={`flex min-w-0 items-center gap-1.5 truncate ${s.include === false ? 'line-through' : ''}`}><FileSpreadsheet size={12} className="shrink-0 text-subtle" /> {s.name}</span>
+                  <span className="text-[11px] text-subtle">
+                    {s.include === false ? 'ignored' : savedSheetSummary(s)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <HeaderColumns headers={slot.extractedHeaders || []} />
         </div>
       ) : null}
     </div>

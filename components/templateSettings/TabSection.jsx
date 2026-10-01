@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { makeTab } from '@/data/templateSchema';
 import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
+import { DEFAULT_TAB_ICON } from '@/components/dashboard/tabIcons';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
 import Field from './Field';
 import NameField from './NameField';
-
-const ICON_OPTIONS = ['LayoutDashboard', 'ShoppingCart', 'Undo2', 'TrendingUp', 'LineChart', 'Package', 'Map', 'ClipboardCheck'];
+import IconPicker from './IconPicker';
 
 // image 2 · Tab — each entry in the user's sidebar. Compose + order its Title
 // Cards, Graphs and Headers, and set the KPI grid width. Every tab that
@@ -61,13 +61,11 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
                   placeholder="Enter Tab name"
                   className="min-w-[10rem] flex-1"
                 />
-                <select
-                  value={active.icon || 'LayoutDashboard'}
-                  onChange={(e) => patchItem('tabs', active.id, { icon: e.target.value })}
-                  className="rounded-md border border-divider bg-background px-2 py-1.5 text-xs focus:outline-none"
-                >
-                  {ICON_OPTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
-                </select>
+                <IconPicker
+                  value={active.icon}
+                  fallback={DEFAULT_TAB_ICON}
+                  onChange={(icon) => patchItem('tabs', active.id, { icon })}
+                />
               </div>
 
               <Field label="Title Cards" hint={`KPI grid — ${active.titleCardIds.length} card(s)`}>

@@ -193,6 +193,7 @@ export function makeOverviewTab(name = 'Overview', order = 0) {
     id: newId('ov'),
     name,
     order,
+    icon: 'Layers', // dashboard sidebar icon (components/dashboard/tabIcons.js)
     hierarchyHeaderIds: [],
     fixedHeaderId: null,
     headerIds: [],

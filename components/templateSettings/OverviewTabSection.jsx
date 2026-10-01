@@ -5,6 +5,8 @@ import { Plus } from 'lucide-react';
 import { makeOverviewTab } from '@/data/templateSchema';
 import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
 import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
+import { DEFAULT_OVERVIEW_ICON } from '@/components/dashboard/tabIcons';
+import IconPicker from './IconPicker';
 import HierarchyLevelsEditor from './HierarchyLevelsEditor';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
@@ -70,14 +72,21 @@ export default function OverviewTabSection({ draft, activeId: activeIdProp, onAc
           <p className="py-10 text-center text-sm text-subtle">Pick an overview tab from the list on the left, or add one.</p>
         ) : (
             <>
-              <NameField
-                list={overviewTabs}
-                id={active.id}
-                value={active.name}
-                onChange={(name) => patchItem('overviewTabs', active.id, { name })}
-                placeholder="Enter Overview Tab name"
-                className="w-full max-w-md"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <NameField
+                  list={overviewTabs}
+                  id={active.id}
+                  value={active.name}
+                  onChange={(name) => patchItem('overviewTabs', active.id, { name })}
+                  placeholder="Enter Overview Tab name"
+                  className="min-w-[10rem] flex-1"
+                />
+                <IconPicker
+                  value={active.icon}
+                  fallback={DEFAULT_OVERVIEW_ICON}
+                  onChange={(icon) => patchItem('overviewTabs', active.id, { icon })}
+                />
+              </div>
               <HierarchyLevelsEditor options={headerOpts} value={levelIds} onChange={setLevels} />
 
               <Field label="Title Cards" hint={`KPI grid — ${(active.titleCardIds || []).length} card(s)`}>
