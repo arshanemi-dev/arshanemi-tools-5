@@ -62,16 +62,18 @@ export default function DashboardHeaderBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} />
-        <div ref={pagerSlotRef} className="contents" />
         <ValueFilter label="Companies" allLabel="All Companies" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
+        {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
+        <div ref={pagerSlotRef} className="contents" />
         <div ref={viewPillsSlotRef} className="contents" />
+        <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData} />
         <AdsCostControl value={ads} onChange={onAdsChange} />
+        <IconButton icon={FileText} label="PDF" title="Export to PDF" onClick={onExportPdf} disabled={!hasData} />
         {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
 
         <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
-
+  
         <IconButton
           icon={Trash2}
           label="Delete"
@@ -81,8 +83,7 @@ export default function DashboardHeaderBar({
           disabled={!selectedCount}
           onClick={onDeleteClick}
         />
-        <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData} />
-        <IconButton icon={FileText} label="PDF" title="Export to PDF" onClick={onExportPdf} disabled={!hasData} />
+      
       </div>
     </div>
   );

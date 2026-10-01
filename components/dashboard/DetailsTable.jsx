@@ -215,7 +215,7 @@ export default function DetailsTable({
           <>
             {view.length === 0 ? '0 rows' : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} row${view.length === 1 ? '' : 's'}`}
             {totalCount != null && totalCount > view.length && (
-              <span className="ml-1 font-semibold text-action">(Total Extracted Dataset: {totalCount} rows)</span>
+              <span className="ml-1 font-semibold text-action">(Total: {totalCount} rows)</span>
             )}
             {selected.size > 0 && ` · ${selected.size} selected`}
           </>
