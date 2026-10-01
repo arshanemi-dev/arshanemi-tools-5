@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
+import { marketplaceUniqueHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
@@ -80,6 +80,26 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
 
   const defaultTargets = globalHeaders.filter(isOurHeader); // Our Headers only, never sheet columns
 
+  // Mappings to Our Headers that have since been deleted: they do nothing on
+  // the dashboard but fail validation (Save stays blocked). One click removes
+  // them and saves.
+  const knownIds = useMemo(() => new Set(globalHeaders.map((h) => h.id)), [globalHeaders]);
+  const staleIds = useMemo(() => staleMappingHeaderIds(config, knownIds), [config, knownIds]);
+  const staleCount = allMappings.filter((m) => staleIds.has(m.headerId)).length;
+  const [cleaning, setCleaning] = useState(false);
+  async function removeStaleMappings() {
+    setCleaning(true);
+    try {
+      const next = withoutHeaderMappings(config, staleIds);
+      setConfig(next);
+      const res = await draft.save(next);
+      addToast(res.ok ? `Removed ${staleCount} mapping${staleCount === 1 ? '' : 's'} to deleted headers` : (res.error || 'Removed locally — saving failed'), res.ok ? 'success' : 'error');
+      if (res.ok) onSheetsSaved?.();
+    } finally {
+      setCleaning(false);
+    }
+  }
+
   // "Save All Sheets": the slot takes the per-sheet settings + unique
   // headers and the marketplace is saved right away. Its columns stay this
   // marketplace's own — never added to Our Headers, never auto-mapped; map
@@ -144,6 +164,17 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
             </span>
           ))}
         </div>
+
+        {staleCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neg/30 bg-neg/5 px-3 py-2">
+            <p className="min-w-0 flex-1 text-[12px] text-foreground">
+              <span className="font-semibold">{staleCount} mapping{staleCount === 1 ? '' : 's'}</span> point at Our Headers that were deleted — they do nothing on the dashboard and block saving this marketplace.
+            </p>
+            <button type="button" onClick={removeStaleMappings} disabled={cleaning} className="rounded-full bg-neg px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              Remove them
+            </button>
+          </div>
+        )}
 
         {/* File slots — compact list (left) + the selected one's full editor (right) */}
         <div className="flex items-center justify-between">

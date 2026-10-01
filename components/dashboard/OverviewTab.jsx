@@ -98,7 +98,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
         <div className="space-y-2">
           {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
           {cardsArrange.visible.length > 0 && (
-            <KpiCardRow cards={cardsArrange.visible} values={resolved.titleCardValues} editMode={editMode} arrange={cardsArrange} />
+            <KpiCardRow cards={cardsArrange.visible} values={resolved.titleCardValues} editMode={editMode} arrange={cardsArrange} columns={tab?.layout?.titleCards?.columns} />
           )}
         </div>
       )}

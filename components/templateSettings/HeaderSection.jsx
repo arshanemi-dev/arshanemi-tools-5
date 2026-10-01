@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { withAddedMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
+import { withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
 import { headerUsages, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -42,6 +42,11 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const autoImported = headers.filter((h) => h.source === 'extracted');
   const deleteTarget = headers.find((h) => h.id === deleteId) || null;
   const deleteUsages = deleteTarget ? headerUsages(config, deleteTarget) : [];
+  // Marketplaces that map a column to the header being deleted — their
+  // mappings go with it (otherwise they'd linger, fail validation and block
+  // saving that marketplace).
+  const mappedIn = (id) => (marketplaces || []).filter((t) => (t.config?.fileSlots || []).some((s) => (s.mappings || []).some((m) => m.headerId === id)));
+  const deleteMappedIn = deleteTarget ? mappedIn(deleteTarget.id) : [];
 
   const onToggleCheck = (key) => setChecked((prev) => {
     const next = new Set(prev);
@@ -80,7 +85,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const confirmDeleteHeader = () => {
     if (!deleteTarget || deleteTarget.reserved) { setDeleteId(null); return; }
     setConfig((c) => withoutHeader(c, deleteTarget.id));
-    addToast(`Header “${deleteTarget.name}” deleted`);
+    for (const t of deleteMappedIn) mappingSaver?.update(t.id, (cfg) => withoutHeaderMappings(cfg, [deleteTarget.id]));
+    addToast(`Header “${deleteTarget.name}” deleted${deleteMappedIn.length ? ` · its mappings removed from ${deleteMappedIn.map((t) => t.marketplaceName).join(', ')}` : ''}`);
     if (deleteTarget.id === activeId) setActiveId(null);
     setDeleteId(null);
   };
@@ -190,9 +196,9 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
       <ConfirmDialog
         open={!!deleteTarget}
         title={`Delete header “${deleteTarget?.name || ''}”?`}
-        description={deleteUsages.length
+        description={`${deleteUsages.length
           ? `It's used in ${deleteUsages.join(', ')}. It will be removed from those Tab / Overview Tab / Graph picks; formulas that reference it by name need fixing by hand.`
-          : 'It isn’t used in any Tab, Overview Tab, Graph or formula.'}
+          : 'It isn’t used in any Tab, Overview Tab, Graph or formula.'}${deleteMappedIn.length ? ` Its mappings in ${deleteMappedIn.map((t) => t.marketplaceName).join(', ')} are removed too.` : ''}`}
         onConfirm={confirmDeleteHeader}
         onCancel={() => setDeleteId(null)}
       />

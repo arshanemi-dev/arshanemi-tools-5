@@ -1,4 +1,5 @@
 import { normHeader } from './canonical.js';
+import { headerNormSet } from './aliases.js';
 import meesho from './meesho.js';
 import amazon from './amazon.js';
 import flipkart from './flipkart.js';
@@ -17,7 +18,7 @@ export function getPlatform(id) {
 // headerRow: string[] (the sheet's header cells). fileName: optional string.
 // Returns a platform id, or 'manual' if nothing fingerprints.
 export function detectPlatform(headerRow = [], fileName = '') {
-  const normSet = new Set(headerRow.map(normHeader));
+  const normSet = headerNormSet(headerRow);
   const fname = normHeader(fileName);
   for (const p of PLATFORMS) {
     if (p.id === 'manual') continue;

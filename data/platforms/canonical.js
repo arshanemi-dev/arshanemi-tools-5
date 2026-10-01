@@ -54,6 +54,32 @@ export function absNum(v) {
   return Math.abs(num(v));
 }
 
+// Strict reader for a mapped sheet value going into a template's Number
+// header: "1,299.00", "₹ 1,234", "Rs. 50", "24%", "(150.00)" (accounting
+// negative), "−45" (unicode minus) → numbers; an id like "A1", text or a
+// blank → NaN. Unlike num() (junk → 0) this keeps "not a number" apart
+// from a real 0, so a column of text never silently sums to 0.
+export function parseNumberish(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (v == null) return NaN;
+  let s = String(v).trim();
+  if (!s) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/^(rs\.?|inr)\s*/i, '').replace(/[₹$€£,\s]/g, '').replace(/%$/, '').replace(/[−–]/g, '-');
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s)) return NaN;
+  const n = Number(s);
+  return neg ? -n : n;
+}
+
+// "Order Details › Sub Order No" → "Sub Order No" — the column's own name
+// inside a header joined from several header rows (Template Settings).
+export function leafHeader(h) {
+  const s = String(h ?? '');
+  const i = s.lastIndexOf(' › ');
+  return i === -1 ? s : s.slice(i + 3).trim();
+}
+
 // Excel serial / "2026-08-20" / "20-08-2026" / "20/08/2026 12:30" -> "YYYY-MM-DD" | null
 export function toISODate(v) {
   if (v == null || v === '') return null;

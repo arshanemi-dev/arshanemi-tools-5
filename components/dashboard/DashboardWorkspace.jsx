@@ -6,11 +6,9 @@ import { listLiveTemplates } from '@/lib/profitLoss/templatesApi';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
-import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
-import { detectPlatform } from '@/data/platforms/detect';
-import { mapRowsForPlatform, pickBestTab } from '@/data/platforms/index';
-import { guessMapping } from '@/data/platforms/manual';
+import { ingestWorkbook } from '@/lib/profitLoss/ingest';
+import { effectiveConfig } from '@/lib/profitLoss/effectiveConfig';
 import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
 import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
@@ -91,42 +89,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     [templates, activeTemplateId],
   );
 
-  // The effective config a marketplace's dashboard renders: the shared
-  // global Headers/Title Cards/Graphs/Tabs/Overview Tabs, plus this
-  // marketplace's own `marketplace` + `fileSlots`. Each global header's
-  // `mappedFrom` isn't stored on the header itself anymore (the same header
-  // maps to a different sheet column per marketplace) — it's reconstructed
-  // here from the active marketplace's fileSlots[].mappings before
-  // resolveTemplate (which stays marketplace-agnostic) ever sees it.
-  //
-  // Every saved global header always shows here, mapped for this marketplace
-  // or not — switching Market Place changes where the data comes from, never
-  // what's shown (see CLAUDE.md). A header this marketplace hasn't mapped
-  // anything to just renders blank for it, same as any other header with no
-  // data yet; that's preferable to a column that silently disappears and
-  // reappears as the user switches marketplaces.
-  const config = useMemo(() => {
-    if (!globalConfig || !activeMarketplace) return {};
-    const fileSlots = activeMarketplace.config?.fileSlots || [];
-    // `sheetHeaders` = every column this marketplace merges into the header
-    // (readHeaderFromRow tries each); slot/sheetHeader stay the last one, as before.
-    const mappedFromByHeaderId = new Map();
-    for (const slot of fileSlots) {
-      for (const m of slot.mappings || []) {
-        const prev = mappedFromByHeaderId.get(m.headerId)?.sheetHeaders || [];
-        const sheetHeaders = prev.includes(m.sheetHeader) ? prev : [...prev, m.sheetHeader];
-        mappedFromByHeaderId.set(m.headerId, { slot: slot.id, sheetHeader: m.sheetHeader, sheetHeaders });
-      }
-    }
-    const headers = (globalConfig.headers || [])
-      .map((h) => ({ ...h, mappedFrom: mappedFromByHeaderId.get(h.id) || null }));
-    return {
-      ...globalConfig,
-      headers,
-      marketplace: activeMarketplace.config?.marketplace || {},
-      fileSlots,
-    };
-  }, [globalConfig, activeMarketplace]);
+  // Global Settings + the active marketplace's files and mappings — see
+  // lib/profitLoss/effectiveConfig.js.
+  const config = useMemo(
+    () => effectiveConfig(globalConfig, activeMarketplace?.config || (activeMarketplace ? {} : null)),
+    [globalConfig, activeMarketplace],
+  );
 
   // Every tab the template defines, in template order — the full list the
   // sidebar's edit-mode "Tabs" dropdown reorders/hides from.
@@ -180,14 +148,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   );
   const transactionIdHeader = useMemo(
     () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.transactionId) || null,
-    [config],
-  );
-  // A header bound to the `sku` engine primitive (if the admin created one)
-  // — used the same way as Order Id below, to seed the manual-mapper
-  // fallback with the marketplace's own real mapping instead of only a
-  // name guess.
-  const skuHeader = useMemo(
-    () => (config.headers || []).find((h) => h.primitive === 'sku') || null,
     [config],
   );
   // The full logic (normalized cross-file enrichment, then exact Order Id
@@ -502,6 +462,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     return [...new Set([...fromBrands, ...(resolved.companyOptions || [])])].sort();
   }, [effectiveBrands, config, resolved.companyOptions]);
 
+  // Right after an upload: if NONE of its rows fall inside the date filter
+  // in effect (settlement exports are usually older than the default 7
+  // days), switch the filter to the uploaded rows' own date span so the
+  // dashboard shows what was just loaded — and say so. A filter that
+  // already shows some of them is left alone.
+  const fitDateRangeTo = useCallback((rows) => {
+    const dates = rows.map((r) => r.orderDate).filter(Boolean).sort();
+    if (!dates.length) return;
+    const { from, to } = applied.dateRange;
+    if (dates.some((d) => (!from || d >= from) && (!to || d <= to))) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const range = { preset: 'custom', from: dates[0] > today ? today : dates[0], to: dates[dates.length - 1] > today ? today : dates[dates.length - 1] };
+    setPending((s) => ({ ...s, dateRange: range }));
+    setApplied((s) => ({ ...s, dateRange: range }));
+    addToast(`Date filter set to ${range.from} → ${range.to} to show the uploaded rows`);
+  }, [applied.dateRange, addToast]);
+
   // ── ingest ──────────────────────────────────────────────────────────────
   // Every upload is checked against the slot's saved headers (extracted in
   // Template Settings when its sample sheet was mapped) before it's parsed —
@@ -531,42 +508,38 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           continue;
         }
         if (!wb.sheetNames.length) { addToast(`No table found in ${file.name}`, 'error'); continue; }
-        const first = wb.byTab[wb.sheetNames[0]] || { headerRow: [] };
-        const platform = detectPlatform(first.headerRow, wb.fileName);
-        const tab = pickBestTab(platform, wb.byTab, wb.sheetNames);
-        const headerRow = wb.byTab[tab]?.headerRow ?? first.headerRow;
-        const { ok, missing } = matchSlotHeaders(slotDef, headerRow, { wb });
-        if (!ok) {
-          addToast(`${file.name}: doesn't match "${slotDef.label}" — missing column${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`, 'error');
+        // Reads every sheet the slot's Template Settings included (or the
+        // best one for an older slot) and applies the marketplace's own
+        // Order Id / SKU / Order Date mappings — see lib/profitLoss/ingest.js.
+        const res = ingestWorkbook(wb, { slotDef, config, tag, fileName: file.name });
+        if (!res.ok) {
+          addToast(`${file.name}: doesn't match "${slotDef.label}" — missing column${res.missing.length === 1 ? '' : 's'}: ${res.missing.join(', ')}`, 'error');
           continue;
         }
-        const rawRows = wb.byTab[tab]?.rows ?? [];
-        // A best-effort {canonicalField: sheetHeader} mapping so a row still
-        // gets placed even when the detected platform's own fixed mapper
-        // can't do it (an unrecognized/'manual' marketplace, or a real
-        // platform's Orders file when its mapper expects a Payments shape —
-        // see mapRowsForPlatform's fallback). Name-guessed as a baseline
-        // (lib/data/platforms/manual.js's GUESSES), then the marketplace's
-        // own real Order Id / Sku header mappings win where they exist,
-        // since those are authoritative, not a guess.
-        // A header can merge several columns (one per file) — use the one
-        // THIS file actually has.
-        const mapping = guessMapping(headerRow);
-        const mappedColFor = (h) => h?.mappedFrom?.sheetHeaders?.find((c) => headerRow.includes(c)) || h?.mappedFrom?.sheetHeader;
-        if (mappedColFor(orderIdHeader)) mapping.orderId = mappedColFor(orderIdHeader);
-        if (mappedColFor(skuHeader)) mapping.sku = mappedColFor(skuHeader);
-        const rows = mapRowsForPlatform(platform, rawRows, { tag, mapping });
-        added.push({ id: crypto.randomUUID(), slotId, fileName: file.name, platform, rows });
+        const fileId = crypto.randomUUID();
+        for (const part of res.parts) {
+          added.push({
+            id: `${fileId}:${part.sheetName}`,
+            slotId,
+            // one merge source per sheet — sheets of one file match by Order Id like separate files
+            mergeKey: res.parts.length > 1 ? `${slotId}::${part.sheetName}` : slotId,
+            fileName: res.parts.length > 1 ? `${file.name} › ${part.sheetName}` : file.name,
+            platform: part.platform,
+            rows: part.rows,
+          });
+        }
       }
       if (added.length) {
         setUploads((prev) => [...prev, ...added]);
-        const mapped = added.reduce((s, a) => s + a.rows.length, 0);
-        addToast(mapped ? `Loaded ${added.length} file${added.length === 1 ? '' : 's'} · ${mapped} rows` : 'File loaded but no rows matched — check the sheet', mapped ? 'success' : 'error');
+        const fresh = added.flatMap((a) => a.rows);
+        const sheets = added.length > files.length ? ` from ${added.length} sheets` : '';
+        addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
+        fitDateRangeTo(fresh);
       }
     } finally {
       setBusy(false);
     }
-  }, [addToast, config, selectedBrand, orderIdHeader, skuHeader, loggedIn]);
+  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo]);
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
@@ -928,7 +901,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               look identical to "nothing was ever uploaded", with no clue
               why. Settlement exports are almost always older than the
               default 7-day window. */}
-          {hasData && canonicalRows.length > 0 && !showOverview && !showTransactions && resolved.tableRows.length === 0 && (
+          {hasData && canonicalRows.length > 0 && !showTransactions && resolved.rowCount === 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neg/10 px-3 py-2 text-[13px] text-neg">
               <span>
                 {canonicalRows.length} row{canonicalRows.length === 1 ? '' : 's'} uploaded, but none fall in the selected date range.

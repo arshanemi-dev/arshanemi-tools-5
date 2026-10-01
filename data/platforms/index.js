@@ -1,6 +1,7 @@
 import { normHeader, num, absNum, toISODate, classifyStatus, canonicalRow } from './canonical.js';
 import { getPlatform, detectPlatform } from './detect.js';
 import manual from './manual.js';
+import { headerNormSet } from './aliases.js';
 
 export { PLATFORMS, PLATFORM_BY_ID, getPlatform, detectPlatform } from './detect.js';
 
@@ -14,7 +15,7 @@ export function pickBestTab(platformId, byTab, sheetNames) {
   for (const name of sheetNames) {
     const t = byTab[name];
     if (!t) continue;
-    const normSet = new Set(t.headerRow.map(normHeader));
+    const normSet = headerNormSet(t.headerRow);
     const fp = plat.matches ? plat.matches(normSet, normHeader(name)) : false;
     const score = (fp ? 1000 : 0) + t.rows.length;
     if (score > bestScore) {

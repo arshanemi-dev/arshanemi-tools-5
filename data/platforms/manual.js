@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, toISODate, leafHeader } from './canonical.js';
 import { rowLookup } from './aliases.js';
 
 // Fallback when auto-detection fails. `mapping` is a {canonicalField: headerName}
@@ -34,9 +34,11 @@ const GUESSES = {
   tds: ['tds'],
 };
 
+// Joined multi-row headers ("Order Details › Order Id") are matched by their
+// own column name; the full header text is what's returned (the row key).
 export function guessMapping(headerRow = []) {
   const out = {};
-  const lower = headerRow.map((h) => String(h).trim().toLowerCase());
+  const lower = headerRow.map((h) => leafHeader(String(h)).trim().toLowerCase());
   for (const [field, cands] of Object.entries(GUESSES)) {
     const hit = cands
       .map((c) => headerRow[lower.indexOf(c)])
