@@ -11,13 +11,10 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 // raw, display } } }). First real header column is sticky/linked, rest
 // sortable + per-column filterable.
 //
-// Two extra columns aren't part of the template config — they're rendered
-// unconditionally by this component: a "Company" column always pinned at
-// the very start (read-only — shows the brand tag every row was uploaded
-// with; `companyControl` in its header lets the user pick/create the brand
-// new uploads get tagged with, same list the toolbar's BrandPicker uses),
-// and a "Cost" input column injected immediately after whichever header is
-// bound to the `sku` engine primitive, if any — a per-SKU unit-cost the
+// Only the template's own columns show — no automatic "Company" column
+// (pick a "Company" header for the tab to see the upload's brand tag).
+// The one injected column is a "Cost" input right after whichever header
+// is bound to the `sku` engine primitive, if any — a per-SKU unit-cost the
 // user can type directly instead of only via the SKU-cost sheet upload.
 //
 // Row selection (the checkboxes) is controlled from DashboardWorkspace, not
@@ -36,7 +33,7 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 const PAGE_SIZES = [25, 50, 100];
 
 export default function DetailsTable({
-  columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null,
+  columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, disableCostColumn = false, totalCount = null,
 }) {
   const cols = columns.map((h, i) => ({
@@ -53,7 +50,7 @@ export default function DetailsTable({
   // by SKU — never on a per-transaction table (see resolveTransactionRows),
   // where the row key is an Order Id, not a SKU.
   const showCost = !disableCostColumn && cols.some((c) => c.isSku);
-  const displayCols = [{ id: '__company__', key: '__company__', kind: 'company' }];
+  const displayCols = [];
   for (const c of cols) {
     displayCols.push({ ...c, kind: 'header' });
     if (c.isSku && showCost) displayCols.push({ id: '__cost__', key: '__cost__', kind: 'cost' });
@@ -126,16 +123,6 @@ export default function DetailsTable({
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
               {displayCols.map((col) => {
-                if (col.kind === 'company') {
-                  return (
-                    <th key="__company__" className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span>Company</span>
-                        {companyControl}
-                      </div>
-                    </th>
-                  );
-                }
                 if (col.kind === 'cost') {
                   return (
                     <th key="__cost__" className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
@@ -182,13 +169,6 @@ export default function DetailsTable({
                   <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
                 </td>
                 {displayCols.map((col) => {
-                  if (col.kind === 'company') {
-                    return (
-                      <td key="__company__" className="px-3 py-2.5 whitespace-nowrap text-muted">
-                        {r.company || '—'}
-                      </td>
-                    );
-                  }
                   if (col.kind === 'cost') {
                     const val = costBySku[r.key];
                     return (

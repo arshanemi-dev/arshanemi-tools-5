@@ -20,7 +20,8 @@ function matchesFilter(node, key, f) {
 }
 
 // The Overview tab's right-hand table — DetailsTable's look and features
-// (Company column, Cost input, row checkboxes, sort/filter per column,
+// (only the overview's own picked headers — no automatic Company column —
+// plus the Cost input, row checkboxes, sort/filter per column,
 // edit-mode arrange, pagination) but over the unique-value hierarchy: every
 // Level-1 value is a row, and opening it (here or in the left
 // OverviewHierarchyNav — they share `expanded`) reveals its Level-2 rows
@@ -32,7 +33,7 @@ function matchesFilter(node, key, f) {
 // included) — DashboardWorkspace's delete matches raw rows by path prefix.
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
-  editMode = false, arrange, costBySku = {}, onCostChange, companyControl = null,
+  editMode = false, arrange, costBySku = {}, onCostChange,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys,
 }) {
   const [sort, setSort] = useState(null);
@@ -109,7 +110,7 @@ export default function OverviewTreeTable({
   const showCost = skuLevels.size > 0;
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
   const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', signed: !!h.signed }));
-  const colSpan = cols.length + (showCost ? 4 : 3);
+  const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers
 
   const resetPaging = () => setPage(1);
   const allChecked = pageNodes.length > 0 && pageNodes.every((n) => selected.has(n.key));
@@ -148,9 +149,6 @@ export default function OverviewTreeTable({
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
               {headCell(treeCol, 'left-0 z-20 min-w-48')}
-              <th className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">
-                <div className="flex items-center gap-2"><span>Company</span>{companyControl}</div>
-              </th>
               {showCost && <th className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
@@ -237,7 +235,6 @@ export default function OverviewTreeTable({
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-muted">{n.company || '—'}</td>
                   {showCost && (
                     <td className="px-3 py-2 whitespace-nowrap">
                       {isSkuRow && (

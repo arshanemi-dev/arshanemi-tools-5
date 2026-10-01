@@ -26,7 +26,6 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import DashboardSidebar from './DashboardSidebar';
 import DashboardToolbar from './DashboardToolbar';
 import DashboardHeaderBar from './DashboardHeaderBar';
-import BrandPicker from './BrandPicker';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
 import DetailsTable from './DetailsTable';
@@ -48,6 +47,10 @@ const RESTORED_SLOT_ID = 'restored';
 // real Tab/Overview Tab id, so it can share the same activeTabId plumbing
 // without colliding with anything Template Settings defines.
 const TRANSACTIONS_TAB_ID = '__transactions__';
+
+// The tab that owns the upload / Position Settings toolbar (see uploadTab).
+const UPLOAD_TAB_NAME = 'upload sheet & cost';
+const normTabName = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 // The hub's own per-page cap (lib/db.js) — used as the restore loop's page
 // size so pulling this user's ENTIRE saved history takes as few round trips
 // as possible. No page-count ceiling: every page gets fetched, however many
@@ -308,6 +311,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
   }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
   const showTransactions = activeTabId === TRANSACTIONS_TAB_ID;
+
+  // A (visible) Tab / Overview Tab named "Upload Sheet & Cost" — compared in
+  // lower case, extra spaces ignored — becomes the home of the upload /
+  // Position Settings toolbar: shown only while that tab is open, hidden on
+  // every other one. Without such a tab it shows everywhere, as before. While
+  // arranging (Position Settings → edit mode) it always shows, so Save
+  // Position stays reachable from whichever tab is being arranged.
+  const uploadTab = useMemo(
+    () => [...visibleTabs, ...visibleOverviewTabs].find((t) => normTabName(t.name) === UPLOAD_TAB_NAME) || null,
+    [visibleTabs, visibleOverviewTabs],
+  );
 
   // ── resolve (computed right here in the browser) ────────────────────────
   // Title cards, graphs, the table, overview pivots — every formula — run
@@ -586,15 +600,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (skuCostsSaveTick > 0) (() => setDirtySkuKeys(new Set()))();
   }, [skuCostsSaveTick]);
 
-  // The table's "Company" column header control — the same BrandPicker the
-  // toolbar uses, shrunk down. Whatever brand is picked/created here is the
-  // same `selectedBrand` the toolbar's own picker drives, so it's what the
-  // *next* upload gets tagged with — every row of new data comes in under
-  // one company, per how uploads are already tagged (see onUpload below).
-  const companyControl = (
-    <BrandPicker compact brands={effectiveBrands} value={selectedBrand} onChange={setSelectedBrand} onCreate={addBrand} />
-  );
-
   const resetFilters = () => {
     const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
     setPending(fresh);
@@ -850,6 +855,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {(!uploadTab || activeTabId === uploadTab.id || editMode) && (
         <DashboardToolbar
           templates={templates}
           activeTemplateId={activeTemplateId}
@@ -871,6 +877,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           onResetLayout={resetLayout}
           savingLayout={savingLayout}
         />
+        )}
 
      
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
@@ -962,7 +969,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onSetTabSection={setTabSection}
                 costBySku={skuCost?.map || {}}
                 onCostChange={onCostChange}
-                companyControl={companyControl}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
@@ -982,7 +988,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onSetTabSection={setTabSection}
                 costBySku={skuCost?.map || {}}
                 onCostChange={onCostChange}
-                companyControl={companyControl}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}

@@ -51,6 +51,8 @@ const GLOBAL_GROUPS = [
     orderField: 'order',
     sortBy: (a, b) => (a.order ?? 0) - (b.order ?? 0),
   },
+  // Global position of every Tab (TabsOrganizerSection) — a plain jump row.
+  { key: 'tabsOrganizer', label: 'Tabs Organizer', anchor: 'section-tabs-organizer', listKey: 'tabs', plain: true },
   {
     key: 'overview', label: 'Overview Tab', anchor: 'section-overview',
     listKey: 'overviewTabs', nameField: 'name', addLabel: 'Add Overview Tab',
@@ -58,6 +60,7 @@ const GLOBAL_GROUPS = [
     orderField: 'order',
     sortBy: (a, b) => (a.order ?? 0) - (b.order ?? 0),
   },
+  { key: 'overviewOrganizer', label: 'Overview Organizer', anchor: 'section-overview-organizer', listKey: 'overviewTabs', plain: true },
 ];
 
 const MARKETPLACE_GROUPS = [

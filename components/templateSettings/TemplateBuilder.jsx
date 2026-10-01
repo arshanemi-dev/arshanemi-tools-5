@@ -16,6 +16,7 @@ import TitleCardSection from './TitleCardSection';
 import GraphSection from './GraphSection';
 import TabSection from './TabSection';
 import OverviewTabSection from './OverviewTabSection';
+import TabsOrganizerSection from './TabsOrganizerSection';
 import MarketPlaceSection from './MarketPlaceSection';
 import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
@@ -121,7 +122,8 @@ export default function TemplateBuilder() {
   // Graph / Title Card / Market Place work it's hidden and the settings
   // column takes the full width.
   const focusList = { tab: globalDraft.config.tabs, overview: globalDraft.config.overviewTabs }[selection.__focus];
-  const showPreview = isGlobal && !!focusList?.some((it) => it.id === selection[selection.__focus]);
+  const organizerOpen = ['tabsOrganizer', 'overviewOrganizer'].includes(selection.__focus); // preview shows the new tab order live
+  const showPreview = isGlobal && (organizerOpen || !!focusList?.some((it) => it.id === selection[selection.__focus]));
 
   async function saveGlobalDraft({ major = false } = {}) {
     if (!globalDraft.valid) { addToast(`Fix ${globalDraft.errors.length} error(s) first`, 'error'); return; }
@@ -244,7 +246,9 @@ export default function TemplateBuilder() {
                       <GraphSection {...sectionProps('graph')} />
                       <TitleCardSection {...sectionProps('titleCard')} />
                       <TabSection {...sectionProps('tab')} />
+                      <TabsOrganizerSection draft={globalDraft} kind="tab" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
                       <OverviewTabSection {...sectionProps('overview')} />
+                      <TabsOrganizerSection draft={globalDraft} kind="overview" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
                     </>
                   ) : (
                     <>

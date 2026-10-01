@@ -19,11 +19,9 @@ function SectionLabel({ text, hidden, onShow }) {
 
 // Renders one config.tab: its Title Cards (KPI band) → its Graphs → the
 // My/All column pills → the details table. Everything is pre-computed in
-// `resolved` (lib/profitLoss/resolveTemplate). The table's columns are every
-// saved (global) header, not just the ones the admin bound to this tab —
-// the tab's own headerIds only pick the sticky first (key) column and seed
-// the rest's starting order; every other global header is appended after,
-// visible by default, and can be hidden/reordered like any other column.
+// `resolved` (lib/profitLoss/resolveTemplate). The table's columns are only
+// the headers the admin picked for this tab (tab.headerIds, in order) — the
+// first is the sticky key column; the rest can be hidden/reordered per user.
 //
 // In edit mode (sidebar Settings -> Save), each card/graph/column carries
 // its own inline ArrangeControl (see KpiCard/GraphStrip/ColumnHeaderCell) —
@@ -31,7 +29,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // top of the template's own definition. The first table column is never
 // hideable/reorderable — it's the sticky row key, same rule "My Details"
 // already applies.
-export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, companyControl, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null }) {
+export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -48,20 +46,13 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
   const allCards = (tab?.titleCardIds || []).map((id) => cardById.get(id)).filter(Boolean);
   const allGraphs = (tab?.graphIds || []).map((id) => ({ id, name: graphById.get(id)?.name || id, span: spanById.get(id) || 1 }));
 
-  // "All Details" / "My Details" and the edit-mode column arrange all draw
-  // from every saved (global) header, not just the ones the admin bound to
-  // this tab — a tab's own headerIds now only decide the sticky first (key)
-  // column and the tab's own default order; every other global header is
-  // still available to add back in via My Details or the arrange control,
-  // starting visible (appended after the tab's own columns) since the ask is
-  // "show all saved headers", not hide them behind an extra step.
+  // The table shows ONLY the headers picked for this tab in Template
+  // Settings, in that order — the first is the sticky key column, the rest
+  // can be hidden / reordered per user (edit mode, My Details). A tab with
+  // no headers picked shows no table at all (cards / graphs only).
   const tabHeaderIds = tab?.headerIds || [];
-  const firstHeaderDef = headerById.get(tabHeaderIds[0]) || resolved.headers?.[0];
-  const orderedByTab = tabHeaderIds.slice(1).map((id) => headerById.get(id)).filter(Boolean);
-  const otherHeaders = (resolved.headers || []).filter(
-    (h) => h.id !== firstHeaderDef?.id && !tabHeaderIds.includes(h.id),
-  );
-  const restHeaderDefs = [...orderedByTab, ...otherHeaders];
+  const firstHeaderDef = headerById.get(tabHeaderIds[0]) || null;
+  const restHeaderDefs = tabHeaderIds.slice(1).map((id) => headerById.get(id)).filter(Boolean);
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
   const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));
@@ -117,7 +108,6 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
             arrange={headersArrange}
             costBySku={costBySku}
             onCostChange={onCostChange}
-            companyControl={companyControl}
             selectedKeys={selectedKeys}
             onToggleRow={onToggleRow}
             onToggleAll={onToggleAll}
