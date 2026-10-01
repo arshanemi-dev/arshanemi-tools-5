@@ -58,6 +58,9 @@ const normTabName = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, 
 // below), not what gets loaded, so title cards/graphs/table and the table's
 // own sort/search always see the complete dataset.
 const RESTORE_PAGE_SIZE = 500;
+// Same suffix app/layout.js's metadata title template adds — the browser tab
+// follows whichever page (Tab / Overview Tab / Transactions) is open.
+const DOC_TITLE_SUFFIX = ' | Barmeto Profit & Loss';
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
@@ -195,6 +198,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // ── view ────────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState('all');
   const [historyOpen, setHistoryOpen] = useState(false);
+  // DashboardHeaderBar's two empty slots (callback refs → DOM nodes): the
+  // active table portals its page limit + row counts into the first (before
+  // "All Companies"), TabView its My/All Details pills into the second
+  // (after the date filter).
+  const [pagerSlot, setPagerSlot] = useState(null);
+  const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
   // My Details column subset + the sidebar's Settings -> Save edit-mode
   // layout (tabs/title-cards/graphs/columns show+order) — one per-user
@@ -612,6 +621,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const showOverview = !!activeOverview;
   const activeTab = visibleTabs.find((t) => t.id === activeTabId) || null;
   const activeOverviewTab = (config.overviewTabs || []).find((o) => o.id === activeTabId) || null;
+  // The open page's own name — the header bar's title, the browser tab, and
+  // the export's active-tab label all follow it.
+  const activePageName = (showTransactions ? 'Transactions' : (activeOverviewTab?.name || activeTab?.name)) || 'Dashboard';
+  useEffect(() => {
+    document.title = `${activePageName}${DOC_TITLE_SUFFIX}`;
+  }, [activePageName]);
 
   // ── row selection + delete ───────────────────────────────────────────────
   // Checkboxes in the table (DetailsTable) are controlled from here so the
@@ -776,10 +791,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
     try {
       const label = config.marketplace?.name || 'Dashboard';
-      const activeTabName = showTransactions ? 'Transactions' : (showOverview ? activeOverviewTab?.name : activeTab?.name) || 'Dashboard';
       await (kind === 'pdf'
-        ? downloadMultiTabPdf({ label, activeTabName, tabs })
-        : downloadMultiTabXlsx({ label, activeTabName, tabs }));
+        ? downloadMultiTabPdf({ label, activeTabName: activePageName, tabs })
+        : downloadMultiTabXlsx({ label, activeTabName: activePageName, tabs }));
     } catch (err) {
       console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');
@@ -882,6 +896,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
      
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
           <DashboardHeaderBar
+            title={activePageName}
+            pagerSlotRef={setPagerSlot}
+            viewPillsSlotRef={setViewPillsSlot}
             onMenuClick={onMenuClick}
             onReset={resetFilters}
             showSetting={canManageTemplates}
@@ -942,12 +959,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 their zero/empty state — only the rows are empty. */}
             {showTransactions ? (
               <div className="space-y-3">
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">Transactions</h2>
-                  <p className="mt-0.5 text-sm text-muted">
-                    One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
-                  </p>
-                </div>
+                {/* "Transactions" itself is the header bar's title now. */}
+                <p className="text-sm text-muted">
+                  One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
+                </p>
                 <DetailsTable
                   columns={transactionResolved.headers}
                   rows={transactionResolved.rows}
@@ -956,6 +971,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                   onToggleRow={onToggleRow}
                   onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
+                  pagerSlot={pagerSlot}
                 />
               </div>
             ) : showOverview ? (
@@ -973,6 +989,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
+                pagerSlot={pagerSlot}
               />
             ) : (
               <TabView
@@ -993,6 +1010,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 totalCount={canonicalRows.length}
+                viewPillsSlot={viewPillsSlot}
+                pagerSlot={pagerSlot}
               />
             )}
           </div>

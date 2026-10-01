@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
+import TablePager, { PAGE_SIZES } from './TablePager';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { TREE_COL, ancestorKeys, filterTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 
-const PAGE_SIZES = [25, 50, 100];
 const CHILD_PAGE = 100; // children rendered per open node before "Show more"
 
 function matchesFilter(node, key, f) {
@@ -31,10 +31,11 @@ function matchesFilter(node, key, f) {
 // to a deeper match opened automatically. Pagination is over Level-1 rows.
 // Checking a parent row selects its whole branch (its children show as
 // included) — DashboardWorkspace's delete matches raw rows by path prefix.
+// The pager renders in the footer, or wherever `pagerSlot` points.
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
   editMode = false, arrange, costBySku = {}, onCostChange,
-  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, pagerSlot = null,
 }) {
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({});
@@ -267,31 +268,22 @@ export default function OverviewTreeTable({
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider px-3 py-2 text-xs text-subtle">
-        <span>
-          {view.length === 0
-            ? '0 rows'
-            : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} ${levels[0]?.name || 'row'}${levels.length > 1 ? ` · ${nodeTotal} rows across ${levels.length} levels` : ''}`}
-          {selected.size > 0 && ` · ${selected.size} selected`}
-        </span>
-        <div className="flex items-center gap-2">
-          <select
-            value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); resetPaging(); }}
-            aria-label="Rows per page"
-            className="rounded-lg border border-divider-light bg-background px-1.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
-          >
-            {PAGE_SIZES.map((s) => <option key={s} value={s}>{s} / page</option>)}
-          </select>
-          <button type="button" onClick={() => setPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} aria-label="Previous page" className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40">
-            <ChevronLeft size={14} />
-          </button>
-          <span className="tabular-nums text-foreground">Page {currentPage} of {pageCount}</span>
-          <button type="button" onClick={() => setPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage >= pageCount} aria-label="Next page" className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40">
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <TablePager
+        slot={pagerSlot}
+        summary={(
+          <>
+            {view.length === 0
+              ? '0 rows'
+              : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} ${levels[0]?.name || 'row'}${levels.length > 1 ? ` · ${nodeTotal} rows across ${levels.length} levels` : ''}`}
+            {selected.size > 0 && ` · ${selected.size} selected`}
+          </>
+        )}
+        pageSize={pageSize}
+        onPageSizeChange={(n) => { setPageSize(n); resetPaging(); }}
+        currentPage={currentPage}
+        pageCount={pageCount}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

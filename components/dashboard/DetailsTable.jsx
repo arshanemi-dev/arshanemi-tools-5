@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
+import TablePager, { PAGE_SIZES } from './TablePager';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
 // Template-driven details table. `columns` = resolved header defs
@@ -26,15 +26,15 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 // DashboardWorkspace's debounced save actually succeeds; for a signed-out
 // user nothing ever saves, so it correctly stays on.
 //
-// Paginated client-side — `PAGE_SIZE` rows at a time, with Prev/Next + a
-// page-size picker in the footer. The page resets whenever the underlying
-// row set, a filter, or the sort changes, so it never gets stuck showing an
-// out-of-range empty page.
-const PAGE_SIZES = [25, 50, 100];
+// Paginated client-side — `pageSize` rows at a time, with Prev/Next + a
+// page-size picker (TablePager) in the footer, or wherever `pagerSlot`
+// points. The page resets whenever the underlying row set, a filter, or the
+// sort changes, so it never gets stuck showing an out-of-range empty page.
 
 export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, disableCostColumn = false, totalCount = null,
+  pagerSlot = null,
 }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
@@ -209,45 +209,23 @@ export default function DetailsTable({
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider px-3 py-2 text-xs text-subtle">
-        <span>
-          {view.length === 0 ? '0 rows' : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} row${view.length === 1 ? '' : 's'}`}
-          {totalCount != null && totalCount > view.length && (
-            <span className="ml-1 font-semibold text-action">(Total Extracted Dataset: {totalCount} rows)</span>
-          )}
-          {selected.size > 0 && ` · ${selected.size} selected`}
-        </span>
-
-        <div className="flex items-center gap-2">
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-            aria-label="Rows per page"
-            className="rounded-lg border border-divider-light bg-background px-1.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
-          >
-            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / page</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage <= 1}
-            aria-label="Previous page"
-            className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="tabular-nums text-foreground">Page {currentPage} of {pageCount}</span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            disabled={currentPage >= pageCount}
-            aria-label="Next page"
-            className="rounded-lg border border-divider-light p-1 text-muted transition-colors hover:bg-card-hover disabled:opacity-40"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+      <TablePager
+        slot={pagerSlot}
+        summary={(
+          <>
+            {view.length === 0 ? '0 rows' : `${pageStart + 1}–${Math.min(pageStart + pageSize, view.length)} of ${view.length} row${view.length === 1 ? '' : 's'}`}
+            {totalCount != null && totalCount > view.length && (
+              <span className="ml-1 font-semibold text-action">(Total Extracted Dataset: {totalCount} rows)</span>
+            )}
+            {selected.size > 0 && ` · ${selected.size} selected`}
+          </>
+        )}
+        pageSize={pageSize}
+        onPageSizeChange={setPageSize}
+        currentPage={currentPage}
+        pageCount={pageCount}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

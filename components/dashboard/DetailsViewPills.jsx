@@ -10,7 +10,14 @@ import Popover from './Popover';
 //    same full header list; persisted to /api/profit-loss/settings when
 //    signed in). The first header is always shown (it's the row key / sticky
 //    column).
-function Pill({ label, active, count, onClick, children }) {
+// `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
+// dashboard shows these; the default stays compact for the builder preview.
+const SIZES = {
+  sm: 'px-3 py-1.5 text-xs',
+  md: 'h-9 px-3 text-sm',
+};
+
+function Pill({ label, active, count, onClick, size, children }) {
   return (
     <Popover
       align="left"
@@ -19,7 +26,7 @@ function Pill({ label, active, count, onClick, children }) {
         <button
           type="button"
           onClick={onClick}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`inline-flex items-center gap-1.5 rounded-full border font-medium transition-colors ${SIZES[size] || SIZES.sm} ${
             active ? 'border-accent bg-accent/5 text-foreground' : 'border-divider-light bg-background text-muted hover:border-divider'
           }`}
         >
@@ -35,7 +42,7 @@ function Pill({ label, active, count, onClick, children }) {
   );
 }
 
-export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], myColumns = [], onMyColumnsChange }) {
+export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], myColumns = [], onMyColumnsChange, size = 'sm' }) {
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
   const myCount = 1 + toggleable.filter((h) => myColumns.includes(h.id)).length;
 
@@ -46,7 +53,7 @@ export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], 
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Pill label="My Details" active={mode === 'my'} count={myCount} onClick={() => onModeChange('my')}>
+      <Pill label="My Details" active={mode === 'my'} count={myCount} onClick={() => onModeChange('my')} size={size}>
         <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">Columns in “My Details”</div>
         {toggleable.length === 0 && <div className="px-2 py-2 text-sm text-muted">Only one column on this tab.</div>}
         {toggleable.map((h) => (
@@ -57,7 +64,7 @@ export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], 
         ))}
       </Pill>
 
-      <Pill label="All Details" active={mode === 'all'} onClick={() => onModeChange('all')}>
+      <Pill label="All Details" active={mode === 'all'} onClick={() => onModeChange('all')} size={size}>
         <div className="px-2 py-2 text-sm text-muted">Shows every saved header.</div>
       </Pill>
     </div>

@@ -37,7 +37,8 @@ function SectionLabel({ text, hidden, onShow }) {
 //
 // Edit mode works exactly like TabView's — layout.perTab[tab.id] — the
 // hierarchy column stays pinned, same rule as a regular Tab's first column.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys }) {
+// `pagerSlot` (optional) is handed straight to the tree table's pager.
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, pagerSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -186,6 +187,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               onToggleRow={onToggleRow}
               onToggleAll={onToggleAll}
               dirtyKeys={dirtyKeys}
+              pagerSlot={pagerSlot}
             />
           </div>
         </div>

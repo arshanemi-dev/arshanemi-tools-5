@@ -6,19 +6,27 @@ import DateRangeFilter from './DateRangeFilter';
 import AdsCostControl from './AdsCostControl';
 import IconButton from './IconButton';
 
-// Row B: "Dashboard" title + Reset / Company filter / Date, then Delete
-// (selected rows) + the output actions (Excel / PDF) on the far right —
-// matching the reference header row. No Apply button — every change here
-// debounces into effect on its own (see DashboardWorkspace's pending ->
-// applied effect); `updating` shows a brief "Updating…" hint while that
-// debounce is in flight. Save / History are hidden for now (props still flow
-// down from DashboardWorkspace so they're a one-line change to bring back).
-// Excel/PDF always export every uploaded row regardless of the date filter
-// shown here — see DashboardWorkspace's doExport. Total row count is shown
-// in DetailsTable's own footer, not up here. `onMenuClick` is only passed when
-// NEXT_PUBLIC_IS_Header_Hide removed the topbar (and its hamburger) — see
-// ProfitLossShell.
+// Row B: the active page's name as the title (the open Tab / Overview Tab /
+// Transactions — see DashboardWorkspace's activePageName) + Reset / the
+// table's page limit + row counts / Company filter / Date / My Details + All
+// Details, then Delete (selected rows) + the output actions (Excel / PDF) on
+// the far right. The page limit/counts and the My/All Details pills aren't
+// rendered here — this bar only provides the two empty `display: contents`
+// slots (pagerSlotRef / viewPillsSlotRef) that the active table and TabView
+// portal into, since that state lives with them.
+//
+// No Apply button — every change here debounces into effect on its own (see
+// DashboardWorkspace's pending -> applied effect); `updating` shows a brief
+// "Updating…" hint while that debounce is in flight. Save / History are
+// hidden for now (props still flow down from DashboardWorkspace so they're a
+// one-line change to bring back). Excel/PDF always export every uploaded row
+// regardless of the date filter shown here — see DashboardWorkspace's
+// doExport. `onMenuClick` is only passed when NEXT_PUBLIC_IS_Header_Hide
+// removed the topbar (and its hamburger) — see ProfitLossShell.
 export default function DashboardHeaderBar({
+  title = 'Dashboard',
+  pagerSlotRef,
+  viewPillsSlotRef,
   onMenuClick,
   onReset,
   showSetting,
@@ -50,14 +58,15 @@ export default function DashboardHeaderBar({
             <Menu size={20} />
           </button>
         )}
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} />
-    
+        <div ref={pagerSlotRef} className="contents" />
         <ValueFilter label="Companies" allLabel="All Companies" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
+        <div ref={viewPillsSlotRef} className="contents" />
         <AdsCostControl value={ads} onChange={onAdsChange} />
         {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
 

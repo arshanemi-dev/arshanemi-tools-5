@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import KpiCardRow from './KpiCardRow';
 import GraphStrip from './GraphStrip';
 import DetailsViewPills from './DetailsViewPills';
@@ -29,7 +30,12 @@ function SectionLabel({ text, hidden, onShow }) {
 // top of the template's own definition. The first table column is never
 // hideable/reorderable — it's the sticky row key, same rule "My Details"
 // already applies.
-export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null }) {
+//
+// `viewPillsSlot` / `pagerSlot` (optional DOM nodes): on /profit-loss the
+// My/All Details pills and the table's pager portal into DashboardHeaderBar
+// instead of sitting above/below the table. Template Settings' preview
+// passes neither and keeps them in place.
+export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -67,6 +73,17 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
       ? [tabHeaderDefs[0], ...tabHeaderDefs.slice(1).filter((h) => myColumns.includes(h.id))]
       : tabHeaderDefs;
 
+  const pills = (
+    <DetailsViewPills
+      mode={viewMode}
+      onModeChange={onViewModeChange}
+      tabHeaders={tabHeaderDefs}
+      myColumns={myColumns}
+      onMyColumnsChange={onMyColumnsChange}
+      size={viewPillsSlot ? 'md' : 'sm'}
+    />
+  );
+
   return (
     <div className="space-y-5">
       {allCards.length > 0 && (
@@ -89,18 +106,19 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
 
       {tabHeaderDefs.length > 0 && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {editMode ? (
-              <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />
-            ) : <span />}
-            <DetailsViewPills
-              mode={viewMode}
-              onModeChange={onViewModeChange}
-              tabHeaders={tabHeaderDefs}
-              myColumns={myColumns}
-              onMyColumnsChange={onMyColumnsChange}
-            />
-          </div>
+          {viewPillsSlot ? (
+            <>
+              {createPortal(pills, viewPillsSlot)}
+              {editMode && <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />}
+            </>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {editMode ? (
+                <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />
+              ) : <span />}
+              {pills}
+            </div>
+          )}
           <DetailsTable
             columns={columns}
             rows={resolved.tableRows}
@@ -113,6 +131,7 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
             onToggleAll={onToggleAll}
             dirtyKeys={dirtyKeys}
             totalCount={totalCount}
+            pagerSlot={pagerSlot}
           />
         </>
       )}
