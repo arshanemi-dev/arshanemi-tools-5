@@ -51,7 +51,7 @@ export default function TablePager({ summary, pageSize, onPageSizeChange, curren
   if (slot) {
     return createPortal(
       <>
-        <span className="inline-flex h-9 items-center rounded-full bg-card px-3 text-xs text-muted tabular-nums">{summary}</span>
+        {/* <span className="inline-flex h-9 items-center rounded-full bg-card px-3 text-xs text-muted tabular-nums">{summary}</span> */}
         <div className="inline-flex h-9 items-center gap-2 rounded-full border border-divider-light bg-background px-1.5 text-xs">
           {select}
           {nav}
