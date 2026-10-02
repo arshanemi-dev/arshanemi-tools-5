@@ -6,6 +6,7 @@ import { ACCEPT } from '@/lib/sheet/readAnyFile';
 import { columnLetter } from '@/lib/sheet/sheetLayout';
 import { extractSheetHeaders, readSheetsForHeaders, uniqueNames, withOrientation } from '@/lib/sheet/sheetHeaders';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
+import { slotExtractedHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 import { useToast } from '@/components/admin/Toast';
 import SheetLinePicker from './SheetLinePicker';
 import HeaderColumns from './HeaderColumns';
@@ -148,7 +149,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
           <span className="text-[11.5px] text-subtle">
             {slot.sourceFileName ? `${slot.sourceFileName} · ` : ''}
             {saved.length ? `${saved.filter((s) => s.include !== false).length} of ${saved.length} sheets · ` : `sheet “${slot.sheetNameHint || '—'}” · `}
-            {(slot.extractedHeaders || []).length} unique headers
+            {slotExtractedHeaders(slot).length} unique headers
           </span>
         )}
       </div>
@@ -245,7 +246,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
               ))}
             </ul>
           )}
-          <HeaderColumns headers={slot.extractedHeaders || []} />
+          <HeaderColumns headers={slotExtractedHeaders(slot)} />
         </div>
       ) : null}
     </div>

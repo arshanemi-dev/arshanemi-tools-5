@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { marketplaceUniqueHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
+import { marketplaceUniqueHeaders, slotExtractedHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
@@ -62,7 +62,7 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
 
   const unmapped = useMemo(() => {
     if (!activeSlot) return [];
-    return (activeSlot.extractedHeaders || [])
+    return slotExtractedHeaders(activeSlot)
       .filter((h) => !mappedSheetHeaders.has(`${activeSlot.id}::${h}`))
       .map((h) => ({ slotId: activeSlot.id, slotLabel: activeSlot.label, sheetHeader: h }));
   }, [activeSlot, mappedSheetHeaders]);
@@ -283,7 +283,7 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
               {!activeSlot && <li className="text-[11px] text-subtle">Pick a file on the left to see its mappings.</li>}
               {activeSlot && mappings.length === 0 && <li className="text-[11px] text-subtle">Nothing mapped yet.</li>}
               {mappings.map((m) => (
-                <li key={`${m.slotId}::${m.sheetHeader}`} className="flex items-center justify-between gap-2 rounded-md border border-divider bg-background p-1.5 text-[12px]">
+                <li key={`${m.slotId}::${m.sheetHeader}::${m.headerId}`} className="flex items-center justify-between gap-2 rounded-md border border-divider bg-background p-1.5 text-[12px]">
                   <span className="min-w-0 truncate">
                     <span className="text-subtle">{m.sheetHeader}</span> → <span className="font-medium text-foreground">{m.headerName}</span>
                   </span>

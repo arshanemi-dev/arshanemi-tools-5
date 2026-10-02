@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getStoredUser, clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
+import { clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
+import { useStoredUser } from '@/lib/useStoredUser';
 import { getMyTemplateAccess } from '@/lib/profitLoss/templatesApi';
 import DashboardTopbar from './DashboardTopbar';
 import DashboardWorkspace from './DashboardWorkspace';
@@ -13,7 +14,11 @@ const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
 // works fully signed-out — sign-in only unlocks My Details + History, and
 // master_admin / granted users additionally get the Template Settings entry.
 export default function ProfitLossShell() {
-  const [user, setUser] = useState(() => (isLoggedIn() ? getStoredUser() : null));
+  // undefined until hydrated (see useStoredUser), then the stored user or
+  // null; /api/auth/me's fresher profile is layered on top once it lands.
+  const storedUser = useStoredUser();
+  const [profile, setProfile] = useState(null);
+  const user = storedUser && profile ? { ...storedUser, ...profile } : storedUser;
   const [canManageTemplates, setCanManageTemplates] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
 
@@ -21,7 +26,7 @@ export default function ProfitLossShell() {
     if (!isLoggedIn()) return;
     authFetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
-      .then((p) => p && setUser((u) => ({ ...u, ...p })))
+      .then((p) => p && setProfile(p))
       .catch(() => {});
     getMyTemplateAccess()
       .then(({ ok, data }) => { if (ok) setCanManageTemplates(!!data.allowed); })

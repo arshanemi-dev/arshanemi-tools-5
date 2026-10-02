@@ -193,8 +193,14 @@ export default function TemplateBuilder() {
     ? globalDraft.config
     : { ...globalDraft.config, marketplace: draft.config?.marketplace };
 
-  const loading = isGlobal ? globalDraft.loading : draft.loading;
-  const loadError = isGlobal ? globalDraft.loadError : draft.loadError;
+  // A marketplace view also waits for Global Settings: its mappings are
+  // checked against the global headers, and until those load the header list
+  // is just the empty starter config (Order Id + Transaction Id). Rendering
+  // before then made every other mapping look "deleted" — Save was blocked
+  // ("maps … to an unknown header") and the stale-mapping banner offered to
+  // remove them all, which is how Meesho was left with only those two.
+  const loading = isGlobal ? globalDraft.loading : draft.loading || globalDraft.loading;
+  const loadError = isGlobal ? globalDraft.loadError : draft.loadError || globalDraft.loadError;
 
   return (
     <div className="flex h-full min-h-0">
@@ -255,7 +261,9 @@ export default function TemplateBuilder() {
             </div>
           </div>
         ) : loadError ? (
-          <div className="p-10 text-center text-sm text-neg">This marketplace could not be loaded.</div>
+          <div className="p-10 text-center text-sm text-neg">
+            {globalDraft.loadError ? 'Global Settings could not be loaded' : 'This marketplace could not be loaded'} — reload the page to try again.
+          </div>
         ) : loading ? (
           <div className="flex flex-1 items-center justify-center text-muted"><Loader2 className="animate-spin" size={26} /></div>
         ) : (

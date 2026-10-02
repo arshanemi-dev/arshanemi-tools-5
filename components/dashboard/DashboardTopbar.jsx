@@ -7,7 +7,9 @@ import UserMenu from './UserMenu';
 import { redirectToLogin } from '@/lib/authGate';
 
 // The dark navbar: logo, a centered "Profit & loss" label, and login / account.
-// (Previously showed the full data/nav.js multi-tool link row.)
+// (Previously showed the full data/nav.js multi-tool link row.) `user` is
+// undefined until the browser has read the stored session (useStoredUser) —
+// an empty slot then, so neither "Log in" nor the menu flashes the wrong way.
 export default function DashboardTopbar({ user, onLogout, onMenuClick }) {
   return (
     <header className="sticky top-0 z-50 flex-shrink-0 border-b border-white/10 bg-footer">
@@ -35,7 +37,9 @@ export default function DashboardTopbar({ user, onLogout, onMenuClick }) {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
-            {user ? (
+            {user === undefined ? (
+              <span aria-hidden="true" className="block h-9 w-9" />
+            ) : user ? (
               <UserMenu user={user} onLogout={onLogout} />
             ) : (
               <button

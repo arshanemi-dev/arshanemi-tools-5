@@ -34,7 +34,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en-IN" suppressHydrationWarning>
+    <html lang="en-IN" suppressHydrationWarning data-scroll-behavior="smooth">
       <head>
         <link rel="icon" type="image/png" href="/images/barmeto-logo.png" />
         <link rel="shortcut icon" type="image/png" href="/images/barmeto-logo.png" />

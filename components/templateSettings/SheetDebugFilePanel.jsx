@@ -5,6 +5,7 @@ import { Copy, Loader2 } from 'lucide-react';
 import { detectPlatform, getPlatform, pickBestTab } from '@/data/platforms/index';
 import { normHeader } from '@/data/platforms/canonical';
 import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
+import { slotExtractedHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 import { normalizeOrderId } from '@/lib/profitLoss/resolveTemplate';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
@@ -47,7 +48,7 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
   const headerMatch = useMemo(() => {
     if (!activeTab || !slot) return null;
     const { ok, missing } = matchSlotHeaders(slot, activeTab.headerRow, { wb: parsed });
-    const savedHeaders = slot.extractedHeaders || [];
+    const savedHeaders = slotExtractedHeaders(slot);
     const savedSet = new Set(savedHeaders.map(normHeader));
     const mappedByNorm = new Map((slot.mappings || []).map((m) => [normHeader(m.sheetHeader), m]));
     const columns = activeTab.headerRow.filter(Boolean).map((h) => {

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { getStoredUser, clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
+import { clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
+import { useStoredUser } from '@/lib/useStoredUser';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
 const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
@@ -14,13 +15,16 @@ const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
 // label and which of the two builder-area links to show (never a self-link).
 export default function TemplateSettingsChrome({ children, page = 'template-settings' }) {
   const isDebug = page === 'debug';
-  const [user, setUser] = useState(() => (isLoggedIn() ? getStoredUser() : null));
+  // Same hydration-safe user as ProfitLossShell — see useStoredUser.
+  const storedUser = useStoredUser();
+  const [profile, setProfile] = useState(null);
+  const user = storedUser && profile ? { ...storedUser, ...profile } : storedUser;
 
   useEffect(() => {
     if (!isLoggedIn()) return;
     authFetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
-      .then((p) => p && setUser((u) => ({ ...u, ...p })))
+      .then((p) => p && setProfile(p))
       .catch(() => {});
   }, []);
 

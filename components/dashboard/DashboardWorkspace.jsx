@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { listLiveTemplates } from '@/lib/profitLoss/templatesApi';
+import { failureMessage, listLiveTemplates } from '@/lib/profitLoss/templatesApi';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
@@ -34,6 +34,7 @@ import MergedCommonHeadersTable from './MergedCommonHeadersTable';
 import HistoryDrawer from './HistoryDrawer';
 import NoMarketplaces from './NoMarketplaces';
 import NoTemplateSidebar from './NoTemplateSidebar';
+import TemplatesLoadError from './TemplatesLoadError';
 import NextLevelSheetDebugger from '@/components/templateSettings/NextLevelSheetDebugger';
 
 const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
@@ -77,19 +78,32 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const [globalConfig, setGlobalConfig] = useState(null);
   const [templatesReady, setTemplatesReady] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState(null);
+  // A failed load (hub unreachable / restarting, server error) is its own
+  // state — never treated as "zero marketplaces" — so the page can say why
+  // and offer Try again (TemplatesLoadError) instead of "No marketplaces yet".
+  const [templatesError, setTemplatesError] = useState(null);
 
-  useEffect(() => {
-    listLiveTemplates()
-      .then(({ ok, data }) => {
-        const live = ok && Array.isArray(data?.templates) ? data.templates : [];
-        setGlobalConfig(ok ? data?.global || {} : {});
-        if (live.length) {
-          setTemplates(live);
-          setActiveTemplateId(live[0].id);
-        }
-      })
-      .finally(() => setTemplatesReady(true));
-  }, []);
+  // State is only set inside the promise callbacks (never synchronously) —
+  // the first load runs from the mount effect with the initial "loading, no
+  // error" state already in place; Try again (retryTemplates) resets that
+  // state itself first.
+  const fetchTemplates = useCallback(() => listLiveTemplates()
+    .then((res) => {
+      if (!res.ok) { setTemplatesError(failureMessage(res, 'Could not load the marketplaces')); return; }
+      const live = Array.isArray(res.data?.templates) ? res.data.templates : [];
+      setGlobalConfig(res.data?.global || {});
+      setTemplates(live);
+      setActiveTemplateId((cur) => (live.some((t) => t.id === cur) ? cur : live[0]?.id ?? null));
+    })
+    .catch((err) => setTemplatesError(failureMessage(err, 'Could not load the marketplaces')))
+    .finally(() => setTemplatesReady(true)), []);
+
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+  const retryTemplates = () => {
+    setTemplatesReady(false);
+    setTemplatesError(null);
+    fetchTemplates();
+  };
 
   const activeMarketplace = useMemo(
     () => templates.find((t) => t.id === activeTemplateId) || templates[0],
@@ -836,6 +850,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 className="animate-spin text-muted" size={28} />
+      </div>
+    );
+  }
+  if (templatesError) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <NoTemplateSidebar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
+        <TemplatesLoadError message={templatesError} onRetry={retryTemplates} />
       </div>
     );
   }
