@@ -13,13 +13,17 @@ const OTP_SECONDS = 60
 // used to bounce those accounts to a second, near-duplicate page at
 // /settings/login, which no longer exists now that the local admin shell
 // (Companies/Users/Theme) has been removed in favor of the hub admin panel.
-// Every role lands on /listing-tools after signing in by default — or back
-// on whatever page sent them here via ?next=, e.g. the shared
-// login-required modal (components/auth/LoginRequiredModal.jsx).
+// Every role lands on /profit-loss after signing in by default (this was
+// /listing-tools, a tools-4 page that 404s here) — or back on whatever page
+// sent them here via ?next=, e.g. the shared login-required modal
+// (components/auth/LoginRequiredModal.jsx). Only same-site paths are
+// honoured, so a crafted ?next=https://… can't bounce someone off-site.
+const safeNext = (v) => (typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\') ? v : '/profit-loss')
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') || '/listing-tools'
+  const next = safeNext(searchParams.get('next'))
   const [step, setStep] = useState('credentials') // 'credentials' | 'otp'
   const [form, setForm] = useState({ identifier: '', password: '' })
   const [otp, setOtp] = useState(['', '', '', '', '', ''])

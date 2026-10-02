@@ -115,6 +115,8 @@ function WalletCard({ profile }) {
   )
 }
 
+const NO_PINCODE_CHECK = { code: null, status: 'idle', message: '' }
+
 // Shared profile experience — rendered at /profile for every role, inside
 // the public dashboard shell with DashboardTopbar. Fully self-contained:
 // fetches its own data via /api/auth/me (cookie or Bearer auth), so it
@@ -130,24 +132,27 @@ export default function ProfileContent() {
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const [pincodeStatus, setPincodeStatus] = useState('idle') // idle | checking | valid | invalid
-  const [pincodeMessage, setPincodeMessage] = useState('')
+  // The last pincode lookup's result, tagged with the pincode it was for —
+  // the status shown is derived from it below, so the lookup effect never has
+  // to reset anything synchronously.
+  const [pincodeCheck, setPincodeCheck] = useState(NO_PINCODE_CHECK)
 
-  async function load() {
-    setError(false)
-    try {
-      const [profileRes, subRes] = await Promise.all([
-        fetch('/api/auth/me'),
-        fetch('/api/admin/subscription').catch(() => null),
-      ])
-      if (!profileRes.ok) throw new Error()
-      const data = await profileRes.json()
-      setProfile(data)
-      setForm(formFromProfile(data))
-      setSubscription(subRes?.ok ? await subRes.json() : null)
-    } catch {
-      setError(true)
-    }
+  // State only changes inside the promise callbacks (the mount effect below
+  // calls this directly); `error` already starts false.
+  function load() {
+    return Promise.all([
+      fetch('/api/auth/me'),
+      fetch('/api/admin/subscription').catch(() => null),
+    ])
+      .then(async ([profileRes, subRes]) => {
+        if (!profileRes.ok) throw new Error()
+        const data = await profileRes.json()
+        const sub = subRes?.ok ? await subRes.json() : null
+        setProfile(data)
+        setForm(formFromProfile(data))
+        setSubscription(sub)
+      })
+      .catch(() => setError(true))
   }
 
   useEffect(() => { load() }, [])
@@ -159,50 +164,48 @@ export default function ProfileContent() {
   function startEdit() {
     setForm(formFromProfile(profile))
     setFormError('')
-    setPincodeStatus('idle')
-    setPincodeMessage('')
+    setPincodeCheck(NO_PINCODE_CHECK)
     setEditing(true)
   }
 
   function cancelEdit() {
     setForm(formFromProfile(profile))
     setFormError('')
-    setPincodeStatus('idle')
-    setPincodeMessage('')
+    setPincodeCheck(NO_PINCODE_CHECK)
     setEditing(false)
   }
 
-  // Debounced pincode → state/city lookup while editing.
-  useEffect(() => {
-    if (!editing) return
-    const code = form?.addressPincode?.trim()
-    if (!code || code.length !== 6) { setPincodeStatus('idle'); setPincodeMessage(''); return }
+  // Debounced pincode → state/city lookup while editing. Status is derived:
+  // not editing / not 6 digits → idle; a 6-digit code with no result of its
+  // own yet → checking (so a previous code's "valid" never shows for a new one).
+  const pincode = editing ? form?.addressPincode?.trim() || '' : ''
+  const pincodeReady = pincode.length === 6
+  const pincodeStatus = !pincodeReady ? 'idle' : pincodeCheck.code === pincode ? pincodeCheck.status : 'checking' // idle | checking | valid | invalid
+  const pincodeMessage = pincodeReady && pincodeCheck.code === pincode ? pincodeCheck.message : ''
 
-    setPincodeStatus('checking')
+  useEffect(() => {
+    if (!pincodeReady) return
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geo/pincode/${code}`)
+        const res = await fetch(`/api/geo/pincode/${pincode}`)
         const data = await res.json()
         if (data.valid) {
-          setPincodeStatus('valid')
-          setPincodeMessage('')
+          setPincodeCheck({ code: pincode, status: 'valid', message: '' })
           setForm((f) => ({
             ...f,
             addressState: data.state || f.addressState,
             addressCity: data.city || f.addressCity,
           }))
         } else {
-          setPincodeStatus('invalid')
-          setPincodeMessage(data.message || 'Invalid pincode')
+          setPincodeCheck({ code: pincode, status: 'invalid', message: data.message || 'Invalid pincode' })
         }
       } catch {
-        setPincodeStatus('invalid')
-        setPincodeMessage('Could not verify pincode')
+        setPincodeCheck({ code: pincode, status: 'invalid', message: 'Could not verify pincode' })
       }
     }, 500)
 
     return () => clearTimeout(timer)
-  }, [form?.addressPincode, editing])
+  }, [pincode, pincodeReady])
 
   const stateOptions = useMemo(() => {
     const names = new Set(INDIA_STATES)

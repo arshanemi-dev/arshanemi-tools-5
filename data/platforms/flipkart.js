@@ -11,7 +11,7 @@ function mapStatus(raw) {
   return STATUS.DELIVERED; // 'completed', 'delivered', 'shipped'
 }
 
-export default {
+const flipkartPlatform = {
   id: 'flipkart',
   label: 'Flipkart',
   color: '#2874f0',
@@ -59,3 +59,5 @@ export default {
     });
   },
 };
+
+export default flipkartPlatform;

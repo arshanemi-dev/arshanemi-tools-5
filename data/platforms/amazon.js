@@ -13,7 +13,7 @@ function mapType(raw) {
   return STATUS.DELIVERED;
 }
 
-export default {
+const amazonPlatform = {
   id: 'amazon',
   label: 'Amazon',
   color: '#ff9900',
@@ -64,3 +64,5 @@ export default {
     });
   },
 };
+
+export default amazonPlatform;

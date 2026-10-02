@@ -11,7 +11,7 @@ function mapStatus(raw) {
   return STATUS.DELIVERED; // 'settled'
 }
 
-export default {
+const myntraPlatform = {
   id: 'myntra',
   label: 'Myntra',
   color: '#ff3f6c',
@@ -62,3 +62,5 @@ export default {
     });
   },
 };
+
+export default myntraPlatform;

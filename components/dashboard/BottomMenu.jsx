@@ -33,7 +33,7 @@ export default function BottomMenu({ user }) {
     } finally {
       clearAuthTokens();
       // Not '/login' — this app doesn't require login just to look at it,
-      // see lib/authGate.js. '/' forwards into /listing-tools.
+      // see lib/authGate.js. '/' forwards into /profit-loss.
       window.location.href = '/';
     }
   }

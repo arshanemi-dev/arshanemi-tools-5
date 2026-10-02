@@ -13,7 +13,7 @@ function mapStatus(payoutStatus, settlement) {
   return STATUS.DELIVERED;
 }
 
-export default {
+const jiomartPlatform = {
   id: 'jiomart',
   label: 'JioMart',
   color: '#0093d3',
@@ -61,3 +61,5 @@ export default {
     });
   },
 };
+
+export default jiomartPlatform;

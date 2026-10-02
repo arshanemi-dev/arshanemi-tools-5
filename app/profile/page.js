@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { isLoggedIn, getStoredUser, clearAuthTokens } from '@/lib/tokenStore'
+import { isLoggedIn, clearAuthTokens } from '@/lib/tokenStore'
+import { useStoredUser } from '@/lib/useStoredUser'
 import { ToastProvider } from '@/components/admin/Toast'
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar'
 import BottomMenu from '@/components/dashboard/BottomMenu'
@@ -16,18 +17,16 @@ const BOTTOM_MENU_SHOWN = process.env.NEXT_PUBLIC_SHOW_FLOATING_MENU === 'true'
 // panel at /settings was removed in favor of the hub admin panel).
 export default function ProfilePage() {
   const router = useRouter()
-  const [authStatus, setAuthStatus] = useState('checking') // checking | authed
-  const [user, setUser] = useState(null)
+  // undefined until hydrated (see useStoredUser) — then the stored user, or
+  // null. Signed out (no session at all) → off to /login; a session with no
+  // stored user object still renders, as before.
+  const user = useStoredUser()
+  const signedOut = user === null && !isLoggedIn()
   const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace('/login')
-      return
-    }
-    setUser(getStoredUser())
-    setAuthStatus('authed')
-  }, [router])
+    if (signedOut) router.replace('/login')
+  }, [signedOut, router])
 
   async function handleLogout() {
     setLoggingOut(true)
@@ -36,12 +35,12 @@ export default function ProfilePage() {
     } finally {
       clearAuthTokens()
       // Not '/login' — this app doesn't require login just to look at it,
-      // see lib/authGate.js. '/' forwards into /listing-tools.
+      // see lib/authGate.js. '/' forwards into /profit-loss.
       window.location.href = '/'
     }
   }
 
-  if (authStatus !== 'authed') {
+  if (user === undefined || signedOut) {
     return <div className="min-h-screen bg-background" />
   }
 

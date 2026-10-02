@@ -2,7 +2,7 @@
 
 import '@/lib/tokenHandoff' // side effect only — must run before any auth check below
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react'
 import { defaultTheme } from '@/data/defaultTheme'
 
 // Same key the anti-FOUC inline <Script id="theme-init"> in app/layout.js
@@ -13,6 +13,24 @@ const THEME_CACHE_KEY = 'barmeto-theme-config'
 const THEME_CACHE_TTL = 10 * 60 * 1000 // 10 min
 
 const ThemeContext = createContext({ theme: 'light', siteTheme: defaultTheme })
+
+// The cached theme (still within its TTL), or null. Same object back while
+// the stored string is unchanged — useSyncExternalStore needs a stable value.
+let cachedThemeMemo = { raw: undefined, data: null }
+function readCachedTheme() {
+  let raw = null
+  try { raw = localStorage.getItem(THEME_CACHE_KEY) } catch {}
+  if (raw !== cachedThemeMemo.raw) {
+    let data = null
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && Date.now() - parsed.ts < THEME_CACHE_TTL && parsed.data?.mode) data = parsed.data
+    } catch {}
+    cachedThemeMemo = { raw, data }
+  }
+  return cachedThemeMemo.data
+}
+const noSubscribe = () => () => {}
 
 function hexToRgb(hex) {
   const r = parseInt(hex.slice(1, 3), 16)
@@ -80,22 +98,20 @@ function applyFullTheme(siteTheme) {
 }
 
 export function ThemeProvider({ children }) {
-  const [siteTheme, setSiteTheme] = useState(defaultTheme)
+  // Context value: the freshly fetched theme once it lands, else the cached
+  // one, else the defaults. The cache is read hydration-safely (null on the
+  // server and during hydration, then the stored value), so nothing has to
+  // be copied into state from an effect.
+  const cachedTheme = useSyncExternalStore(noSubscribe, readCachedTheme, () => null)
+  const [fetchedTheme, setFetchedTheme] = useState(null)
+  const siteTheme = fetchedTheme || cachedTheme || defaultTheme
 
   useEffect(() => {
     // Cached theme applies instantly (avoids FOUC while the fresh fetch below
     // runs) — same cache + key the inline <Script> in app/layout.js reads
     // before hydration.
-    try {
-      const raw = localStorage.getItem(THEME_CACHE_KEY)
-      if (raw) {
-        const { data, ts } = JSON.parse(raw)
-        if (Date.now() - ts < THEME_CACHE_TTL && data?.mode) {
-          setSiteTheme(data)
-          applyFullTheme(data)
-        }
-      }
-    } catch {}
+    const cached = readCachedTheme()
+    if (cached) applyFullTheme(cached)
 
     // Always fire this first, on every hard reload — /api/admin/theme is
     // itself connect-mode aware (see app/api/admin/theme/route.js: proxies to
@@ -105,7 +121,7 @@ export function ThemeProvider({ children }) {
     fetch('/api/admin/theme')
       .then(r => r.json())
       .then(data => {
-        setSiteTheme(data)
+        setFetchedTheme(data)
         applyFullTheme(data)
         localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }))
       })

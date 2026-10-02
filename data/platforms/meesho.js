@@ -24,7 +24,7 @@ function mapStatus(raw) {
   return STATUS.DELIVERED;
 }
 
-export default {
+const meeshoPlatform = {
   id: 'meesho',
   label: 'Meesho',
   color: '#f5308c',
@@ -70,3 +70,5 @@ export default {
     });
   },
 };
+
+export default meeshoPlatform;

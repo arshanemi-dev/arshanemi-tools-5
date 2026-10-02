@@ -1,22 +1,22 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 
 // confirmText (optional) — if provided, user must type it exactly before Delete is enabled
-export default function ConfirmDialog({
-  open, title, description,
+export default function ConfirmDialog({ open, ...props }) {
+  // The body only mounts while open, so its type-to-confirm input starts
+  // empty on every open — no effect needed to clear it.
+  if (!open) return null
+  return <ConfirmDialogBody {...props} />
+}
+
+function ConfirmDialogBody({
+  title, description,
   onConfirm, onCancel, loading,
   confirmText,
   confirmLabel = 'Delete',
 }) {
   const [typed, setTyped] = useState('')
-
-  // clear input each time the dialog opens
-  useEffect(() => {
-    if (open) setTyped('')
-  }, [open])
-
-  if (!open) return null
 
   const canConfirm = confirmText ? typed === confirmText : true
 
@@ -67,7 +67,7 @@ export default function ConfirmDialog({
               }`}
             />
             {typed && typed !== confirmText && (
-              <p className="text-xs text-red-500 mt-1">Name doesn't match</p>
+              <p className="text-xs text-red-500 mt-1">Name doesn&rsquo;t match</p>
             )}
           </div>
         )}

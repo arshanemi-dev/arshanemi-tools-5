@@ -59,7 +59,7 @@ function mapStatus(raw) {
   return STATUS.DELIVERED;
 }
 
-export default {
+const manualPlatform = {
   id: 'manual',
   label: 'Manual',
   color: '#6b7280',
@@ -95,3 +95,5 @@ export default {
     });
   },
 };
+
+export default manualPlatform;

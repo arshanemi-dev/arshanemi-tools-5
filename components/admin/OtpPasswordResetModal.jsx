@@ -16,7 +16,14 @@ const OTP_DISABLED = process.env.NEXT_PUBLIC_IS_OTP_Verifications_Disable === 't
 // true, the 'otp' step is skipped entirely — identifier goes straight to
 // verify-otp with a dummy code (the backend's verifyOTP() bypasses
 // unconditionally) to fetch the resetToken and land on 'password'.
-export default function OtpPasswordResetModal({ open, identifier: fixedIdentifier, onClose, onDone }) {
+export default function OtpPasswordResetModal({ open, ...props }) {
+  // The flow only mounts while open, so every open starts from its initial
+  // state below (empty fields, first step) — no effect resetting six fields.
+  if (!open) return null
+  return <OtpResetFlow {...props} />
+}
+
+function OtpResetFlow({ identifier: fixedIdentifier, onClose, onDone }) {
   const [step, setStep] = useState('identifier') // identifier | otp | password | done
   const [identifier, setIdentifier] = useState(fixedIdentifier || '')
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
@@ -25,28 +32,11 @@ export default function OtpPasswordResetModal({ open, identifier: fixedIdentifie
   const [confirm, setConfirm] = useState('')
   const [timer, setTimer] = useState(0)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  // A known identifier (Profile's "Change Password") sends the OTP the
+  // moment the flow opens — so it starts out loading.
+  const [loading, setLoading] = useState(!!fixedIdentifier?.trim())
   const intervalRef = useRef(null)
   const inputRefs = useRef([])
-
-  useEffect(() => {
-    if (!open) return
-    setError('')
-    setOtp(['', '', '', '', '', ''])
-    setResetToken('')
-    setPassword('')
-    setConfirm('')
-    if (fixedIdentifier) {
-      setIdentifier(fixedIdentifier)
-      sendOtp(fixedIdentifier)
-    } else {
-      setIdentifier('')
-      setStep('identifier')
-    }
-    // Only re-run when the modal is opened — sendOtp is intentionally excluded
-    // to avoid re-firing on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
 
   useEffect(() => {
     if (timer <= 0) { clearInterval(intervalRef.current); return }
@@ -54,48 +44,51 @@ export default function OtpPasswordResetModal({ open, identifier: fixedIdentifie
     return () => clearInterval(intervalRef.current)
   }, [timer])
 
-  async function sendOtp(id) {
+  // The network half of sending the OTP. Every state update happens in a
+  // promise callback, so the open-effect below can call it directly; the
+  // button goes through sendOtp, which shows "Sending…" first.
+  function requestOtp(id) {
+    const ident = id.trim()
+    const call = OTP_DISABLED
+      ? fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: ident, otpCode: '000000' }),
+        })
+      : fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: ident, type: ident.includes('@') ? 'email' : 'mobile' }),
+        })
+    return call
+      .then(async (res) => ({ res, data: await res.json() }))
+      .then(({ res, data }) => {
+        if (!res.ok) { setError(data.error || (OTP_DISABLED ? 'Could not verify identity' : 'Failed to send OTP')); return }
+        if (OTP_DISABLED) {
+          setResetToken(data.resetToken)
+          setStep('password')
+          return
+        }
+        setStep('otp')
+        setOtp(['', '', '', '', '', ''])
+        setTimer(OTP_SECONDS)
+      })
+      .catch(() => setError('Network error — please try again'))
+      .finally(() => setLoading(false))
+  }
+
+  function sendOtp(id) {
     if (!id?.trim()) return
     setError('')
     setLoading(true)
-
-    if (OTP_DISABLED) {
-      try {
-        const res = await fetch('/api/auth/verify-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: id.trim(), otpCode: '000000' }),
-        })
-        const data = await res.json()
-        if (!res.ok) { setError(data.error || 'Could not verify identity'); return }
-        setResetToken(data.resetToken)
-        setStep('password')
-      } catch {
-        setError('Network error — please try again')
-      } finally {
-        setLoading(false)
-      }
-      return
-    }
-
-    try {
-      const type = id.includes('@') ? 'email' : 'mobile'
-      const res = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: id.trim(), type }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Failed to send OTP'); return }
-      setStep('otp')
-      setOtp(['', '', '', '', '', ''])
-      setTimer(OTP_SECONDS)
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
+    return requestOtp(id)
   }
+
+  useEffect(() => {
+    if (fixedIdentifier?.trim()) requestOtp(fixedIdentifier)
+    // Once per open — the flow remounts every time the modal opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleOtpChange(val, idx) {
     if (!/^\d?$/.test(val)) return
@@ -154,7 +147,7 @@ export default function OtpPasswordResetModal({ open, identifier: fixedIdentifie
   const titles = { identifier: 'Reset Password', otp: 'Verify OTP', password: 'Set New Password', done: 'Password Updated' }
 
   return (
-    <Modal open={open} onClose={onClose} title={titles[step]}>
+    <Modal open onClose={onClose} title={titles[step]}>
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
       )}
