@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Check, Eye, Globe, History, Loader2, PanelLeft, Store, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import { makeEmptyMarketplaceConfig } from '@/data/templateSchema';
-import { listTemplates, createTemplate, patchTemplate, deleteTemplate } from '@/lib/profitLoss/templatesApi';
+import { listTemplates, createTemplate, patchTemplate, deleteTemplate, failureMessage, validationMessage } from '@/lib/profitLoss/templatesApi';
 import useTemplateDraft from './useTemplateDraft';
 import useMarketplaceMappingSaver from './useMarketplaceMappingSaver';
 import useGlobalTemplateDraft from './useGlobalTemplateDraft';
@@ -139,11 +139,19 @@ export default function TemplateBuilder() {
   const organizerOpen = ['tabsOrganizer', 'overviewOrganizer'].includes(selection.__focus); // preview shows the new tab order live
   const showPreview = isGlobal && (organizerOpen || !!focusList?.some((it) => it.id === selection[selection.__focus]));
 
+  // Every failure toast says why (failureMessage / validationMessage) — a
+  // thrown request (no response at all) used to fail with no toast whatsoever.
   async function saveGlobalDraft({ major = false } = {}) {
-    if (!globalDraft.valid) { addToast(`Fix ${globalDraft.errors.length} error(s) first`, 'error'); return; }
-    const res = await globalDraft.saveDraft({ major });
+    if (!globalDraft.valid) { addToast(validationMessage(globalDraft.errors), 'error'); return; }
+    let res;
+    try {
+      res = await globalDraft.saveDraft({ major });
+    } catch (err) {
+      addToast(failureMessage(err, 'Save failed'), 'error');
+      return;
+    }
     if (!res.ok) {
-      addToast(res.error || 'Save failed', 'error');
+      addToast(failureMessage(res, 'Save failed'), 'error');
       if (res.details?.length) console.error('global config validation:', res.details);
       return;
     }
@@ -152,10 +160,16 @@ export default function TemplateBuilder() {
 
   async function saveMarketplace() {
     if (!marketplaceId) return;
-    if (!draft.valid) { addToast(`Fix ${draft.errors.length} error(s) first`, 'error'); return; }
-    const res = await draft.save();
+    if (!draft.valid) { addToast(validationMessage(draft.errors), 'error'); return; }
+    let res;
+    try {
+      res = await draft.save();
+    } catch (err) {
+      addToast(failureMessage(err, 'Save failed'), 'error');
+      return;
+    }
     if (!res.ok) {
-      addToast(res.error || 'Save failed', 'error');
+      addToast(failureMessage(res, 'Save failed'), 'error');
       if (res.details?.length) console.error('template validation:', res.details);
       return;
     }

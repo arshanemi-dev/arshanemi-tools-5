@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
-import { proxyAdminCall, authHeaderFrom } from '@/lib/connect'
+import { proxyAdminCall, authHeaderFrom, hubUnreachable } from '@/lib/connect'
 
 export const runtime = 'nodejs'
 
@@ -26,8 +26,8 @@ async function forward(req, params, method) {
       authHeader: authHeaderFrom(req),
     })
     return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } })
-  } catch {
-    return NextResponse.json({ error: 'Template service unavailable' }, { status: 503 })
+  } catch (err) {
+    return NextResponse.json({ error: hubUnreachable(err, target) }, { status: 503 })
   }
 }
 

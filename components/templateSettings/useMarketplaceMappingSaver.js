@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { makeEmptyMarketplaceConfig } from '@/data/templateSchema';
-import { putTemplateConfig } from '@/lib/profitLoss/templatesApi';
+import { failureMessage, putTemplateConfig } from '@/lib/profitLoss/templatesApi';
 
 // The global Header section's mapping edits (Mapped button, × on a mapped
 // column). Marketplaces are direct-save ("always show, no hide"), so each
@@ -22,16 +22,20 @@ export default function useMarketplaceMappingSaver(templates, setTemplates, addT
     setTemplates((list) => (list || []).map((x) => (x.id === mid ? { ...x, config: next } : x)));
     setInFlight((n) => n + 1);
     const run = (queueRef.current[mid] || Promise.resolve()).then(async () => {
-      const { ok, data } = await putTemplateConfig(mid, next);
-      if (!ok) {
+      const res = await putTemplateConfig(mid, next);
+      if (!res.ok) {
         setTemplates((list) => (list || []).map((x) => (x.id === mid ? { ...x, config: base } : x)));
-        addToast(data?.error || `Could not save the mapping for ${t.marketplaceName}`, 'error');
+        addToast(failureMessage(res, `Could not save the mapping for ${t.marketplaceName}`), 'error');
       }
-      return ok;
+      return res.ok;
     });
     queueRef.current[mid] = run.catch(() => {});
     return run
-      .catch(() => { addToast('Network error while saving the mapping', 'error'); return false; })
+      .catch((err) => {
+        setTemplates((list) => (list || []).map((x) => (x.id === mid ? { ...x, config: base } : x)));
+        addToast(failureMessage(err, `Could not save the mapping for ${t.marketplaceName}`), 'error');
+        return false;
+      })
       .finally(() => setInFlight((n) => n - 1));
   }, [templates, setTemplates, addToast]);
 

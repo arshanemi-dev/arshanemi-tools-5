@@ -164,7 +164,7 @@ export default function useGlobalTemplateDraft() {
       versionId = saved.version.id;
     }
     const res = await publishVersion(templateId, versionId, { live: true });
-    if (!res.ok) return { ok: false, error: res.data?.error || 'Publish failed' };
+    if (!res.ok) return { ok: false, status: res.status, error: res.data?.error || 'Publish failed' };
     await reloadMeta();
     setEditingDraft(false);
     return { ok: true, versionId };

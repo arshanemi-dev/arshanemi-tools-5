@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
-import { proxyAdminCall, authHeaderFrom } from '@/lib/connect'
+import { proxyAdminCall, authHeaderFrom, hubUnreachable } from '@/lib/connect'
 
 export const runtime = 'nodejs'
 
@@ -19,8 +19,8 @@ export async function GET(req) {
       authHeader: authHeaderFrom(req),
     })
     return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } })
-  } catch {
-    return NextResponse.json({ error: 'Template service unavailable' }, { status: 503 })
+  } catch (err) {
+    return NextResponse.json({ error: hubUnreachable(err, '/api/marketplace-templates') }, { status: 503 })
   }
 }
 
@@ -35,7 +35,7 @@ export async function POST(req) {
       authHeader: authHeaderFrom(req),
     })
     return NextResponse.json(data, { status })
-  } catch {
-    return NextResponse.json({ error: 'Template service unavailable' }, { status: 503 })
+  } catch (err) {
+    return NextResponse.json({ error: hubUnreachable(err, '/api/marketplace-templates') }, { status: 503 })
   }
 }

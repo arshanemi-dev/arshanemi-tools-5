@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Loader2, Rocket } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
+import { failureMessage, validationMessage } from '@/lib/profitLoss/templatesApi';
 
 // The dashboard ONLY ever renders the Global Settings' *live* version — Save
 // Draft alone never reaches it, which made new Tabs / Overview Tabs look
@@ -18,12 +19,18 @@ export function usePublishGlobal(draft) {
   const { addToast } = useToast();
   const [publishing, setPublishing] = useState(false);
   const publishNow = async () => {
-    if (!draft.valid) { addToast(`Fix ${draft.errors.length} error(s) first`, 'error'); return; }
+    if (!draft.valid) { addToast(validationMessage(draft.errors), 'error'); return; }
     setPublishing(true);
     try {
-      const res = await draft.saveAndPublish();
+      let res;
+      try {
+        res = await draft.saveAndPublish();
+      } catch (err) {
+        addToast(failureMessage(err, 'Publish failed'), 'error');
+        return;
+      }
       if (!res.ok) {
-        addToast(res.error || 'Publish failed', 'error');
+        addToast(failureMessage(res, 'Publish failed'), 'error');
         if (res.details?.length) console.error('global config validation:', res.details);
         return;
       }
