@@ -1,15 +1,17 @@
 'use client';
 
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import Popover from './Popover';
 
 // "My Details ▾" / "All Details ▾" — pick the active column set for the table.
-//  - All Details = every saved (global) header, not just the ones the admin
-//    bound to this tab — see TabView's restHeaderDefs.
-//  - My Details  = the user's saved subset (checklist here, drawn from that
-//    same full header list; persisted to /api/profit-loss/settings when
-//    signed in). The first header is always shown (it's the row key / sticky
-//    column).
+// Both dropdowns list every header the table can show (`tabHeaders` — on the
+// dashboard that's every header of the active version, see tabColumnDefs),
+// in table order, the same rows in both:
+//  - All Details = all of them, so its list is read-only (each one ticked).
+//  - My Details  = the user's saved subset — a checklist (persisted to
+//    /api/profit-loss/settings when signed in).
+// The first header is always shown in both (it's the row key / sticky
+// column), so it's tagged "key" in each list and locked in My Details.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows these; the default stays compact for the builder preview.
 const SIZES = {
@@ -42,7 +44,14 @@ function Pill({ label, active, count, onClick, size, children }) {
   );
 }
 
+const KeyTag = () => <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-subtle">key</span>;
+
+function ListTitle({ children }) {
+  return <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">{children}</div>;
+}
+
 export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], myColumns = [], onMyColumnsChange, size = 'sm' }) {
+  const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
   const myCount = 1 + toggleable.filter((h) => myColumns.includes(h.id)).length;
 
@@ -54,7 +63,14 @@ export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Pill label="My Details" active={mode === 'my'} count={myCount} onClick={() => onModeChange('my')} size={size}>
-        <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">Columns in “My Details”</div>
+        <ListTitle>Columns in “My Details”</ListTitle>
+        {keyHeader && (
+          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground" title="Row key — always shown">
+            <input type="checkbox" checked disabled readOnly className="accent-[var(--color-action)] opacity-60" />
+            <span className="min-w-0 truncate">{keyHeader.name}</span>
+            <KeyTag />
+          </div>
+        )}
         {toggleable.length === 0 && <div className="px-2 py-2 text-sm text-muted">Only one column on this tab.</div>}
         {toggleable.map((h) => (
           <label key={h.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-card-hover">
@@ -64,8 +80,15 @@ export default function DetailsViewPills({ mode, onModeChange, tabHeaders = [], 
         ))}
       </Pill>
 
-      <Pill label="All Details" active={mode === 'all'} onClick={() => onModeChange('all')} size={size}>
-        <div className="px-2 py-2 text-sm text-muted">Shows every saved header.</div>
+      <Pill label="All Details" active={mode === 'all'} count={tabHeaders.length} onClick={() => onModeChange('all')} size={size}>
+        <ListTitle>Columns in “All Details”</ListTitle>
+        {tabHeaders.map((h, i) => (
+          <div key={h.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground">
+            <Check size={13} className="shrink-0 text-action" />
+            <span className="min-w-0 truncate">{h.name}</span>
+            {i === 0 && <KeyTag />}
+          </div>
+        ))}
       </Pill>
     </div>
   );
