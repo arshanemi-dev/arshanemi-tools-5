@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Check as CheckIcon, Filter, Lock, Pencil, Trash2, X } from 'lucide-react';
 import Popover from '@/components/dashboard/Popover';
 import { mappedColumnsByHeader, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
+import { DEFAULT_LIST_SORT, sortItems } from '@/lib/profitLoss/listSort';
 
 const OUR_COL = '__our__';
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -64,14 +65,21 @@ function Check({ checked, onChange, label, disabled }) {
 // every marketplace column is multi-select. The Mapped button (HeaderSection)
 // merges the ticked marketplace headers into the ticked Our Header.
 //
-// Rows are always sorted "merged first": each mapped Our Header is one row
+// Rows are always grouped "merged first": each mapped Our Header is one row
 // with every marketplace's mapped headers as boxes to its right (× unmaps
 // one). Below that, the Unmapped block lists — independently per column —
 // the Our Headers with no mapping yet and each marketplace's headers not
-// mapped to anything. Every column has a text filter.
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false }) {
+// mapped to anything. Every column has a text filter. Our Headers within
+// each block follow `ourSort` (Name / Created — lib/profitLoss/listSort.js);
+// marketplace columns keep their sheet order. When the section passes
+// `ourQuery` / `onOurQuery` (HeaderSection's search box), that IS the Our
+// Header column's filter — typing in either place edits the same text.
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, onOurQuery, ourSort = DEFAULT_LIST_SORT }) {
   const [filters, setFilters] = useState({});
   const setFilter = (col) => (q) => setFilters((f) => ({ ...f, [col]: q }));
+  const ourFilter = ourQuery ?? filters[OUR_COL];
+  const setOurFilter = onOurQuery ?? setFilter(OUR_COL);
+  const ordered = useMemo(() => sortItems(headers, ourSort), [headers, ourSort]);
 
   const knownIds = useMemo(() => new Set(headers.map((h) => h.id)), [headers]);
 
@@ -87,10 +95,10 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     }), [marketplaces, knownIds]);
 
   const isMerged = (h) => columns.some((c) => (c.mapped.get(h.id) || []).length);
-  const mergedRows = headers.filter((h) => isMerged(h)
-    && matches(h.name, filters[OUR_COL])
+  const mergedRows = ordered.filter((h) => isMerged(h)
+    && matches(h.name, ourFilter)
     && columns.every((c) => !filters[c.id] || (c.mapped.get(h.id) || []).some((s) => matches(s, filters[c.id]))));
-  const ourUnmapped = headers.filter((h) => !isMerged(h) && matches(h.name, filters[OUR_COL]));
+  const ourUnmapped = ordered.filter((h) => !isMerged(h) && matches(h.name, ourFilter));
   const colUnmapped = columns.map((c) => c.unmapped.filter((o) => matches(o.name, filters[c.id])));
   const raggedCount = Math.max(ourUnmapped.length, ...colUnmapped.map((l) => l.length), columns.some((c) => !c.total) ? 1 : 0);
 
@@ -160,7 +168,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
         <thead className="sticky top-0 z-10 bg-background text-muted">
           <tr>
             <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
-              <ColumnHead label="Our Header" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} />
+              <ColumnHead label="Our Header" sub={`${headers.length}`} filter={ourFilter} onFilter={setOurFilter} />
             </th>
             {columns.map((c) => (
               <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">

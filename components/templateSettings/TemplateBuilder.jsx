@@ -9,7 +9,8 @@ import { listTemplates, createTemplate, patchTemplate, deleteTemplate } from '@/
 import useTemplateDraft from './useTemplateDraft';
 import useMarketplaceMappingSaver from './useMarketplaceMappingSaver';
 import useGlobalTemplateDraft from './useGlobalTemplateDraft';
-import BuilderSidebar from './BuilderSidebar';
+import BuilderSidebar, { GLOBAL_SECTIONS } from './BuilderSidebar';
+import GlobalSectionPicker from './GlobalSectionPicker';
 import BuilderPreview from './BuilderPreview';
 import HeaderSection from './HeaderSection';
 import TitleCardSection from './TitleCardSection';
@@ -21,6 +22,10 @@ import MarketPlaceSection from './MarketPlaceSection';
 import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
 import { GlobalPublishBanner, PublishButton, usePublishGlobal } from './GlobalPublish';
+
+function scrollToAnchor(anchor) {
+  if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
 
 // The single builder page. One left sidebar has two areas: Global Settings
 // (Header / Graph / Title Card / Tab / Overview Tab — one shared config
@@ -100,12 +105,21 @@ export default function TemplateBuilder() {
   };
 
   // `__focus` remembers which group was picked LAST (sidebar or a section's
-  // own list) — that item is what the live preview highlights.
+  // own list) — that item is what the live preview highlights. `__open` is
+  // the one Global Settings section shown in the main column: only ever set
+  // by a click (a sidebar row/group, or GlobalSectionPicker's chips), so
+  // nothing opens on its own, and it resets with the area like the rest.
   const onSelect = useCallback((group, id, anchor) => {
-    if (group && group !== '__jump__') setSelection((s) => ({ ...s, [group]: id, __focus: group }));
-    if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    if (group) setSelection((s) => ({ ...s, [group]: id, __focus: group, __open: group }));
+    scrollToAnchor(anchor);
     setNavOpen(false);
   }, [setSelection]);
+  const onOpenSection = useCallback((key, anchor) => {
+    setSelection((s) => ({ ...s, __open: key }));
+    scrollToAnchor(anchor);
+    setNavOpen(false);
+  }, [setSelection]);
+  const openSection = selection.__open ?? null;
 
   const sectionProps = (group) => ({
     draft: globalDraft,
@@ -177,6 +191,7 @@ export default function TemplateBuilder() {
         draft={draft}
         selection={selection}
         onSelect={onSelect}
+        onOpenSection={onOpenSection}
         templates={templates}
         activeTemplateId={marketplaceId}
         onSwitchTemplate={switchTo}
@@ -238,17 +253,25 @@ export default function TemplateBuilder() {
                   {isGlobal ? (
                     <>
                       <GlobalPublishBanner draft={globalDraft} publish={publishGlobal} />
-                      <HeaderSection
-                        {...sectionProps('header')}
-                        marketplaces={templates}
-                        mappingSaver={mappingSaver}
-                      />
-                      <GraphSection {...sectionProps('graph')} />
-                      <TitleCardSection {...sectionProps('titleCard')} />
-                      <TabSection {...sectionProps('tab')} />
-                      <TabsOrganizerSection draft={globalDraft} kind="tab" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
-                      <OverviewTabSection {...sectionProps('overview')} />
-                      <TabsOrganizerSection draft={globalDraft} kind="overview" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
+                      <GlobalSectionPicker sections={GLOBAL_SECTIONS} openKey={openSection} onOpen={onOpenSection} />
+                      {openSection === 'header' && (
+                        <HeaderSection
+                          {...sectionProps('header')}
+                          marketplaces={templates}
+                          mappingSaver={mappingSaver}
+                        />
+                      )}
+                      {openSection === 'graph' && <GraphSection {...sectionProps('graph')} />}
+                      {openSection === 'titleCard' && <TitleCardSection {...sectionProps('titleCard')} />}
+                      {openSection === 'tab' && <TabSection {...sectionProps('tab')} />}
+                      {openSection === 'tabsOrganizer' && (
+                        <TabsOrganizerSection draft={globalDraft} kind="tab" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
+                      )}
+                      {openSection === 'overview' && <OverviewTabSection {...sectionProps('overview')} />}
+                      {openSection === 'overviewOrganizer' && (
+                        <TabsOrganizerSection draft={globalDraft} kind="overview" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
+                      )}
+                      {openSection === 'version' && <VersionSection draft={globalDraft} />}
                     </>
                   ) : (
                     <>
@@ -261,7 +284,6 @@ export default function TemplateBuilder() {
                       />
                     </>
                   )}
-                  {isGlobal && <VersionSection draft={globalDraft} />}
                 </div>
               </div>
 

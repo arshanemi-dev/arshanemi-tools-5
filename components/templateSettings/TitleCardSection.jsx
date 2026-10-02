@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { AGGREGATE_BUILTIN_NAMES, makeTitleCard } from '@/data/templateSchema';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
+import { DEFAULT_LIST_SORT, matchesQuery, sortItems } from '@/lib/profitLoss/listSort';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
 import NameField from './NameField';
+import ListSearchSort from './ListSearchSort';
 
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
@@ -47,8 +49,10 @@ function ValueEditor({ label, value, onChange, refNames, listNames, previewScope
 }
 
 // image 2 · Title Card — one name + two independently-formula'd values (main +
-// sub), exactly the KPI card shape the dashboard renders. Rename / delete an
-// item from the sidebar list; this panel edits whichever one is active.
+// sub), exactly the KPI card shape the dashboard renders. A compact list
+// (search + Name / Created sort — ListSearchSort) beside the editor for
+// whichever card is active; it shares the active card with the sidebar list,
+// where rename / delete live.
 export default function TitleCardSection({ draft, activeId: activeIdProp, onActiveId }) {
   const { config, addItem, patchItem } = draft;
   const cards = config.titleCards || [];
@@ -56,6 +60,9 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
   const activeId = activeIdProp !== undefined ? activeIdProp : localId;
   const setActiveId = onActiveId || setLocalId;
   const active = cards.find((c) => c.id === activeId) || null;
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState(DEFAULT_LIST_SORT);
+  const listed = sortItems(cards, sort).filter((c) => matchesQuery(c.name, query));
 
   // The Header List offers Our Headers only; the preview still resolves every
   // header so an older formula referencing a sheet header keeps previewing.
@@ -81,36 +88,68 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
         )}
       />
       <div className="space-y-3 rounded-xl border border-divider bg-background p-4">
-        {!active ? (
-          <p className="py-10 text-center text-sm text-subtle">Pick a title card from the list on the left, or add one.</p>
-        ) : (
-            <>
-              <NameField
-                list={cards}
-                id={active.id}
-                value={active.name}
-                onChange={(name) => patchItem('titleCards', active.id, { name })}
-                placeholder="Enter Title card name"
-                className="w-full max-w-md"
-              />
-              <ValueEditor
-                label="Add Main Value"
-                value={active.mainValue}
-                onChange={(v) => patchItem('titleCards', active.id, { mainValue: v })}
-                refNames={refNames}
-                listNames={listNames}
-                previewScope={previewScope}
-              />
-              <ValueEditor
-                label="Add Sub Value"
-                value={active.subValue}
-                onChange={(v) => patchItem('titleCards', active.id, { subValue: v })}
-                refNames={refNames}
-                listNames={listNames}
-                previewScope={previewScope}
-              />
-            </>
-          )}
+        <ListSearchSort
+          query={query}
+          onQuery={setQuery}
+          sort={sort}
+          onSort={setSort}
+          placeholder="Search title cards…"
+          shown={listed.length}
+          total={cards.length}
+        />
+        <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+          <ul className="max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-divider p-1 lg:max-h-[28rem] lg:self-start">
+            {listed.length === 0 && (
+              <li className="px-2 py-4 text-center text-[12px] text-subtle">{cards.length ? 'No title card matches.' : 'No title cards yet — add one.'}</li>
+            )}
+            {listed.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveId(c.id)}
+                  title={c.name}
+                  className={`w-full truncate rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+                    c.id === activeId ? 'bg-action-soft font-semibold text-foreground' : 'text-muted hover:bg-card-hover hover:text-foreground'
+                  }`}
+                >
+                  {c.name || 'Untitled'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="min-w-0 space-y-3">
+            {!active ? (
+              <p className="py-10 text-center text-sm text-subtle">Pick a title card from the list, or add one.</p>
+            ) : (
+              <>
+                <NameField
+                  list={cards}
+                  id={active.id}
+                  value={active.name}
+                  onChange={(name) => patchItem('titleCards', active.id, { name })}
+                  placeholder="Enter Title card name"
+                  className="w-full max-w-md"
+                />
+                <ValueEditor
+                  label="Add Main Value"
+                  value={active.mainValue}
+                  onChange={(v) => patchItem('titleCards', active.id, { mainValue: v })}
+                  refNames={refNames}
+                  listNames={listNames}
+                  previewScope={previewScope}
+                />
+                <ValueEditor
+                  label="Add Sub Value"
+                  value={active.subValue}
+                  onChange={(v) => patchItem('titleCards', active.id, { subValue: v })}
+                  refNames={refNames}
+                  listNames={listNames}
+                  previewScope={previewScope}
+                />
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

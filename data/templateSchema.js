@@ -138,6 +138,7 @@ export function makeHeader({ name = 'Header', type = 'number', source = 'manual'
     format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money',
     signed: false,
     showInTable: true,
+    createdAt: new Date().toISOString(), // Header / Title Card lists sort by it (lib/profitLoss/listSort.js)
   };
 }
 
@@ -151,6 +152,7 @@ export function makeTitleCard(name = 'Title Card') {
     name,
     mainValue: makeValue('formula'),
     subValue: { ...makeValue('formula'), format: 'int' },
+    createdAt: new Date().toISOString(),
   };
 }
 

@@ -7,6 +7,7 @@ import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
 import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
+import { tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 
 function SectionLabel({ text, hidden, onShow }) {
@@ -20,9 +21,12 @@ function SectionLabel({ text, hidden, onShow }) {
 
 // Renders one config.tab: its Title Cards (KPI band) → its Graphs → the
 // My/All column pills → the details table. Everything is pre-computed in
-// `resolved` (lib/profitLoss/resolveTemplate). The table's columns are only
-// the headers the admin picked for this tab (tab.headerIds, in order) — the
-// first is the sticky key column; the rest can be hidden/reordered per user.
+// `resolved` (lib/profitLoss/resolveTemplate). The table's columns come from
+// tabColumnDefs: the headers the admin picked for this tab (tab.headerIds, in
+// order) and — with `allHeaders` (the /profit-loss dashboard) — every other
+// header of the active version after them, so "All Details" shows all of
+// them on every tab. The first is the sticky key column; the rest can be
+// hidden/reordered per user.
 //
 // In edit mode (sidebar Settings -> Save), each card/graph/column carries
 // its own inline ArrangeControl (see KpiCard/GraphStrip/ColumnHeaderCell) —
@@ -35,7 +39,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // My/All Details pills and the table's pager portal into DashboardHeaderBar
 // instead of sitting above/below the table. Template Settings' preview
 // passes neither and keeps them in place.
-export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null }) {
+export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -46,19 +50,18 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
 
   const cardById = new Map((config.titleCards || []).map((c) => [c.id, c]));
   const graphById = new Map((config.graphs || []).map((g) => [g.id, g]));
-  const headerById = new Map((resolved.headers || []).map((h) => [h.id, h]));
   const spanById = new Map((tab?.layout?.graphs || []).map((g) => [g.id, g.span || 1]));
 
   const allCards = (tab?.titleCardIds || []).map((id) => cardById.get(id)).filter(Boolean);
   const allGraphs = (tab?.graphIds || []).map((id) => ({ id, name: graphById.get(id)?.name || id, span: spanById.get(id) || 1 }));
 
-  // The table shows ONLY the headers picked for this tab in Template
-  // Settings, in that order — the first is the sticky key column, the rest
-  // can be hidden / reordered per user (edit mode, My Details). A tab with
-  // no headers picked shows no table at all (cards / graphs only).
-  const tabHeaderIds = tab?.headerIds || [];
-  const firstHeaderDef = headerById.get(tabHeaderIds[0]) || null;
-  const restHeaderDefs = tabHeaderIds.slice(1).map((id) => headerById.get(id)).filter(Boolean);
+  // The first is the sticky key column, the rest can be hidden / reordered
+  // per user (edit mode, My Details). Without `allHeaders`, a tab with no
+  // headers picked shows no table at all (cards / graphs only).
+  const { key: firstHeaderDef, rest: restHeaderDefs } = tabColumnDefs(tab, resolved.headers || [], {
+    allHeaders,
+    groupByHeaderId: config.marketplace?.groupByHeaderId,
+  });
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
   const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));

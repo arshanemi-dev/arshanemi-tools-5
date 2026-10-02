@@ -4,11 +4,13 @@ import { useMemo, useState } from 'react';
 import { Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
 import { headerUsages, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
+import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SectionHead from './SectionHead';
 import HeaderMappingTable from './HeaderMappingTable';
 import HeaderEditModal from './HeaderEditModal';
+import ListSearchSort from './ListSearchSort';
 
 // Header — Our Headers (the global config's own headers) and their mapping
 // onto every marketplace's saved sheet headers:
@@ -20,6 +22,9 @@ import HeaderEditModal from './HeaderEditModal';
 //     press Mapped, and they merge into it — one row with the mapped headers
 //     as boxes on the right; × on a box unmaps it. Every Our Header row also
 //     has its own Edit (inline rename → Save ✓ / Cancel ×) and Delete.
+//   - Search + Name / Created sort (ListSearchSort) above the table narrow
+//     and order the Our Header rows; the search is the same text as the
+//     table's own "Our Header" column filter.
 // Marketplace columns are never added to Our Headers automatically; headers
 // imported that way before (source 'extracted') get a one-click cleanup.
 // Headers are global (this draft — needs Save Draft / Publish); mappings are
@@ -35,6 +40,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const [checked, setChecked] = useState(() => new Set()); // colKey(marketplaceId, sheetHeader)
   const [modal, setModal] = useState(null); // { mode: 'add' } | { mode: 'edit', id }
   const [deleteId, setDeleteId] = useState(null); // header awaiting the delete confirm (row or toolbar)
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState(DEFAULT_LIST_SORT);
 
   const mappedIds = useMemo(() => new Set((marketplaces || []).flatMap(
     (t) => (t.config?.fileSlots || []).flatMap((s) => (s.mappings || []).map((m) => m.headerId)),
@@ -168,8 +175,22 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           </div>
         )}
 
+        <ListSearchSort
+          className="px-4"
+          query={query}
+          onQuery={setQuery}
+          sort={sort}
+          onSort={setSort}
+          placeholder="Search headers…"
+          shown={headers.filter((h) => matchesQuery(h.name, query)).length}
+          total={headers.length}
+        />
+
         <HeaderMappingTable
           headers={headers}
+          ourQuery={query}
+          onOurQuery={setQuery}
+          ourSort={sort}
           marketplaces={marketplaces || []}
           activeId={activeId}
           onSelect={setActiveId}

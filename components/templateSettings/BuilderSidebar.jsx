@@ -17,8 +17,9 @@ import {
 //     the global headers).
 // Each group is a collapsible accordion (one open at a time) with its own
 // search box and inline rename / delete, plus an "add" on the group header.
-// `version` is a read-only jump row, per-marketplace only (no version
-// history for the global config in v1).
+// `version` is a read-only row. In Global Settings, every row / group the
+// user clicks opens that section in the main column (onOpenSection) — only
+// the one picked is shown, nothing opens on its own.
 //
 // The Settings toggle at the top puts every group in the active area into
 // reorder mode: each row becomes a dropdown you can swap another item into
@@ -61,6 +62,13 @@ const GLOBAL_GROUPS = [
     sortBy: (a, b) => (a.order ?? 0) - (b.order ?? 0),
   },
   { key: 'overviewOrganizer', label: 'Overview Organizer', anchor: 'section-overview-organizer', listKey: 'overviewTabs', plain: true },
+];
+
+// Every Global Settings section the main column can open, in sidebar order —
+// TemplateBuilder renders only the one picked (see GlobalSectionPicker).
+export const GLOBAL_SECTIONS = [
+  ...GLOBAL_GROUPS.map((g) => ({ key: g.key, label: g.label, anchor: g.anchor })),
+  { key: 'version', label: 'Version Page', anchor: 'section-version' },
 ];
 
 const MARKETPLACE_GROUPS = [
@@ -363,24 +371,19 @@ function StaticRow({ label, count, active, onClick }) {
 
 export default function BuilderSidebar({
   activeArea, onOpenGlobal, globalDraft,
-  draft, selection, onSelect,
+  draft, selection, onSelect, onOpenSection = () => {},
   templates, activeTemplateId, onSwitchTemplate, onAddMarketplace, onRenameMarketplace, onDeleteMarketplace,
   mobileOpen = false, onCloseMobile = () => {},
 }) {
   const isGlobal = activeArea === 'global';
   const isMarketplace = activeArea === 'marketplace' && !!activeTemplateId;
   const hasActive = isGlobal || isMarketplace;
-  const jumpOnly = (anchor) => onSelect('__jump__', null, anchor);
 
   // Accordion — one section open at a time; all collapsed by default.
+  // Expanding a group also opens its section in the main column (which
+  // scrolls it into view); collapsing only folds the sidebar list.
   const [openKey, setOpenKey] = useState(null);
-  const toggle = (key, anchor) => {
-    const willOpen = openKey !== key;
-    setOpenKey(willOpen ? key : null);
-    if (willOpen && anchor) {
-      requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-    }
-  };
+  const toggle = (key) => setOpenKey((k) => (k === key ? null : key));
 
   // Settings toggle — reorder mode for every group in the active area at
   // once (see GLOBAL_GROUPS/MARKETPLACE_GROUPS comment).
@@ -449,7 +452,7 @@ export default function BuilderSidebar({
                 key={g.key}
                 label={g.label}
                 count={(activeDraft.config[g.listKey] || []).length}
-                active={selection.__focus === g.key}
+                active={selection.__open === g.key}
                 onClick={() => { setOpenKey(null); onSelect(g.key, selection[g.key] ?? null, g.anchor); }}
               />
             ) : (
@@ -460,7 +463,7 @@ export default function BuilderSidebar({
                 selectedId={selection[g.selectionKey || g.key]}
                 onSelect={onSelect}
                 open={openKey === g.key}
-                onToggle={() => toggle(g.key, g.anchor)}
+                onToggle={() => { if (openKey !== g.key) onOpenSection(g.key, g.anchor); toggle(g.key); }}
                 reorderMode={reorderMode}
                 onExitReorder={() => setReorderMode(false)}
               />
@@ -469,7 +472,8 @@ export default function BuilderSidebar({
               <StaticRow
                 label="Version Page"
                 count={globalDraft.versions?.length ?? 0}
-                onClick={() => jumpOnly('section-version')}
+                active={selection.__open === 'version'}
+                onClick={() => { setOpenKey(null); onOpenSection('version', 'section-version'); }}
               />
             )}
           </>

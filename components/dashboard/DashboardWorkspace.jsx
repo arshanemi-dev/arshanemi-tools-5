@@ -19,6 +19,7 @@ import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/expo
 import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
+import { tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -715,20 +716,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // One tab's export view — the table respects "My Details"/"All Details"
   // (the same viewMode/myColumns toggle the screen itself uses): only the
   // fields currently selected as My Details when that's the active view,
-  // every header when it's All Details. Shared by the single-tab
-  // Save-to-History payload (buildView, below) and the multi-tab PDF/Excel
-  // export (doExport) — "what you're looking at is what gets saved/exported".
+  // every header of the active version when it's All Details (tab's own
+  // picks first — the same tabColumnDefs order TabView shows). Shared by the
+  // single-tab Save-to-History payload (buildView, below) and the multi-tab
+  // PDF/Excel export (doExport) — "what you're looking at is what gets
+  // saved/exported".
   const buildTabView = useCallback((tabDef, isOverview, source) => {
     const ov = isOverview ? (source.overviews?.[tabDef?.id] || null) : null;
     const overview = ov || { name: tabDef?.name, levels: [], headers: [], flatRows: [] };
     // An Overview exports as a pivot with subtotal rows: one column per
     // hierarchy level, then the summed headers; every node in depth-first
     // order (a Company row, then its Sku rows, then each Sku's Order Ids).
-    let defs = isOverview
-      ? ((overview.levels || []).length ? [...overview.levels, ...overview.headers] : [])
-      : (tabDef?.headerIds || []).map((id) => source.headers.find((h) => h.id === id)).filter(Boolean);
-    if (!isOverview && viewMode === 'my' && defs.length) {
-      defs = [defs[0], ...defs.slice(1).filter((h) => myColumns.includes(h.id))];
+    let defs = [];
+    if (isOverview) {
+      if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
+    } else {
+      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
+      if (key) defs = [key, ...(viewMode === 'my' ? rest.filter((h) => myColumns.includes(h.id)) : rest)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
     const cards = (tabDef?.titleCardIds || []).map((id) => {
@@ -1012,6 +1016,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
                 pagerSlot={pagerSlot}
+                allHeaders
               />
             )}
           </div>
