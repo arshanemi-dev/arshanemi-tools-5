@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createHash } from 'crypto'
 import { getAuthPayload } from '@/lib/auth'
 import { proxyAdminCall, authHeaderFrom } from '@/lib/connect'
-import { runServerBillingGate } from '@/lib/serverBilling'
+import { KNOWN_REASONS } from '@/lib/serverBilling'
 
 export const runtime = 'nodejs'
 
@@ -31,7 +30,10 @@ export async function GET(req) {
   }
 }
 
-// POST — SAVE a run. Billing gate is here: 1 coin per 100 parsed rows.
+// POST — SAVE a run. The hub charges for it (1 coin per 100 parsed rows)
+// inside the same route that stores it, so the charge can't be skipped by
+// calling the hub directly; this route only forwards the run and turns a
+// billing refusal into the shape BillingGateModal renders.
 export async function POST(req) {
   const payload = await getAuthPayload(req)
   if (!payload?.userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -46,24 +48,6 @@ export async function POST(req) {
     return NextResponse.json({ error: 'summary{}, skuRows[], platforms[] and rowCount are required' }, { status: 400 })
   }
 
-  const rowCount = Math.floor(Number(body.rowCount))
-  const quantity = Math.max(1, Math.ceil(rowCount / 100))
-  const idempotencyKey = createHash('sha1')
-    .update([payload.userId, (body.platforms || []).join(','), body.dateFrom, body.dateTo, rowCount].join('|'))
-    .digest('hex')
-
-  const gate = await runServerBillingGate(req, {
-    toolSlug: TOOL_SLUG,
-    featureApiIdentifier: SAVE_FEATURE,
-    quantity,
-    idempotencyKey,
-  })
-  if (gate.status === 'blocked') {
-    return NextResponse.json(gate, { status: 402 })
-  }
-
-  const coinsCharged = gate.data?.coinsCost ?? quantity
-
   try {
     const { status, data } = await proxyAdminCall('/api/profit-loss/history', {
       method: 'POST',
@@ -74,15 +58,22 @@ export async function POST(req) {
         dateTo: body.dateTo || null,
         adsMode: body.adsMode || null,
         adsValue: body.adsValue ?? null,
-        rowCount,
-        coinsCharged,
+        rowCount: Math.floor(Number(body.rowCount)),
         summary: body.summary,
         skuRows: body.skuRows,
         sourceFiles: Array.isArray(body.sourceFiles) ? body.sourceFiles : [],
       },
       authHeader: authHeaderFrom(req),
     })
-    return NextResponse.json({ ...data, coinsCharged }, { status: status === 200 ? 201 : status })
+
+    if (data?.billing || data?.error === 'access_denied') {
+      const reason = KNOWN_REASONS.includes(data.error) ? data.error : 'error'
+      return NextResponse.json(
+        { status: 'blocked', reason, data: { ...data, message: data.error, toolSlug: TOOL_SLUG, featureApiIdentifier: SAVE_FEATURE } },
+        { status: 402 },
+      )
+    }
+    return NextResponse.json(data, { status: status === 200 ? 201 : status })
   } catch (err) {
     console.error('profit-loss history save failed:', err)
     return NextResponse.json({ error: 'Failed to save history' }, { status: 500 })

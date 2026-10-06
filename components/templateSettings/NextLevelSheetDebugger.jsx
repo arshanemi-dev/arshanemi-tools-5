@@ -182,8 +182,8 @@ export default function NextLevelSheetDebugger({
 
   const mergedRows = useMemo(() => {
     if (!totalRawRowsCount) return [];
-    return mergeUploadsAcrossSlots(rawParsedUploads, orderIdHeader, transactionIdHeader);
-  }, [rawParsedUploads, orderIdHeader, transactionIdHeader, totalRawRowsCount]);
+    return mergeUploadsAcrossSlots(rawParsedUploads, orderIdHeader, transactionIdHeader, headers);
+  }, [rawParsedUploads, orderIdHeader, transactionIdHeader, totalRawRowsCount, headers]);
 
   const uniquenessStats = useMemo(() => {
     const orderIds = new Set();

@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate } from './canonical.js';
 import { rowLookup, headersHaveAny } from './aliases.js';
 
 function mapStatus(payoutStatus, settlement) {
@@ -43,7 +43,7 @@ const jiomartPlatform = {
       settlementDate: toISODate(r.get('Payout_Date', 'Settlement Date', 'Disbursement Date')),
       sku: r.get('SKU_Code', 'Seller SKU', 'SKU', 'EAN'),
       productName: r.get('Item_Description', 'Product Description', 'Item Name'),
-      qty: Math.round(num(r.get('Quantity', 'Qty')) || 1),
+      qty: qtyOf(r.get('Quantity', 'Qty')),
       status,
       grossSale: num(r.get('Order_Value', 'Item Total', 'Gross Amount')),
       settlement,

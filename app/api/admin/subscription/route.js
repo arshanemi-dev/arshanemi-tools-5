@@ -17,18 +17,6 @@ function razorpay() {
       })
       return r.ok ? r.json() : null
     },
-    async post(path, body) {
-      const r = await fetch(`https://api.razorpay.com/v1${path}`, {
-        method: 'POST',
-        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}))
-        throw new Error(err?.error?.description ?? `Razorpay error ${r.status}`)
-      }
-      return r.json()
-    },
   }
 }
 
@@ -82,73 +70,6 @@ export async function GET(req) {
   }
 
   return NextResponse.json(dummySubscription)
-}
-
-// ── POST /api/admin/subscription — create Razorpay subscription ─────────────
-
-export async function POST(req) {
-  const payload = await getAuthPayload(req)
-  if (!payload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { planId, totalCount = 12, notify = { sms: true, email: true } } = await req.json()
-
-  // Find plan by our internal ID
-  const plan = dummyPlans.find(p => p.id === planId || p.razorpayPlanId === planId)
-  if (!plan) return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
-
-  // Free plan — no Razorpay subscription needed
-  if (plan.price === 0) {
-    const sub = {
-      status:                 'active',
-      plan:                   plan.name,
-      planId:                 plan.id,
-      razorpaySubscriptionId: null,
-      currentPeriodStart:     new Date().toISOString(),
-      currentPeriodEnd:       null,
-      cancelAtPeriodEnd:      false,
-    }
-    await saveSubscriptionToDB(payload.userId, sub)
-    return NextResponse.json({ ok: true, subscription: sub })
-  }
-
-  if (!plan.razorpayPlanId) {
-    return NextResponse.json({ error: 'This plan is not configured for payments' }, { status: 400 })
-  }
-
-  const rz = razorpay()
-  if (!rz) {
-    return NextResponse.json({ error: 'Payment gateway not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.' }, { status: 503 })
-  }
-
-  try {
-    const rzSub = await rz.post('/subscriptions', {
-      plan_id:        plan.razorpayPlanId,
-      total_count:    totalCount,
-      notify_info:    notify,
-      notes:          { userId: payload.userId, planId: plan.id },
-    })
-
-    const sub = {
-      status:                 mapRazorpayStatus(rzSub.status),
-      plan:                   plan.name,
-      planId:                 plan.id,
-      razorpaySubscriptionId: rzSub.id,
-      shortUrl:               rzSub.short_url ?? null,
-      currentPeriodStart:     null,
-      currentPeriodEnd:       null,
-      cancelAtPeriodEnd:      false,
-    }
-
-    await saveSubscriptionToDB(payload.userId, sub)
-
-    return NextResponse.json({
-      ok:           true,
-      subscription: sub,
-      paymentLink:  rzSub.short_url,
-    })
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
 }
 
 // ── Utils ────────────────────────────────────────────────────────────────────

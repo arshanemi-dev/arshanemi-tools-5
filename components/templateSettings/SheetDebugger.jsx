@@ -175,8 +175,8 @@ export default function SheetDebugger({ externalFile = null, externalSlotId = nu
         rows: f.parsed.byTab[f.activeSheet].rows.map((raw) => ({ meta: raw })),
       }));
     if (uploadsLike.length < 2) return null;
-    return mergeUploadsAcrossSlots(uploadsLike, orderIdHeader, transactionIdHeader);
-  }, [files, orderIdHeader, transactionIdHeader]);
+    return mergeUploadsAcrossSlots(uploadsLike, orderIdHeader, transactionIdHeader, headers);
+  }, [files, orderIdHeader, transactionIdHeader, headers]);
 
   // Default to the Merged tab the first time it actually has something to
   // show (2+ files open) — after that, never yank focus away again just

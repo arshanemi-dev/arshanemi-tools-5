@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate } from './canonical.js';
 import { rowLookup, headersHaveAny } from './aliases.js';
 
 function mapStatus(raw) {
@@ -41,7 +41,7 @@ const myntraPlatform = {
       settlementDate: toISODate(r.get('Settlement_Date', 'PG Settlement Date')),
       sku: r.get('Vendor_SKU', 'Vendor Article Number', 'Seller SKU', 'SKU'),
       productName: r.get('Product_Name', 'Article Name'),
-      qty: Math.round(num(r.get('Quantity', 'Qty')) || 1),
+      qty: qtyOf(r.get('Quantity', 'Qty')),
       status,
       grossSale: num(r.get('Gross_Sales', 'Final Amount', 'MRP', 'Total MRP')),
       settlement: num(r.get('Net_Settlement_Amount', 'Settlement Value', 'Net Amount')),

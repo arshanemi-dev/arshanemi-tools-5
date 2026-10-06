@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate } from './canonical.js';
 import { rowLookup, headersHaveAny } from './aliases.js';
 
 // Amazon's export is one row per order-item within a settlement group. A
@@ -34,8 +34,7 @@ const amazonPlatform = {
     const orderId = r.get('Amazon_Order_ID', 'amazon-order-id', 'order-id');
     if (!orderId) return null;
     const status = mapType(r.get('Order_Type', 'transaction-type', 'type'));
-    const rawQty = num(r.get('Quantity', 'quantity-purchased', 'Qty'));
-    const qty = Math.round(rawQty || (status === STATUS.REFUND ? -1 : 1));
+    const qty = qtyOf(r.get('Quantity', 'quantity-purchased', 'Qty'), status === STATUS.REFUND ? -1 : 1);
     return canonicalRow({
       platform: 'amazon',
       rowId: `amazon:${orderId}:${r.get('SKU', 'sku') ?? ''}:${status}`,

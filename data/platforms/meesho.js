@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate } from './canonical.js';
 import { rowLookup, headersHaveAny } from './aliases.js';
 
 const STATUS_MAP = {
@@ -52,7 +52,7 @@ const meeshoPlatform = {
       settlementDate: toISODate(r.get('Payment_Settlement_Date', 'Settlement Date')),
       sku: r.get('SKU', 'Supplier SKU'),
       productName: r.get('Product_Name', 'Product Name'),
-      qty: Math.round(num(r.get('Quantity', 'Qty')) || 1),
+      qty: qtyOf(r.get('Quantity', 'Qty')),
       status,
       grossSale: num(r.get('Gross_Sale_Amount', 'Listed Price', 'Final Customer Price', 'Supplier Listed Price')),
       settlement: num(r.get('Net_Payout', 'Final Settlement Amount')),

@@ -9,7 +9,7 @@ import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { ingestWorkbook } from '@/lib/profitLoss/ingest';
 import { effectiveConfig } from '@/lib/profitLoss/effectiveConfig';
-import { rangeForPreset } from '@/lib/profitLoss/dateRanges';
+import { rangeForPreset, todayISO } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
 import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
 import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
@@ -176,8 +176,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Sheet Debugger's "Merged" preview tab runs that exact same function
   // against whatever files are open there, so the two can never disagree.
   const canonicalRows = useMemo(
-    () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader),
-    [uploads, orderIdHeader, transactionIdHeader],
+    () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader, config.headers),
+    [uploads, orderIdHeader, transactionIdHeader, config.headers],
   );
 
   // ── filters (pending vs applied) ────────────────────────────────────────
@@ -510,7 +510,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!dates.length) return;
     const { from, to } = applied.dateRange;
     if (dates.some((d) => (!from || d >= from) && (!to || d <= to))) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const range = { preset: 'custom', from: dates[0] > today ? today : dates[0], to: dates[dates.length - 1] > today ? today : dates[dates.length - 1] };
     setPending((s) => ({ ...s, dateRange: range }));
     setApplied((s) => ({ ...s, dateRange: range }));

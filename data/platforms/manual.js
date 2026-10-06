@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate, leafHeader } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate, leafHeader } from './canonical.js';
 import { rowLookup } from './aliases.js';
 
 // Fallback when auto-detection fails. `mapping` is a {canonicalField: headerName}
@@ -83,7 +83,7 @@ const manualPlatform = {
       orderDate: toISODate(pick('orderDate')),
       settlementDate: toISODate(pick('settlementDate')),
       sku: pick('sku'),
-      qty: Math.round(num(pick('qty')) || 1),
+      qty: qtyOf(pick('qty')),
       status: mapStatus(pick('status')),
       grossSale: num(pick('grossSale')),
       settlement: num(pick('settlement')),

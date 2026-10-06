@@ -1,4 +1,4 @@
-import { STATUS, canonicalRow, num, absNum, toISODate } from './canonical.js';
+import { STATUS, canonicalRow, num, absNum, qtyOf, toISODate } from './canonical.js';
 import { rowLookup, headersHaveAny } from './aliases.js';
 
 function mapStatus(raw) {
@@ -39,7 +39,7 @@ const flipkartPlatform = {
       settlementDate: toISODate(r.get('Bank_Payout_Date', 'Settlement Date', 'NEFT Date')),
       sku: r.get('SKU', 'Seller SKU'),
       productName: r.get('Product_Title', 'Product', 'Title'),
-      qty: Math.round(num(r.get('Item_Quantity', 'Quantity', 'Qty')) || 1),
+      qty: qtyOf(r.get('Item_Quantity', 'Quantity', 'Qty')),
       status,
       grossSale: num(r.get('Sale_Amount', 'Total Selling Price', 'Order Item Value', 'Customer_Paid_Amount')),
       settlement: num(r.get('Settlement_Value', 'Bank Settlement Value', 'Net Settlement Value')),
