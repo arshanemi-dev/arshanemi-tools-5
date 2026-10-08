@@ -2,7 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { evaluateFormula } from '@/lib/profitLoss/formula';
+import { aggregateCalls, evaluateFormula } from '@/lib/profitLoss/formula';
+import CountFilterPanel, { quotedList } from './CountFilterPanel';
 
 const TOKENS = ['+', '-', '*', '/', '(', ')', '%'];
 
@@ -14,13 +15,16 @@ const TOKENS = ['+', '-', '*', '/', '(', ')', '%'];
 // Copy puts the picked header's [Name] on the clipboard; Paste drops it in at
 // the cursor. Sum / Count wrap it as SUM([Name]) / COUNT([Name]) — the two
 // aggregate operators (lib/profitLoss/formula.js) that reduce a column across
-// every row in the current group, instead of just this row/scope.
+// every row in the current group, instead of just this row/scope. Count
+// opens CountFilterPanel first: All (the default) or Filter, which counts
+// only the typed values — COUNT([Status], "Delivered").
 // `listNames` (optional) narrows only the Header List dropdown — e.g. to Our
 // Headers — while `refNames` stays the full set the live preview resolves.
 export default function FormulaEditor({ value = '', onChange, refNames = [], listNames = refNames, previewScope, placeholder = 'ed.abc&123*dss', disabled = false }) {
   const inputRef = useRef(null);
   const [pick, setPick] = useState('');
   const [open, setOpen] = useState(false);
+  const [countOpen, setCountOpen] = useState(false);
 
   const insert = (text) => {
     if (disabled) return;
@@ -37,7 +41,10 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
     });
   };
 
-  const preview = previewScope ? evaluateFormula(value, previewScope, refNames) : null;
+  // A filtered count can't be previewed off the placeholder scope (no sample
+  // value ever equals "Delivered") — it's spelled out in words instead.
+  const filteredCounts = aggregateCalls(value).filter((c) => c.fn === 'COUNT' && c.values.length);
+  const preview = previewScope && !filteredCounts.length ? evaluateFormula(value, previewScope, refNames) : null;
   const token = 'flex h-8 min-w-8 items-center justify-center rounded-full border border-divider-light bg-background px-2 text-[13px] text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40';
   const ghost = 'h-9 rounded-full border border-divider-light bg-background px-3 text-[13px] text-muted hover:bg-card-hover disabled:cursor-not-allowed disabled:opacity-40';
 
@@ -92,10 +99,27 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
         <button type="button" title="Sum this column across every row in the group" disabled={disabled} onClick={() => insert(pick ? `SUM([${pick}])` : 'SUM()')} className={token}>
           Sum
         </button>
-        <button type="button" title="Count this column's non-blank values across every row in the group" disabled={disabled} onClick={() => insert(pick ? `COUNT([${pick}])` : 'COUNT()')} className={token}>
+        <button
+          type="button"
+          title="Count this column's values across every row in the group — all of them, or only the ones you list"
+          disabled={disabled}
+          aria-expanded={countOpen}
+          onClick={() => setCountOpen((o) => !o)}
+          className={`${token} ${countOpen ? 'border-accent text-foreground' : ''}`}
+        >
           Count
         </button>
       </div>
+
+      {countOpen && !disabled && (
+        <CountFilterPanel
+          key={pick}
+          columns={listNames}
+          initialColumn={pick}
+          onInsert={(text) => { insert(text); setCountOpen(false); }}
+          onClose={() => setCountOpen(false)}
+        />
+      )}
 
       <input
         ref={inputRef}
@@ -108,7 +132,13 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
 
       <p className="text-[11.5px] leading-relaxed text-muted">
         Reference other columns by name in brackets. Supports <code>+ - * /</code>, <code>^</code> (or the word “power”),
-        parentheses, and <code>SUM([..])</code> / <code>COUNT([..])</code> across the group.
+        parentheses, and <code>SUM([..])</code> / <code>COUNT([..])</code> across the group —{' '}
+        <code>COUNT([Status], &quot;Delivered&quot;)</code> counts only that value.
+        {filteredCounts.map((c, i) => (
+          <span key={i} className="block font-medium text-foreground">
+            Counts only the rows where {c.name} is {quotedList(c.values)}.
+          </span>
+        ))}
         {preview !== null && (
           <>
             {' '}·{' '}

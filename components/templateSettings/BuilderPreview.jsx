@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import { resolveTemplate } from '@/lib/profitLoss/resolveTemplate';
+import { aggregateCalls } from '@/lib/profitLoss/formula';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { normHeader } from '@/data/platforms/canonical';
 import TabView from '@/components/dashboard/TabView';
@@ -25,8 +26,10 @@ const SKU_NAMES = new Set(['sku', 'skuname', 'skucode', 'vendorsku']);
 // one "(Blank)" node. Seed each with a few deterministic values instead —
 // a unique id per row for Order/Transaction Id, 2–4 repeating labels for a
 // text header, a small number for a number header. Sku / Company / Brand
-// are left to readHeaderFromRow's own fallbacks (row.sku / upload tag).
-function demoMeta(headers, i) {
+// are left to readHeaderFromRow's own fallbacks (row.sku / upload tag). A
+// header some COUNT filter looks into (`seeds`) cycles through exactly the
+// values being counted, so that count previews as a real number.
+function demoMeta(headers, i, seeds) {
   const meta = {};
   headers.forEach((h, hi) => {
     if (h.primitive || h.type === 'formula') return;
@@ -34,6 +37,8 @@ function demoMeta(headers, i) {
     if (SKU_NAMES.has(norm) || norm.startsWith('company') || norm.startsWith('brand')) return;
     if (h.id === RESERVED_HEADER_IDS.orderId) { meta[h.id] = `OD-${1001 + i}`; return; }
     if (h.id === RESERVED_HEADER_IDS.transactionId) { meta[h.id] = `TX-${5001 + i}`; return; }
+    const counted = seeds.get(String(h.name).trim().toLowerCase());
+    if (counted) { meta[h.id] = counted[(i + hi) % counted.length]; return; }
     if (h.type === 'number') { meta[h.id] = 10 + ((i * 7 + hi * 13) % 90); return; }
     const variants = 2 + (hi % 3);
     meta[h.id] = `${h.name} ${String.fromCharCode(65 + ((Math.floor(i / (hi % 4 + 1)) + hi) % variants))}`;
@@ -41,7 +46,24 @@ function demoMeta(headers, i) {
   return meta;
 }
 
-function demoCanonicalRows(headers) {
+// The values the template's COUNT filters look for, per (lower-cased) header
+// name — COUNT([Status], "Delivered") and COUNT([Status], "RTO") give
+// status → ['Delivered', 'RTO'].
+function countFilterSeeds(headers, titleCards) {
+  const formulas = [
+    ...(headers || []).filter((h) => h.type === 'formula').map((h) => h.formula),
+    ...(titleCards || []).flatMap((c) => [c.mainValue, c.subValue]).filter((v) => v?.type === 'formula').map((v) => v.formula),
+  ];
+  const seeds = new Map();
+  for (const call of formulas.flatMap(aggregateCalls)) {
+    const key = call.name.toLowerCase();
+    const values = call.values.map((v) => v.replace(/\*/g, '').trim()).filter(Boolean);
+    if (values.length) seeds.set(key, [...new Set([...(seeds.get(key) || []), ...values])]);
+  }
+  return seeds;
+}
+
+function demoCanonicalRows(headers, seeds) {
   const skus = ['SKU-001', 'SKU-002', 'SKU-003'];
   const statuses = ['delivered', 'delivered', 'delivered', 'return', 'rto', 'cancelled', 'delivered'];
   const rows = [];
@@ -62,7 +84,7 @@ function demoCanonicalRows(headers) {
         settlementDate: status === 'delivered' ? date : null,
         fees: { commission: Math.round(gross * 0.08) },
         taxes: { tcs: Math.round(gross * 0.01), tds: 0, gstOnFees: 0 },
-        meta: demoMeta(headers, i),
+        meta: demoMeta(headers, i, seeds),
       });
     });
   }
@@ -113,7 +135,8 @@ const KIND_LIST = { titleCard: 'titleCards', graph: 'graphs', header: 'headers' 
 // item that isn't placed on any tab yet gets a note saying so instead.
 export default function BuilderPreview({ config, highlight = null }) {
   const headers = config.headers;
-  const canonicalRows = useMemo(() => demoCanonicalRows(headers || []), [headers]);
+  const seeds = useMemo(() => countFilterSeeds(headers, config.titleCards), [headers, config.titleCards]);
+  const canonicalRows = useMemo(() => demoCanonicalRows(headers || [], seeds), [headers, seeds]);
   const resolved = useMemo(() => {
     try {
       return resolveTemplate(config, { canonicalRows, ads: { mode: 'percent', value: 5 } });
