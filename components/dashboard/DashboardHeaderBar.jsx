@@ -13,7 +13,7 @@ import IconButton from './IconButton';
 // right. The page limit/counts and the My Details pill aren't rendered
 // here — this bar only provides the two empty `display: contents`
 // slots (pagerSlotRef / viewPillsSlotRef) that the active table and TabView
-// portal into, since that state lives with them.
+// / OverviewTab portal into, since that state lives with them.
 //
 // No Apply button — every change here debounces into effect on its own (see
 // DashboardWorkspace's pending -> applied effect); `updating` shows a brief

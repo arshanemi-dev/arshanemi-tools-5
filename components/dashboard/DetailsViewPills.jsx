@@ -12,8 +12,10 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // Until they tick something, it's the tab's default (`defaultIds` — the
 // headers the template picked for this tab; see myDetailColumns), which is
 // also what Reset Position brings back.
-// The first header is always shown (it's the row key / sticky column), so
-// it's tagged "key" and locked.
+// The first header is always shown (it's the row key / sticky column — on an
+// Overview tab, its hierarchy), so it's tagged "key" and locked.
+// `emptyShowsAll={false}` (Overview tabs) — with no ticks and no default,
+// nothing is ticked, instead of everything.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows this; the default stays compact for the builder preview.
 const SIZES = {
@@ -27,10 +29,10 @@ function ListTitle({ children }) {
   return <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">{children}</div>;
 }
 
-export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], onMyColumnsChange, size = 'sm' }) {
+export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm' }) {
   const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
-  const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds).map((h) => h.id));
+  const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds, emptyShowsAll ? toggleable : []).map((h) => h.id));
   const ownTicks = toggleable.some((h) => myColumns.includes(h.id));
 
   // Until the user has ticks of their own here, the default is what's

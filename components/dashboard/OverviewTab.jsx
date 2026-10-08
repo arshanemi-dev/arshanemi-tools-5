@@ -1,16 +1,19 @@
 'use client';
 
 import { Fragment, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronRight, PanelLeftOpen } from 'lucide-react';
 import KpiCardRow from './KpiCardRow';
 import GraphStrip from './GraphStrip';
+import DetailsViewPills from './DetailsViewPills';
 import HiddenItemsChip from './HiddenItemsChip';
 import OverviewHierarchyNav from './OverviewHierarchyNav';
 import OverviewTreeTable from './OverviewTreeTable';
 import { levelStyle } from './overviewLevelStyles';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
-import { ancestorKeys, keysToDepth } from '@/lib/profitLoss/overviewTree';
+import { TREE_COL, ancestorKeys, keysToDepth } from '@/lib/profitLoss/overviewTree';
+import { overviewColumnDefs } from '@/lib/profitLoss/tabColumns';
 
 function SectionLabel({ text, hidden, onShow }) {
   return (
@@ -38,7 +41,15 @@ function SectionLabel({ text, hidden, onShow }) {
 // Edit mode works exactly like TabView's — layout.perTab[tab.id] — the
 // hierarchy column stays pinned, same rule as a regular Tab's first column.
 // `pagerSlot` (optional) is handed straight to the tree table's pager.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, pagerSlot = null }) {
+//
+// My Details (the /profit-loss dashboard — passed `onMyColumnsChange`): the
+// same pill a regular Tab has, portaled into `viewPillsSlot`. Its checklist
+// is every header that isn't one of the levels; this tab's own picks are
+// the ones ticked until the user ticks their own (`myColumns`). The table
+// itself just shows ov.headers — DashboardWorkspace already had
+// resolveTemplate compute the tree for exactly the ticked ones. Template
+// Settings' preview passes none of this and shows the tab's own picks.
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -93,8 +104,21 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
 
   if (!tab) return null;
 
+  const pickable = overviewColumnDefs(tab, config.headers || []);
+  const pills = onMyColumnsChange && levels.length > 0 && (
+    <DetailsViewPills
+      tabHeaders={[{ id: TREE_COL, name: levels.map((h) => h.name).join(' › ') }, ...pickable.rest]}
+      myColumns={myColumns || []}
+      defaultIds={pickable.defaultIds}
+      emptyShowsAll={false}
+      onMyColumnsChange={onMyColumnsChange}
+      size={viewPillsSlot ? 'md' : 'sm'}
+    />
+  );
+
   return (
     <div className="@container space-y-5">
+      {pills && viewPillsSlot && createPortal(pills, viewPillsSlot)}
       {allCards.length > 0 && (
         <div className="space-y-2">
           {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
@@ -147,6 +171,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
           {editMode && ov.headers?.length > 0 && (
             <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />
           )}
+          {!viewPillsSlot && pills}
         </div>
       </div>
 

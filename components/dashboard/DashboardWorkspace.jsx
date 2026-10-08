@@ -19,7 +19,7 @@ import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/expo
 import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
-import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
@@ -361,6 +361,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // synchronously whenever an input changes. Falls back to the config's own
   // zero/empty shape on any failure so tabs/title cards/graphs/table headers
   // still render — just with blank values.
+  //
+  // Which headers each Overview tab shows — its My Details ticks, else its
+  // own picks (overviewShownHeaders). resolveTemplate builds an overview's
+  // tree for exactly these, so this is an input of `resolved` — held as a
+  // string, so ticking a column on some OTHER tab (a new myColumnsFor, the
+  // same ids here) doesn't recompute the whole dashboard.
+  const overviewHeaderKey = useMemo(() => JSON.stringify(Object.fromEntries(
+    (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, false)).map((h) => h.id)]),
+  )), [config, myColumnsFor]);
+  const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
+
   const resolved = useMemo(() => {
     if (!config.headers?.length) return emptyResolved;
     try {
@@ -372,12 +383,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         dateTo: applied.dateRange.to,
         platform: applied.platform,
         company: applied.company,
+        overviewHeaderIds,
       });
     } catch (err) {
       console.error('resolveTemplate failed:', err);
       return emptyResolved;
     }
-  }, [config, canonicalRows, skuCost, applied]);
+  }, [config, canonicalRows, skuCost, applied, overviewHeaderIds]);
 
   const transactionResolved = useMemo(() => {
     if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
@@ -415,12 +427,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         dateTo: null,
         platform: applied.platform,
         company: applied.company,
+        overviewHeaderIds,
       });
     } catch (err) {
       console.error('resolveTemplate (export) failed:', err);
       return emptyResolved;
     }
-  }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
+  }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company, overviewHeaderIds]);
 
   // Transactions' own "all data" counterpart to fullResolved — same reason:
   // Download PDF/Excel pulls every row regardless of the live view's date
@@ -739,8 +752,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     const ov = isOverview ? (source.overviews?.[tabDef?.id] || null) : null;
     const overview = ov || { name: tabDef?.name, levels: [], headers: [], flatRows: [] };
     // An Overview exports as a pivot with subtotal rows: one column per
-    // hierarchy level, then the summed headers; every node in depth-first
-    // order (a Company row, then its Sku rows, then each Sku's Order Ids).
+    // hierarchy level, then the summed headers (overview.headers — already
+    // just its My Details columns, see overviewHeaderIds); every node in
+    // depth-first order (a Company row, then its Sku rows, then each Sku's
+    // Order Ids).
     let defs = [];
     if (isOverview) {
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
@@ -1016,6 +1031,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 pagerSlot={pagerSlot}
+                myColumns={myColumnsFor(activeOverviewTab?.id, false)}
+                onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next)}
+                viewPillsSlot={viewPillsSlot}
               />
             ) : (
               <TabView
