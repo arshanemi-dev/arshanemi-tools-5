@@ -52,7 +52,7 @@ const RESTORED_SLOT_ID = 'restored';
 const TRANSACTIONS_TAB_ID = '__transactions__';
 
 // The tab that owns the upload / Position Settings toolbar (see uploadTab).
-const UPLOAD_TAB_NAME = 'upload sheet & cost';
+const UPLOAD_TAB_NAME = 'upload';
 const normTabName = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 // The hub's own per-page cap (lib/db.js) — used as the restore loop's page
 // size so pulling this user's ENTIRE saved history takes as few round trips
@@ -220,11 +220,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const [pagerSlot, setPagerSlot] = useState(null);
   const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
-  // My Details column subset + the sidebar's Settings -> Save edit-mode
-  // layout (tabs/title-cards/graphs/columns show+order) — one per-user
-  // settings row, see lib/profitLoss/useDashboardSettings.js.
+  // My Details column ticks (per tab) + the sidebar's Settings -> Save
+  // edit-mode layout (tabs/title-cards/graphs/columns show+order) — one
+  // per-user settings row, see lib/profitLoss/useDashboardSettings.js.
   const {
-    loggedIn, myColumns, onMyColumnsChange,
+    loggedIn, myColumnsFor, onMyColumnsChange,
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
     onSkuCostsChange, skuCostsSaveTick,
@@ -727,11 +727,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Takes which resolved snapshot to read from — `resolved` (the live,
   // date-filtered view) by default, or `fullResolved` (every uploaded row,
   // no date bound) when Download PDF/Excel calls it.
-  // One tab's export view — the table respects "My Details" (the same
-  // myColumns picks the screen itself uses): only the fields currently
-  // ticked there, or every header of the active version while nothing is
-  // (tab's own picks first — the same tabColumnDefs order TabView shows,
-  // narrowed by the same myDetailColumns). Shared by the
+  // One tab's export view — the table respects "My Details" (that tab's own
+  // ticks, the same ones the screen itself uses): only the fields currently
+  // ticked there, or the tab's default headers while nothing is (the same
+  // tabColumnDefs order TabView shows, narrowed by the same
+  // myDetailColumns). Shared by the
   // single-tab Save-to-History payload (buildView, below) and the multi-tab
   // PDF/Excel export (doExport) — "what you're looking at is what gets
   // saved/exported".
@@ -746,7 +746,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
     } else {
       const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
-      if (key) defs = [key, ...myDetailColumns(rest, myColumns)];
+      if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id), tabDef?.headerIds)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
     const cards = (tabDef?.titleCardIds || []).map((id) => {
@@ -774,7 +774,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
       },
     };
-  }, [config, myColumns]);
+  }, [config, myColumnsFor]);
 
   // Transactions has no Template Settings config of its own (no title
   // cards, no My Details subset) — always every header, one row per Order
@@ -1022,8 +1022,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 config={config}
                 tab={activeTab}
                 resolved={resolved.tableRows === displayTableRows ? resolved : { ...resolved, tableRows: displayTableRows }}
-                myColumns={myColumns}
-                onMyColumnsChange={onMyColumnsChange}
+                myColumns={myColumnsFor(activeTab?.id)}
+                onMyColumnsChange={(next) => onMyColumnsChange(activeTab?.id, next)}
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}

@@ -90,7 +90,7 @@ export default function DashboardToolbar({
               <IconButton
                 icon={Undo2}
                 label="Reset Position"
-                title="Reset your dashboard back to the marketplace's default arrangement"
+                title="Reset your dashboard — layout and My Details columns — back to the marketplace's default arrangement"
                 tone="outline"
                 onClick={onResetLayout}
                 disabled={savingLayout}

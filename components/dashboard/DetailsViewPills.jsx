@@ -7,9 +7,11 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // "My Details ▾" — the column set the table shows. Its dropdown is a
 // checklist of every header the table can show (`tabHeaders` — on the
 // dashboard that's every header of the active version, see tabColumnDefs),
-// in table order; the ticked ones are the user's saved subset (persisted to
-// /api/profit-loss/settings when signed in). Until something is picked,
-// every header is ticked (see myDetailColumns).
+// in table order; the ticked ones are the user's own ticks for this tab
+// (`myColumns` — persisted to /api/profit-loss/settings when signed in).
+// Until they tick something, it's the tab's default (`defaultIds` — the
+// headers the template picked for this tab; see myDetailColumns), which is
+// also what Reset Position brings back.
 // The first header is always shown (it's the row key / sticky column), so
 // it's tagged "key" and locked.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
@@ -25,16 +27,16 @@ function ListTitle({ children }) {
   return <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">{children}</div>;
 }
 
-export default function DetailsViewPills({ tabHeaders = [], myColumns = [], onMyColumnsChange, size = 'sm' }) {
+export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], onMyColumnsChange, size = 'sm' }) {
   const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
-  const shown = new Set(myDetailColumns(toggleable, myColumns).map((h) => h.id));
-  const nonePicked = !toggleable.some((h) => myColumns.includes(h.id));
+  const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds).map((h) => h.id));
+  const ownTicks = toggleable.some((h) => myColumns.includes(h.id));
 
-  // With nothing picked every column is showing, so the first untick starts
-  // from the full list rather than from an empty one.
+  // Until the user has ticks of their own here, the default is what's
+  // showing — so the first tick / untick starts from that, not from nothing.
   const toggle = (id) => {
-    const picked = nonePicked ? [...new Set([...myColumns, ...tabHeaders.map((h) => h.id)])] : myColumns;
+    const picked = ownTicks ? myColumns : [...shown];
     onMyColumnsChange(picked.includes(id) ? picked.filter((k) => k !== id) : [...picked, id]);
   };
 

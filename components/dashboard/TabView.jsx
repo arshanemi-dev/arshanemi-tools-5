@@ -25,8 +25,9 @@ function SectionLabel({ text, hidden, onShow }) {
 // tabColumnDefs: the headers the admin picked for this tab (tab.headerIds, in
 // order) and — with `allHeaders` (the /profit-loss dashboard) — every other
 // header of the active version after them, so My Details can pick from all
-// of them on every tab. The first is the sticky key column; the rest can be
-// hidden/reordered per user.
+// of them on every tab (the tab's own picks are the ones ticked until the
+// user ticks their own — `myColumns` is this tab's ticks). The first is the
+// sticky key column; the rest can be hidden/reordered per user.
 //
 // In edit mode (sidebar Settings -> Save), each card/graph/column carries
 // its own inline ArrangeControl (see KpiCard/GraphStrip/ColumnHeaderCell) —
@@ -72,13 +73,14 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   const tabHeaderDefs = firstHeaderDef ? [firstHeaderDef, ...headersArrange.visible] : headersArrange.visible;
 
   const columns = tabHeaderDefs.length
-    ? [tabHeaderDefs[0], ...myDetailColumns(tabHeaderDefs.slice(1), myColumns)]
+    ? [tabHeaderDefs[0], ...myDetailColumns(tabHeaderDefs.slice(1), myColumns, tab.headerIds)]
     : tabHeaderDefs;
 
   const pills = (
     <DetailsViewPills
       tabHeaders={tabHeaderDefs}
       myColumns={myColumns}
+      defaultIds={tab.headerIds}
       onMyColumnsChange={onMyColumnsChange}
       size={viewPillsSlot ? 'md' : 'sm'}
     />
