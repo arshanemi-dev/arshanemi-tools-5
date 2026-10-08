@@ -7,7 +7,7 @@ import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
 import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
-import { tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 
 function SectionLabel({ text, hidden, onShow }) {
@@ -20,12 +20,12 @@ function SectionLabel({ text, hidden, onShow }) {
 }
 
 // Renders one config.tab: its Title Cards (KPI band) → its Graphs → the
-// My/All column pills → the details table. Everything is pre-computed in
+// My Details column pill → the details table. Everything is pre-computed in
 // `resolved` (lib/profitLoss/resolveTemplate). The table's columns come from
 // tabColumnDefs: the headers the admin picked for this tab (tab.headerIds, in
 // order) and — with `allHeaders` (the /profit-loss dashboard) — every other
-// header of the active version after them, so "All Details" shows all of
-// them on every tab. The first is the sticky key column; the rest can be
+// header of the active version after them, so My Details can pick from all
+// of them on every tab. The first is the sticky key column; the rest can be
 // hidden/reordered per user.
 //
 // In edit mode (sidebar Settings -> Save), each card/graph/column carries
@@ -36,10 +36,10 @@ function SectionLabel({ text, hidden, onShow }) {
 // already applies.
 //
 // `viewPillsSlot` / `pagerSlot` (optional DOM nodes): on /profit-loss the
-// My/All Details pills and the table's pager portal into DashboardHeaderBar
+// My Details pill and the table's pager portal into DashboardHeaderBar
 // instead of sitting above/below the table. Template Settings' preview
 // passes neither and keeps them in place.
-export default function TabView({ config, tab, resolved, viewMode, onViewModeChange, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -71,15 +71,12 @@ export default function TabView({ config, tab, resolved, viewMode, onViewModeCha
 
   const tabHeaderDefs = firstHeaderDef ? [firstHeaderDef, ...headersArrange.visible] : headersArrange.visible;
 
-  const columns =
-    viewMode === 'my' && tabHeaderDefs.length
-      ? [tabHeaderDefs[0], ...tabHeaderDefs.slice(1).filter((h) => myColumns.includes(h.id))]
-      : tabHeaderDefs;
+  const columns = tabHeaderDefs.length
+    ? [tabHeaderDefs[0], ...myDetailColumns(tabHeaderDefs.slice(1), myColumns)]
+    : tabHeaderDefs;
 
   const pills = (
     <DetailsViewPills
-      mode={viewMode}
-      onModeChange={onViewModeChange}
       tabHeaders={tabHeaderDefs}
       myColumns={myColumns}
       onMyColumnsChange={onMyColumnsChange}

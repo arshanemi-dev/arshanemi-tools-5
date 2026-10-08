@@ -8,10 +8,10 @@ import IconButton from './IconButton';
 
 // Row B: the active page's name as the title (the open Tab / Overview Tab /
 // Transactions — see DashboardWorkspace's activePageName) + Reset / the
-// table's page limit + row counts / Company filter / Date / My Details + All
-// Details, then Delete (selected rows) + the output actions (Excel / PDF) on
-// the far right. The page limit/counts and the My/All Details pills aren't
-// rendered here — this bar only provides the two empty `display: contents`
+// table's page limit + row counts / Company filter / Date / My Details, then
+// Delete (selected rows) + the output actions (Excel / PDF) on the far
+// right. The page limit/counts and the My Details pill aren't rendered
+// here — this bar only provides the two empty `display: contents`
 // slots (pagerSlotRef / viewPillsSlotRef) that the active table and TabView
 // portal into, since that state lives with them.
 //

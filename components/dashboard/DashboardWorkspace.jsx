@@ -19,7 +19,7 @@ import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/expo
 import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
-import { tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -211,12 +211,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const [selectedBrand, setSelectedBrand] = useState(null);
 
   // ── view ────────────────────────────────────────────────────────────────
-  const [viewMode, setViewMode] = useState('all');
   const [historyOpen, setHistoryOpen] = useState(false);
   // DashboardHeaderBar's two empty slots (callback refs → DOM nodes): the
   // active table portals its page limit + row counts into the first (before
-  // "All Companies"), TabView its My/All Details pills into the second
-  // (after the date filter).
+  // "All Companies"), TabView its My Details pill into the second (after the
+  // date filter).
   const [pagerSlot, setPagerSlot] = useState(null);
   const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
@@ -727,11 +726,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Takes which resolved snapshot to read from — `resolved` (the live,
   // date-filtered view) by default, or `fullResolved` (every uploaded row,
   // no date bound) when Download PDF/Excel calls it.
-  // One tab's export view — the table respects "My Details"/"All Details"
-  // (the same viewMode/myColumns toggle the screen itself uses): only the
-  // fields currently selected as My Details when that's the active view,
-  // every header of the active version when it's All Details (tab's own
-  // picks first — the same tabColumnDefs order TabView shows). Shared by the
+  // One tab's export view — the table respects "My Details" (the same
+  // myColumns picks the screen itself uses): only the fields currently
+  // ticked there, or every header of the active version while nothing is
+  // (tab's own picks first — the same tabColumnDefs order TabView shows,
+  // narrowed by the same myDetailColumns). Shared by the
   // single-tab Save-to-History payload (buildView, below) and the multi-tab
   // PDF/Excel export (doExport) — "what you're looking at is what gets
   // saved/exported".
@@ -746,7 +745,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
     } else {
       const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
-      if (key) defs = [key, ...(viewMode === 'my' ? rest.filter((h) => myColumns.includes(h.id)) : rest)];
+      if (key) defs = [key, ...myDetailColumns(rest, myColumns)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
     const cards = (tabDef?.titleCardIds || []).map((id) => {
@@ -774,7 +773,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
       },
     };
-  }, [config, viewMode, myColumns]);
+  }, [config, myColumns]);
 
   // Transactions has no Template Settings config of its own (no title
   // cards, no My Details subset) — always every header, one row per Order
@@ -1022,8 +1021,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 config={config}
                 tab={activeTab}
                 resolved={resolved.tableRows === displayTableRows ? resolved : { ...resolved, tableRows: displayTableRows }}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
                 myColumns={myColumns}
                 onMyColumnsChange={onMyColumnsChange}
                 editMode={editMode}

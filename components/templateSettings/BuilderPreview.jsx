@@ -154,7 +154,6 @@ export default function BuilderPreview({ config, highlight = null }) {
       ?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }, [hlKey, active?.id]);
 
-  const [viewMode, setViewMode] = useState('all');
   const [myColumns, setMyColumns] = useState([]);
 
   const slotLit = (id) => !!highlight && (highlight.kind === 'tab' || highlight.kind === 'overview') && highlight.id === id;
@@ -212,8 +211,6 @@ export default function BuilderPreview({ config, highlight = null }) {
                     config={config}
                     tab={tabs.find((t) => t.id === active?.id)}
                     resolved={resolved}
-                    viewMode={viewMode}
-                    onViewModeChange={setViewMode}
                     myColumns={myColumns}
                     onMyColumnsChange={setMyColumns}
                   />
