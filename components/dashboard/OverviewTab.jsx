@@ -156,7 +156,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
         </div>
       ) : (
         <div className="flex flex-col gap-4 @lg:flex-row @lg:items-start">
-          {navOpen && (
+          {!navOpen && (
             <OverviewHierarchyNav
               className="shrink-0 @lg:sticky @lg:top-4 @lg:w-44 @3xl:w-56 @5xl:w-64"
               levels={levels}

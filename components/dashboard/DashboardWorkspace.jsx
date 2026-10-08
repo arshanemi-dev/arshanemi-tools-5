@@ -343,7 +343,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // arranging (Position Settings → edit mode) it always shows, so Save
   // Position stays reachable from whichever tab is being arranged.
   const uploadTab = useMemo(
-    () => [...visibleTabs, ...visibleOverviewTabs].find((t) => normTabName(t.name) === UPLOAD_TAB_NAME) || null,
+    () => [...visibleTabs, ...visibleOverviewTabs].find((t) => normTabName(t.name).includes(UPLOAD_TAB_NAME)) || null,
     [visibleTabs, visibleOverviewTabs],
   );
 
