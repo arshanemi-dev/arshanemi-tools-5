@@ -21,6 +21,7 @@ import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 
@@ -1040,8 +1041,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             )}
           </div>
 
+          {/* The two diagnostic screens below are development-only — a
+              production build hides both (lib/debugTools.js). */}
+
           {/* Merged Extracted Common Headers Data Table */}
-          {canonicalRows.length > 0 && (
+          {DEBUG_TOOLS && canonicalRows.length > 0 && (
             <MergedCommonHeadersTable canonicalRows={canonicalRows} config={config} uploads={uploads} />
           )}
 
@@ -1049,7 +1053,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               exactly what any file (including one they haven't mapped yet)
               parses to without leaving the dashboard. Same gate as Template
               Settings; a regular seller never sees it. */}
-          {canManageTemplates && (
+          {DEBUG_TOOLS && canManageTemplates && (
             <div className="mt-6 max-h-[60vh] shrink-0 overflow-y-auto border-t border-divider bg-surface p-4 rounded-xl">
               <NextLevelSheetDebugger
                 externalFile={debugFile}

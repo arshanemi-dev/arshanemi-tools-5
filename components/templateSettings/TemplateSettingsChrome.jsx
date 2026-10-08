@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { clearAuthTokens, isLoggedIn, authFetch } from '@/lib/tokenStore';
 import { useStoredUser } from '@/lib/useStoredUser';
+import { DEBUG_TOOLS } from '@/lib/debugTools';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
 const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
@@ -13,6 +14,7 @@ const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
 // page — the shared navbar + a "back to dashboard" bar + a scroll container.
 // Mirrors ProfitLossShell's session bootstrap. `page` picks the breadcrumb
 // label and which of the two builder-area links to show (never a self-link).
+// The link to the Sheet Debugger is development-only (lib/debugTools.js).
 export default function TemplateSettingsChrome({ children, page = 'template-settings' }) {
   const isDebug = page === 'debug';
   // Same hydration-safe user as ProfitLossShell — see useStoredUser.
@@ -46,12 +48,14 @@ export default function TemplateSettingsChrome({ children, page = 'template-sett
         </Link>
         <span className="text-subtle">/</span>
         <span className="text-sm font-semibold text-foreground">{isDebug ? 'Sheet Debugger' : 'Template Settings'}</span>
-        <Link
-          href={isDebug ? '/profit-loss/template-settings?t=global' : '/profit-loss/debug'}
-          className="ml-auto text-sm font-medium text-muted hover:text-foreground"
-        >
-          {isDebug ? 'Template Settings' : 'Sheet Debugger'}
-        </Link>
+        {(isDebug || DEBUG_TOOLS) && (
+          <Link
+            href={isDebug ? '/profit-loss/template-settings?t=global' : '/profit-loss/debug'}
+            className="ml-auto text-sm font-medium text-muted hover:text-foreground"
+          >
+            {isDebug ? 'Template Settings' : 'Sheet Debugger'}
+          </Link>
+        )}
       </div>
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>

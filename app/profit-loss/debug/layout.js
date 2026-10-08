@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import { fetchTemplateSettingsAllowed } from '@/lib/marketplaceTemplateAccess';
+import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { ToastProvider } from '@/components/admin/Toast';
 import TemplateSettingsChrome from '@/components/templateSettings/TemplateSettingsChrome';
 
@@ -9,8 +10,12 @@ export const metadata = { title: 'Sheet Debugger — Profit & Loss', robots: { i
 
 // Same gate as /profit-loss/template-settings — this is a diagnostic tool
 // for whoever builds marketplace templates, not a public page. See that
-// layout.js for why a missing payload isn't itself a redirect.
+// layout.js for why a missing payload isn't itself a redirect. Development
+// only (lib/debugTools.js): a production build has no link here, and an old
+// bookmark lands on Template Settings instead.
 export default async function DebugLayout({ children }) {
+  if (!DEBUG_TOOLS) redirect('/profit-loss/template-settings?t=global');
+
   const cookieStore = await cookies();
   const token = cookieStore.get('barmeto-token')?.value || cookieStore.get('admin-token')?.value;
   const payload = token ? await verifyToken(token) : null;
