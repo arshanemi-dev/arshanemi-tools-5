@@ -7,6 +7,7 @@ import {
 import {
   makeFileSlot, makeGraph, makeOverviewTab, makeTab, makeTitleCard,
 } from '@/data/templateSchema';
+import SearchSelect from '@/components/dashboard/SearchSelect';
 
 // One left rail for the whole builder. Two top-level areas:
 //   - Global Settings — Header / Graph / Title Card / Tab / Overview Tab.
@@ -299,13 +300,13 @@ function GroupBlock({ group, draft, selectedId, onSelect, open, onToggle, reorde
               {items.length === 0 && <li className="px-2 py-1.5 text-center text-[11px] text-subtle">None yet.</li>}
               {items.map((it) => (
                 <li key={it.id}>
-                  <select
+                  <SearchSelect
                     value={it.id}
-                    onChange={(e) => swap(it.id, e.target.value)}
-                    className="w-full rounded-md border border-divider bg-background px-2 py-1 text-[12px] focus:border-accent focus:outline-none"
-                  >
-                    {items.map((opt) => <option key={opt.id} value={opt.id}>{opt[group.nameField] || 'Untitled'}</option>)}
-                  </select>
+                    options={items.map((opt) => ({ value: opt.id, label: opt[group.nameField] || 'Untitled' }))}
+                    onChange={(otherId) => swap(it.id, otherId)}
+                    ariaLabel={`Position of ${it[group.nameField] || 'Untitled'}`}
+                    panelClass="w-56"
+                  />
                 </li>
               ))}
             </ul>

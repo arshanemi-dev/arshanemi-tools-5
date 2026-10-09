@@ -13,7 +13,7 @@ import ListSearchSort from './ListSearchSort';
 
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
-function ValueEditor({ label, value, onChange, refNames, listNames, previewScope }) {
+function ValueEditor({ label, value, onChange, refNames, listNames, previewScope, dateNames }) {
   return (
     <div className="rounded-lg border border-divider bg-card p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -35,7 +35,7 @@ function ValueEditor({ label, value, onChange, refNames, listNames, previewScope
         </label>
       </div>
       {value.type === 'formula' ? (
-        <FormulaEditor value={value.formula || ''} onChange={(formula) => onChange({ ...value, formula })} refNames={refNames} listNames={listNames} previewScope={previewScope} />
+        <FormulaEditor value={value.formula || ''} onChange={(formula) => onChange({ ...value, formula })} refNames={refNames} listNames={listNames} previewScope={previewScope} dateNames={dateNames} />
       ) : (
         <input
           value={value.formula || ''}
@@ -69,6 +69,7 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
   const refNames = [...(config.headers || []).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
   const listNames = [...(config.headers || []).filter(isOurHeader).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
   const previewScope = Object.fromEntries(refNames.map((n) => [n, 100]));
+  const dateNames = (config.headers || []).filter((h) => h.type === 'date').map((h) => h.name);
 
   const addCard = () => {
     const item = makeTitleCard(`Title Card ${cards.length + 1}`);
@@ -137,6 +138,7 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
                   refNames={refNames}
                   listNames={listNames}
                   previewScope={previewScope}
+                  dateNames={dateNames}
                 />
                 <ValueEditor
                   label="Add Sub Value"
@@ -145,6 +147,7 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
                   refNames={refNames}
                   listNames={listNames}
                   previewScope={previewScope}
+                  dateNames={dateNames}
                 />
               </>
             )}

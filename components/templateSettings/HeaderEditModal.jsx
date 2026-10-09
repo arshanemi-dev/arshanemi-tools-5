@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '@/components/admin/Modal';
 import { AGGREGATE_BUILTIN_NAMES, makeHeader } from '@/data/templateSchema';
+import { fixedHeaderHint } from '@/data/fixedHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
@@ -19,12 +20,16 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const isNew = !header;
   const reserved = !!form.reserved;
+  const fixedHint = fixedHeaderHint(form); // '' unless it's a built-in Account Name / SKU Cost header
   const canSave = form.name.trim().length > 0;
 
   const others = headers.filter((h) => h.id !== form.id);
   const refNames = [...others.map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
   const listNames = [...others.filter(isOurHeader).map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES]; // Header List: Our Headers only
   const previewScope = Object.fromEntries(refNames.map((n) => [n, 100]));
+  const dateNames = others.filter((h) => h.type === 'date').map((h) => h.name);
+  // A Date header has one way to be shown (a local date), so no Format to pick.
+  const setType = (type) => set(type === 'date' ? { type, format: 'text' } : form.type === 'date' ? { type, format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money' } : { type });
 
   const save = () => { if (canSave) onSave({ ...form, name: form.name.trim() }); };
 
@@ -54,27 +59,29 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
           onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
           placeholder="Enter Header name"
           disabled={reserved}
-          title={reserved ? 'Required by every marketplace — name is locked' : undefined}
+          title={fixedHint ? 'Built-in header — name is locked' : reserved ? 'Required by every marketplace — name is locked' : undefined}
           className="rounded-lg border border-divider bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         />
       </label>
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[12px] font-medium text-muted">Type</span>
-        <TypeToggle value={form.type} disabled={reserved} onChange={(type) => set({ type })} />
+        <TypeToggle value={form.type} disabled={reserved} onChange={setType} />
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-1.5 text-xs text-muted">
-          Format
-          <select
-            value={form.format || 'money'}
-            onChange={(e) => set({ format: e.target.value })}
-            className="rounded-md border border-divider bg-background px-2 py-1 text-xs focus:outline-none"
-          >
-            {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </label>
+        {form.type !== 'date' && (
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            Format
+            <select
+              value={form.format || 'money'}
+              onChange={(e) => set({ format: e.target.value })}
+              className="rounded-md border border-divider bg-background px-2 py-1 text-xs focus:outline-none"
+            >
+              {FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-muted">
           <input
             type="checkbox"
@@ -93,11 +100,22 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
           refNames={refNames}
           listNames={listNames}
           previewScope={previewScope}
+          dateNames={dateNames}
         />
       )}
 
-      {reserved && (
+      {form.type === 'date' && (
+        <p className="text-[11.5px] leading-relaxed text-muted">
+          Reads any date or date-time the sheet has — <code>2026-07-29 08:19:55</code>, <code>29/07/2026</code>, <code>29-Jul-2026</code>, <code>Jul 29, 2026 8:19 PM</code>, an Excel date — and shows it as a date (<span className="font-medium text-foreground">29 Jul 2026</span>).
+          In a Formula header, one Date minus another gives days, and <code>TODAY()</code> is today&rsquo;s date.
+        </p>
+      )}
+
+      {reserved && !fixedHint && (
         <p className="text-[11px] text-subtle">Required header — every marketplace must map it to a sheet column before it can be published live. Its name and type are locked.</p>
+      )}
+      {fixedHint && (
+        <p className="text-[11px] text-subtle">Built-in header. {fixedHint} Its name and type are locked.</p>
       )}
       {form.source === 'default' && form.primitive && (
         <p className="text-[11px] text-subtle">

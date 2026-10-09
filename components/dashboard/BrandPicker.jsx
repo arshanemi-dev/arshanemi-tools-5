@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronDown, Plus, Search, Tag } from 'lucide-react';
+import { ChevronDown, Plus, Tag } from 'lucide-react';
 import Popover from './Popover';
+import { ListSearchBox, sortByLabel } from './SearchChecklist';
 
 // "Select Brand ▾" — the toolbar's second setup step, after Market Place.
 // Unlike every other dropdown here it isn't data-driven (there's no data yet
@@ -12,11 +13,12 @@ import Popover from './Popover';
 // buttons and tags the next upload with it (see DashboardWorkspace.onUpload).
 export default function BrandPicker({ brands = [], value, onChange, onCreate, compact = false }) {
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState(null);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return s ? brands.filter((b) => b.toLowerCase().includes(s)) : brands;
-  }, [q, brands]);
+    return sortByLabel(s ? brands.filter((b) => b.toLowerCase().includes(s)) : brands, (b) => b, sort);
+  }, [q, brands, sort]);
 
   const exactMatch = brands.some((b) => b.toLowerCase() === q.trim().toLowerCase());
 
@@ -47,15 +49,8 @@ export default function BrandPicker({ brands = [], value, onChange, onCreate, co
     >
       {(close) => (
         <>
-          <div className="relative mb-1 px-0.5 pt-0.5">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search or create a brand…"
-              className="w-full rounded-lg border border-divider bg-card py-1.5 pl-8 pr-2 text-[13px] focus:border-accent focus:outline-none"
-            />
+          <div className="mb-1 px-0.5 pt-0.5">
+            <ListSearchBox value={q} onChange={setQ} placeholder="Search or create a brand…" label="Search or create a brand" sort={sort} onSort={setSort} />
           </div>
 
           {filtered.map((b) => (

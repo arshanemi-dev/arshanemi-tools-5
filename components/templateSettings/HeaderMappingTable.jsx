@@ -1,40 +1,23 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check as CheckIcon, Filter, Lock, Pencil, Trash2, X } from 'lucide-react';
-import Popover from '@/components/dashboard/Popover';
+import { Check as CheckIcon, Lock, Pencil, Trash2, X } from 'lucide-react';
+import ColumnFilterButton from '@/components/dashboard/ColumnFilterButton';
 import { mappedColumnsByHeader, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 import { DEFAULT_LIST_SORT, sortItems } from '@/lib/profitLoss/listSort';
+import { isFixedHeader } from '@/data/fixedHeaders';
 
 const OUR_COL = '__our__';
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 export const colKey = (marketplaceId, sheetHeader) => JSON.stringify([marketplaceId, sheetHeader]);
 const matches = (text, q) => !q || norm(text).includes(norm(q));
 
-function ColumnHead({ label, sub, filter, onFilter }) {
+function ColumnHead({ label, sub, filter, onFilter, getOptions, onOpenChange, sortDir, onSort }) {
   return (
     <div className="flex items-center gap-1 whitespace-nowrap">
       <span className="font-normal">{label}</span>
       {sub && <span className="text-[10.5px] font-normal text-subtle">· {sub}</span>}
-      <Popover
-        panelClass="min-w-[13rem] p-2"
-        trigger={() => (
-          <button type="button" aria-label={`Filter ${label}`} className={`rounded p-0.5 hover:bg-card-hover ${filter ? 'text-action' : 'text-foreground'}`}>
-            <Filter size={13} fill="currentColor" />
-          </button>
-        )}
-      >
-        <div className="space-y-2">
-          <input
-            autoFocus
-            value={filter || ''}
-            onChange={(e) => onFilter(e.target.value)}
-            placeholder="Contains…"
-            className="w-full rounded-md border border-divider bg-background px-2 py-1 text-[12px] font-normal focus:border-accent focus:outline-none"
-          />
-          {filter && <button type="button" onClick={() => onFilter('')} className="text-[11px] font-medium text-subtle hover:text-foreground">Clear filter</button>}
-        </div>
-      </Popover>
+      <ColumnFilterButton label={label} filter={filter} getOptions={getOptions} onChange={onFilter} onOpenChange={onOpenChange} size={13} sortDir={sortDir} onSort={onSort} />
     </div>
   );
 }
@@ -69,16 +52,28 @@ function Check({ checked, onChange, label, disabled }) {
 // with every marketplace's mapped headers as boxes to its right (× unmaps
 // one). Below that, the Unmapped block lists — independently per column —
 // the Our Headers with no mapping yet and each marketplace's headers not
-// mapped to anything. Every column has a text filter. Our Headers within
-// each block follow `ourSort` (Name / Created — lib/profitLoss/listSort.js);
-// marketplace columns keep their sheet order. When the section passes
-// `ourQuery` / `onOurQuery` (HeaderSection's search box), that IS the Our
-// Header column's filter — typing in either place edits the same text.
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, onOurQuery, ourSort = DEFAULT_LIST_SORT }) {
-  const [filters, setFilters] = useState({});
-  const setFilter = (col) => (q) => setFilters((f) => ({ ...f, [col]: q }));
-  const ourFilter = ourQuery ?? filters[OUR_COL];
-  const setOurFilter = onOurQuery ?? setFilter(OUR_COL);
+// mapped to anything. Every column has the same spreadsheet-style filter the
+// dashboard tables have (the funnel — search + tick the headers to keep,
+// several at once): the Our Header column offers every Our Header, a
+// marketplace column every header of that marketplace's sheets. Our Headers
+// within each block follow `ourSort` (Name / Created —
+// lib/profitLoss/listSort.js); marketplace columns keep their sheet order.
+// `ourQuery` (HeaderSection's search box) narrows the Our Header column by
+// text on top of its filter.
+//
+// The same menu sorts: Our Header's "Sort A → Z / Z → A" is the section's own
+// Name sort (`ourSort` — the menu and the sort picker above the table are
+// one setting, `onOurSort`); a marketplace column's orders that column's
+// headers — its Unmapped list, and the Mapped rows by the header mapped
+// there (rows with nothing mapped in that column go last). One marketplace
+// column at a time, and it steps aside when Our Header is sorted.
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {} }) {
+  const [colSort, setColSort] = useState(null); // { id, dir } — the marketplace column the table is sorted on
+  const [filters, setFilters] = useState({}); // { [column]: { values: [header name, ...] } | null }
+  const [menuOpen, setMenuOpen] = useState(false); // a filter menu is open — the table makes room for it
+  const setFilter = (col) => (f) => setFilters((prev) => ({ ...prev, [col]: f }));
+  const allowed = (col) => (filters[col]?.values ? new Set(filters[col].values) : null);
+  const filterCount = Object.values(filters).filter((f) => f?.values).length;
   const ordered = useMemo(() => sortItems(headers, ourSort), [headers, ourSort]);
 
   const knownIds = useMemo(() => new Set(headers.map((h) => h.id)), [headers]);
@@ -91,22 +86,44 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       const mapped = mappedColumnsByHeader(t.config, knownIds);
       const mappedKeys = new Set([...mapped.values()].flat().map(norm));
       const all = marketplaceUniqueHeaders(t.config);
-      return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, unmapped: all.filter((o) => !mappedKeys.has(norm(o.name))) };
+      return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, all: all.map((o) => o.name), unmapped: all.filter((o) => !mappedKeys.has(norm(o.name))) };
     }), [marketplaces, knownIds]);
 
   const isMerged = (h) => columns.some((c) => (c.mapped.get(h.id) || []).length);
-  const mergedRows = ordered.filter((h) => isMerged(h)
-    && matches(h.name, ourFilter)
-    && columns.every((c) => !filters[c.id] || (c.mapped.get(h.id) || []).some((s) => matches(s, filters[c.id]))));
-  const ourUnmapped = ordered.filter((h) => !isMerged(h) && matches(h.name, ourFilter));
-  const colUnmapped = columns.map((c) => c.unmapped.filter((o) => matches(o.name, filters[c.id])));
+  const ourAllowed = allowed(OUR_COL);
+  const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name));
+  const colAllowed = columns.map((c) => allowed(c.id));
+  const sortCol = colSort ? columns.find((c) => c.id === colSort.id) : null;
+  const sign = colSort?.dir === 'desc' ? -1 : 1;
+  const byText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  const mappedIn = (h) => (sortCol.mapped.get(h.id) || [])[0];
+  const mergedMatches = ordered.filter((h) => isMerged(h)
+    && ourShown(h)
+    && columns.every((c, ci) => !colAllowed[ci] || (c.mapped.get(h.id) || []).some((s) => colAllowed[ci].has(s))));
+  const mergedRows = sortCol
+    ? [...mergedMatches].sort((a, b) => {
+      const x = mappedIn(a);
+      const y = mappedIn(b);
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1; // nothing mapped here → last
+      return sign * byText(x, y);
+    })
+    : mergedMatches;
+  const ourUnmapped = ordered.filter((h) => !isMerged(h) && ourShown(h));
+  const colUnmapped = columns.map((c, ci) => {
+    const list = c.unmapped.filter((o) => !colAllowed[ci] || colAllowed[ci].has(o.name));
+    return sortCol?.id === c.id ? [...list].sort((a, b) => sign * byText(a.name, b.name)) : list;
+  });
+  const ourSortDir = ourSort === 'name-asc' ? 'asc' : ourSort === 'name-desc' ? 'desc' : null;
+  const sortOur = (dir) => { setColSort(null); onOurSort(dir ? `name-${dir}` : DEFAULT_LIST_SORT); };
   const raggedCount = Math.max(ourUnmapped.length, ...colUnmapped.map((l) => l.length), columns.some((c) => !c.total) ? 1 : 0);
 
-  const badge = (h) => (h.reserved ? 'required' : h.source === 'default' ? 'default' : h.source === 'extracted' ? 'sheet' : '');
+  // "required" = must be mapped (Order Id / Transaction Id); "fixed" = the
+  // other built-in headers (Account Name, the SKU Cost ones — data/fixedHeaders.js).
+  const badge = (h) => (isFixedHeader(h) ? 'fixed' : h.reserved ? 'required' : h.source === 'default' ? 'default' : h.source === 'extracted' ? 'sheet' : '');
 
   // Per-row rename: Edit swaps the name for an input with Save ✓ / Cancel ×
-  // (Enter / Escape too); Delete stays beside them. The two required headers
-  // can't be renamed or deleted — they show a lock instead.
+  // (Enter / Escape too); Delete stays beside them. The required and the
+  // fixed headers can't be renamed or deleted — they show a lock instead.
   const [editing, setEditing] = useState(null); // { id, text }
   const commitEdit = () => {
     const text = editing?.text.trim();
@@ -144,7 +161,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
               </span>
             </label>
             {h.reserved ? (
-              <span title="Required header — can’t be renamed or deleted" className="shrink-0 p-1 text-subtle"><Lock size={12} /></span>
+              <span title={`${isFixedHeader(h) ? 'Built-in' : 'Required'} header — can’t be renamed or deleted`} className="shrink-0 p-1 text-subtle"><Lock size={12} /></span>
             ) : (
               <>
                 <RowBtn title="Edit" onClick={() => setEditing({ id: h.id, text: h.name })} tone="text-subtle hover:bg-card-hover hover:text-foreground"><Pencil size={12} /></RowBtn>
@@ -163,16 +180,24 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   );
 
   return (
-    <div className="max-h-[32rem] min-h-[14rem] overflow-auto border-y border-divider">
+    <>
+      {filterCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider bg-action-soft px-4 py-1.5 text-xs text-foreground">
+          <span>{filterCount} column filter{filterCount === 1 ? '' : 's'} on</span>
+          <button type="button" onClick={() => setFilters({})} className="font-semibold text-link hover:underline">Clear all filters</button>
+        </div>
+      )}
+      {/* taller while a filter menu is open, so the menu isn't cut off by this scroll area */}
+      <div data-table-scroll className={`max-h-[32rem] overflow-auto border-y border-divider ${menuOpen ? 'min-h-[25rem]' : 'min-h-[14rem]'}`}>
       <table className="w-full border-collapse text-left text-[13px]">
         <thead className="sticky top-0 z-10 bg-background text-muted">
           <tr>
             <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
-              <ColumnHead label="Our Header" sub={`${headers.length}`} filter={ourFilter} onFilter={setOurFilter} />
+              <ColumnHead label="Our Header" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
             </th>
             {columns.map((c) => (
               <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">
-                <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} />
+                <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((name) => ({ text: name }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
               </th>
             ))}
           </tr>
@@ -248,6 +273,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           )}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

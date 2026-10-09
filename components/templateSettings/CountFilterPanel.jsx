@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AGGREGATE_BUILTIN_NAMES } from '@/data/templateSchema';
 import { countCall } from '@/lib/profitLoss/formula';
+import SearchSelect from '@/components/dashboard/SearchSelect';
 
 const MODES = [['all', 'All'], ['filter', 'Filter']];
 
@@ -36,15 +37,16 @@ export default function CountFilterPanel({ columns = [], initialColumn = '', onI
     <div className="space-y-2.5 rounded-xl border border-accent/40 bg-accent/5 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] font-semibold text-foreground">Count</span>
-        <select
+        <SearchSelect
           value={column}
-          onChange={(e) => setColumn(e.target.value)}
-          aria-label="Header to count"
-          className="h-8 min-w-[10rem] max-w-full rounded-lg border border-divider bg-background px-2 text-[12.5px] text-foreground focus:border-accent focus:outline-none"
-        >
-          <option value="">Pick a header…</option>
-          {options.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
+          options={options.map((n) => ({ value: n, label: n }))}
+          onChange={setColumn}
+          placeholder="Pick a header…"
+          searchPlaceholder="Search headers…"
+          ariaLabel="Header to count"
+          className="min-w-[11rem]"
+          triggerClass="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-divider bg-background px-2 text-left text-[12.5px] text-foreground hover:bg-card-hover focus:border-accent focus:outline-none"
+        />
         <div role="radiogroup" aria-label="Which values to count" className="inline-flex gap-1.5">
           {MODES.map(([id, label]) => (
             <button

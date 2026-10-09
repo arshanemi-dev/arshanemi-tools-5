@@ -3,6 +3,7 @@
 import { AlertTriangle, ArrowDown, ArrowUp, X } from 'lucide-react';
 import { MAX_OVERVIEW_LEVELS } from '@/lib/profitLoss/overviewTree';
 import { levelStyle } from '@/components/dashboard/overviewLevelStyles';
+import SearchSelect from '@/components/dashboard/SearchSelect';
 
 // An Overview tab's "Unique Value Hierarchy" — the ordered key headers its
 // pivot nests by (Level 1 → Level N, e.g. Company → Sku → Order Id). Each
@@ -56,18 +57,18 @@ export default function HierarchyLevelsEditor({ options = [], value = [], onChan
             return (
               <li key={id} className={`flex items-center gap-1.5 rounded-lg border border-l-4 border-divider-light bg-background py-1 pl-2 pr-1 ${st.stripe} ${st.step}`}>
                 <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${st.badge}`}>L{i + 1}</span>
-                <select
+                <SearchSelect
                   value={id}
-                  onChange={(e) => pick(i, e.target.value)}
-                  aria-label={`Level ${i + 1} header`}
-                  className="min-w-0 flex-1 rounded-md border border-divider bg-background px-2 py-1 text-[12px] text-foreground focus:border-accent focus:outline-none"
-                >
-                  {!byId.has(id) && <option value={id}>{id} (deleted header)</option>}
-                  {options.map((o) => {
+                  options={options.map((o) => {
                     const at = value.indexOf(o.id);
-                    return <option key={o.id} value={o.id}>{o.name}{at !== -1 && at !== i ? ` (swap with L${at + 1})` : ''}</option>;
+                    return { value: o.id, label: o.name, hint: at !== -1 && at !== i ? `swap with L${at + 1}` : undefined };
                   })}
-                </select>
+                  onChange={(newId) => pick(i, newId)}
+                  ariaLabel={`Level ${i + 1} header`}
+                  searchPlaceholder="Search headers…"
+                  missingLabel={byId.has(id) ? null : `${id} (deleted header)`}
+                  className="min-w-0 flex-1"
+                />
                 <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move level up" className="shrink-0 rounded p-0.5 text-subtle hover:text-foreground disabled:opacity-30">
                   <ArrowUp size={12} />
                 </button>
@@ -92,17 +93,19 @@ export default function HierarchyLevelsEditor({ options = [], value = [], onChan
 
       {canAdd && (
         <div className={`${value.length ? 'mt-1.5' : ''} ${nextStyle.step}`}>
-          <select
+          <SearchSelect
             value=""
-            onChange={(e) => add(e.target.value)}
-            aria-label={`Add level ${value.length + 1}`}
-            className={`rounded-full border border-dashed bg-background px-2.5 py-1 text-[12px] font-medium focus:outline-none ${
+            options={unused.map((o) => ({ value: o.id, label: o.name }))}
+            onChange={add}
+            ariaLabel={`Add level ${value.length + 1}`}
+            searchPlaceholder="Search headers…"
+            className="inline-block"
+            triggerClass={`rounded-full border border-dashed bg-background px-2.5 py-1 text-[12px] font-medium focus:outline-none ${
               missing ? 'border-neg text-neg' : 'border-divider-light text-action'
             }`}
           >
-            <option value="">+ Add Level {value.length + 1}{missing ? ' (required)' : ''}…</option>
-            {unused.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+            + Add Level {value.length + 1}{missing ? ' (required)' : ''}…
+          </SearchSelect>
         </div>
       )}
       {missing && (

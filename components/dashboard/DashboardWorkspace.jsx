@@ -20,7 +20,9 @@ import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, delet
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { mergeSkuCosts, normalizeSkuCosts, unitCostMap, withSkuCostField, withSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { withFixedHeaders } from '@/data/fixedHeaders';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -74,7 +76,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // configured shows "No marketplaces" instead of a fake dashboard.
   // Headers/Title Cards/Graphs/Tabs/Overview Tabs are global (`global`,
   // shared, fetched once) — switching marketplace only changes `templates`'
-  // per-marketplace fileSlots/mappings, never the dashboard's shape.
+  // per-marketplace fileSlots/mappings, never the dashboard's shape. The
+  // built-in Account Name + SKU Cost headers are recognised on the way in
+  // (withFixedHeaders), so a version published before they existed fills
+  // them the same as one saved since.
   const [templates, setTemplates] = useState([]);
   const [globalConfig, setGlobalConfig] = useState(null);
   const [templatesReady, setTemplatesReady] = useState(false);
@@ -92,7 +97,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     .then((res) => {
       if (!res.ok) { setTemplatesError(failureMessage(res, 'Could not load the marketplaces')); return; }
       const live = Array.isArray(res.data?.templates) ? res.data.templates : [];
-      setGlobalConfig(res.data?.global || {});
+      setGlobalConfig(withFixedHeaders(res.data?.global || {}));
       setTemplates(live);
       setActiveTemplateId((cur) => (live.some((t) => t.id === cur) ? cur : live[0]?.id ?? null));
     })
@@ -134,7 +139,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   // ── uploads ─────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
-  const [skuCost, setSkuCost] = useState(null); // { map, count, fileName }
+  const [skuCosts, setSkuCosts] = useState({}); // { [sku]: { cogs, costGst, finalCost, otherExpense } } — lib/profitLoss/skuCosts.js
   const [busy, setBusy] = useState(false);
   // The most recently uploaded raw File (any slot, or the SKU Cost button) —
   // fed to the embedded SheetDebugger below the toolbar so it always shows
@@ -180,6 +185,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader, config.headers),
     [uploads, orderIdHeader, transactionIdHeader, config.headers],
   );
+  // The same rows with each one's SKU Cost record attached — what the
+  // dashboard is resolved from, so the fixed cost headers (COGS (Product
+  // Cost), Cost GST in, Final Product Cost, Other Expense (per order)) read
+  // like any sheet column. `canonicalRows` itself stays what gets saved.
+  // `unitCosts` = each SKU's COGS alone: the engine's unit cost and the
+  // table's inline Cost input.
+  const pricedRows = useMemo(() => withSkuCosts(canonicalRows, skuCosts), [canonicalRows, skuCosts]);
+  const unitCosts = useMemo(() => unitCostMap(skuCosts), [skuCosts]);
 
   // ── filters (pending vs applied) ────────────────────────────────────────
   // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
@@ -237,13 +250,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     onLoadedPreferences: (p) => {
       if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
       if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
-      // A returning signed-in user's manually-typed SKU costs, saved (debounced)
-      // from the table's Cost column — restored here so they don't have to
-      // retype them every session. A later SKU-cost sheet upload still wins
-      // (onUploadSkuCost replaces the whole map wholesale, same as today).
-      if (p.skuCosts && typeof p.skuCosts === 'object' && Object.keys(p.skuCosts).length) {
-        setSkuCost({ map: p.skuCosts, count: Object.keys(p.skuCosts).length, fileName: null });
-      }
+      // A returning signed-in user's SKU costs — the SKU Cost sheet they
+      // uploaded and anything typed into the table's Cost column, both saved
+      // (debounced) — restored here so they don't have to redo them every
+      // session. A later SKU Cost sheet upload is laid over these (see
+      // onUploadSkuCost).
+      const savedCosts = normalizeSkuCosts(p.skuCosts);
+      if (Object.keys(savedCosts).length) setSkuCosts(savedCosts);
     },
   });
 
@@ -376,8 +389,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!config.headers?.length) return emptyResolved;
     try {
       return resolveTemplate(config, {
-        canonicalRows,
-        skuCostMap: skuCost?.map || {},
+        canonicalRows: pricedRows,
+        skuCostMap: unitCosts,
         ads: applied.ads,
         dateFrom: applied.dateRange.from,
         dateTo: applied.dateRange.to,
@@ -389,14 +402,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTemplate failed:', err);
       return emptyResolved;
     }
-  }, [config, canonicalRows, skuCost, applied, overviewHeaderIds]);
+  }, [config, pricedRows, unitCosts, applied, overviewHeaderIds]);
 
   const transactionResolved = useMemo(() => {
     if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
     try {
       return resolveTransactionRows(config, {
-        canonicalRows,
-        skuCostMap: skuCost?.map || {},
+        canonicalRows: pricedRows,
+        skuCostMap: unitCosts,
         ads: applied.ads,
         dateFrom: applied.dateRange.from,
         dateTo: applied.dateRange.to,
@@ -407,7 +420,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTransactionRows failed:', err);
       return { headers: config.headers || [], rows: [], rowCount: 0 };
     }
-  }, [orderIdHeader, config, canonicalRows, skuCost, applied]);
+  }, [orderIdHeader, config, pricedRows, unitCosts, applied]);
 
   // The complete, unlimited dataset — every uploaded row, no date bound —
   // resolved once so Download PDF/Excel can pull "all data" regardless of
@@ -420,8 +433,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!config.headers?.length) return emptyResolved;
     try {
       return resolveTemplate(config, {
-        canonicalRows,
-        skuCostMap: skuCost?.map || {},
+        canonicalRows: pricedRows,
+        skuCostMap: unitCosts,
         ads: applied.ads,
         dateFrom: null,
         dateTo: null,
@@ -433,7 +446,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTemplate (export) failed:', err);
       return emptyResolved;
     }
-  }, [config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company, overviewHeaderIds]);
+  }, [config, pricedRows, unitCosts, applied.ads, applied.platform, applied.company, overviewHeaderIds]);
 
   // Transactions' own "all data" counterpart to fullResolved — same reason:
   // Download PDF/Excel pulls every row regardless of the live view's date
@@ -443,8 +456,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
     try {
       return resolveTransactionRows(config, {
-        canonicalRows,
-        skuCostMap: skuCost?.map || {},
+        canonicalRows: pricedRows,
+        skuCostMap: unitCosts,
         ads: applied.ads,
         dateFrom: null,
         dateTo: null,
@@ -455,7 +468,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       console.error('resolveTransactionRows (export) failed:', err);
       return { headers: config.headers || [], rows: [], rowCount: 0 };
     }
-  }, [orderIdHeader, config, canonicalRows, skuCost, applied.ads, applied.platform, applied.company]);
+  }, [orderIdHeader, config, pricedRows, unitCosts, applied.ads, applied.platform, applied.company]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
@@ -598,22 +611,28 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     setDebugSlotId(null); // not a marketplace file slot — nothing to match against
     setBusy(true);
     try {
-      const { map, count } = await parseSkuCostSheet(file);
-      if (!count) { addToast('No SKU/Cost columns found', 'error'); return; }
-      setSkuCost({ map, count, fileName: file.name });
-      addToast(`Loaded costs for ${count} SKUs`);
+      const { costs, fields, count } = await parseSkuCostSheet(file);
+      if (!fields.length) { addToast('No SKU cost columns found — the sheet needs a SKU column and the cost columns from Download SKU Cost', 'error'); return; }
+      // Laid over what's already there, not swapped for it: a SKU the sheet
+      // doesn't list keeps its costs, an emptied cell clears that one cost.
+      // Saved for a signed-in user, the same as a typed Cost.
+      const next = mergeSkuCosts(skuCosts, costs);
+      setSkuCosts(next);
+      onSkuCostsChange(next);
+      addToast(count ? `Loaded costs for ${count} SKU${count === 1 ? '' : 's'}` : 'SKU Cost sheet read — it has no costs filled in', count ? 'success' : 'error');
     } finally {
       setBusy(false);
     }
-  }, [addToast]);
+  }, [addToast, skuCosts, onSkuCostsChange]);
 
   const onDownloadSkuTemplate = useCallback(() => {
-    downloadSkuCostTemplate([...new Set(canonicalRows.map((r) => r.sku))]);
-  }, [canonicalRows]);
+    downloadSkuCostTemplate(canonicalRows.map((r) => r.sku), skuCosts);
+  }, [canonicalRows, skuCosts]);
 
-  // The table's inline Cost input — updates the live skuCostMap immediately
-  // (so Product Cost / COGS / Profit-Loss recompute as the user types) and
-  // hands the fresh map to the debounced-save hook for signed-in users.
+  // The table's inline Cost input — a SKU's COGS (Product Cost). Updates the
+  // live costs immediately (so Product Cost / COGS / Profit-Loss recompute as
+  // the user types) and hands them to the debounced-save hook for signed-in
+  // users.
   // `dirtySkuKeys` marks the row light blue ("unsaved") the moment a Cost is
   // typed; it clears (back to normal) once useDashboardSettings' debounced
   // PUT actually succeeds (skuCostsSaveTick below) — for a signed-out user
@@ -621,17 +640,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // really isn't being saved anywhere for them).
   const [dirtySkuKeys, setDirtySkuKeys] = useState(() => new Set());
   const onCostChange = useCallback((sku, rawValue) => {
-    const map = { ...(skuCost?.map || {}) };
-    const trimmed = String(rawValue ?? '').trim();
-    if (trimmed === '') delete map[sku];
-    else {
-      const n = Number(trimmed);
-      if (Number.isFinite(n)) map[sku] = n;
-    }
-    setSkuCost({ map, count: Object.keys(map).length, fileName: skuCost?.fileName ?? null });
-    onSkuCostsChange(map);
+    const next = withSkuCostField(skuCosts, sku, 'cogs', rawValue);
+    setSkuCosts(next);
+    onSkuCostsChange(next);
     setDirtySkuKeys((prev) => new Set(prev).add(sku));
-  }, [skuCost, onSkuCostsChange]);
+  }, [skuCosts, onSkuCostsChange]);
 
   useEffect(() => {
     if (skuCostsSaveTick > 0) (() => setDirtySkuKeys(new Set()))();
@@ -1026,7 +1039,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
-                costBySku={skuCost?.map || {}}
+                costBySku={unitCosts}
                 onCostChange={onCostChange}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
@@ -1047,7 +1060,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
-                costBySku={skuCost?.map || {}}
+                costBySku={unitCosts}
                 onCostChange={onCostChange}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}

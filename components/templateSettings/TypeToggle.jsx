@@ -1,11 +1,11 @@
 'use client';
 
-const LABELS = { formula: 'Formula', number: 'Number', text: 'Text', alphanumeric: 'Alphanumeric', graphDesign: 'Graph Design' };
+const LABELS = { formula: 'Formula', number: 'Number', text: 'Text', alphanumeric: 'Alphanumeric', date: 'Date', graphDesign: 'Graph Design' };
 
-// The "Formula / Number / Text / Alphanumeric" pills from the Header design —
-// separate rounded pills, green when active. Used by Header / Title Card /
-// Graph Data.
-export default function TypeToggle({ value, onChange, options = ['formula', 'number', 'text', 'alphanumeric'], disabled = false }) {
+// The "Formula / Number / Text / Alphanumeric / Date" pills from the Header
+// design — separate rounded pills, green when active. Used by Header / Title
+// Card / Graph Data (which pass their own, shorter option lists).
+export default function TypeToggle({ value, onChange, options = ['formula', 'number', 'text', 'alphanumeric', 'date'], disabled = false }) {
   return (
     <div className="inline-flex flex-wrap gap-1.5">
       {options.map((opt) => (

@@ -7,7 +7,7 @@ import { normHeader } from '@/data/platforms/canonical';
 import { matchSlotHeaders } from '@/lib/sheet/matchSlotHeaders';
 import { slotExtractedHeaders } from '@/lib/profitLoss/marketplaceHeaders';
 import { normalizeOrderId } from '@/lib/profitLoss/resolveTemplate';
-import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { RESERVED_HEADER_IDS, isReservedHeaderId } from '@/data/templateSchema';
 import { useToast } from '@/components/admin/Toast';
 
 // One uploaded file's full debug breakdown — everything SheetDebugger used
@@ -91,7 +91,7 @@ export default function SheetDebugFilePanel({ record, slot = null, headers = [],
         )].slice(0, 3);
       }
       const status = isComputed ? 'computed' : mappedHere ? 'here' : mappedElsewhere ? 'elsewhere' : 'unmapped';
-      return { id: h.id, name: h.name, reserved: !!h.reserved, status, sheetHeader: mappedHere ? h.mappedFrom.sheetHeader : null, samples };
+      return { id: h.id, name: h.name, reserved: isReservedHeaderId(h.id), status, sheetHeader: mappedHere ? h.mappedFrom.sheetHeader : null, samples };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [activeTab, headers, slot]);
 

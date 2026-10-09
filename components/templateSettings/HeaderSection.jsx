@@ -23,8 +23,8 @@ import ListSearchSort from './ListSearchSort';
 //     as boxes on the right; × on a box unmaps it. Every Our Header row also
 //     has its own Edit (inline rename → Save ✓ / Cancel ×) and Delete.
 //   - Search + Name / Created sort (ListSearchSort) above the table narrow
-//     and order the Our Header rows; the search is the same text as the
-//     table's own "Our Header" column filter.
+//     and order the Our Header rows; every column also has its own
+//     spreadsheet-style filter (the funnel in its header).
 // Marketplace columns are never added to Our Headers automatically; headers
 // imported that way before (source 'extracted') get a one-click cleanup.
 // Headers are global (this draft — needs Save Draft / Publish); mappings are
@@ -189,8 +189,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
         <HeaderMappingTable
           headers={headers}
           ourQuery={query}
-          onOurQuery={setQuery}
           ourSort={sort}
+          onOurSort={setSort}
           marketplaces={marketplaces || []}
           activeId={activeId}
           onSelect={setActiveId}

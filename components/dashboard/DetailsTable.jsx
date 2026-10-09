@@ -4,18 +4,23 @@ import { useEffect, useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
+import { activeFilters, cellText, columnOptions } from '@/lib/profitLoss/columnFilter';
 
 // Template-driven details table. `columns` = resolved header defs
 // ({ id, name, format, signed, primitive }) in display order; `rows` =
 // resolveTemplate().tableRows ({ key, company, cells: { [headerId]: {
-// raw, display } } }). First real header column is sticky/linked, rest
-// sortable + per-column filterable.
+// raw, display } } }). First real header column is sticky/linked; every
+// column sorts and has a spreadsheet-style filter (search + tick the values
+// to keep — ColumnHeaderCell / lib/profitLoss/columnFilter.js). A column's
+// checklist offers the values left by the OTHER columns' filters, the way a
+// sheet does.
 //
-// Only the template's own columns show — no automatic "Company" column
-// (pick a "Company" header for the tab to see the upload's brand tag).
-// The one injected column is a "Cost" input right after whichever header
-// is bound to the `sku` engine primitive, if any — a per-SKU unit-cost the
-// user can type directly instead of only via the SKU-cost sheet upload.
+// Only the template's own columns show — the upload's "MarketPlace_Brand"
+// tag is the built-in "Account Name" header (data/fixedHeaders.js), there
+// when a tab picks it. The one injected column is a "Cost" input right after
+// whichever header is bound to the `sku` engine primitive, if any — a SKU's
+// COGS (Product Cost), which the user can type directly instead of only via
+// the SKU Cost sheet upload.
 //
 // Row selection (the checkboxes) is controlled from DashboardWorkspace, not
 // local state — the header bar's Delete button acts on `selectedKeys`
@@ -57,25 +62,25 @@ export default function DetailsTable({
   }
 
   const [sort, setSort] = useState(null); // { key, dir }
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState({}); // { [columnKey]: { values } | null }
+  const [filterOpen, setFilterOpen] = useState(false); // a filter menu is open — the table makes room for it
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
 
+  // Only the filters of columns that are on screen count.
+  const colKeys = columns.map((h) => h.id).join('\u0000');
+  const applied = useMemo(() => activeFilters(filters, colKeys.split('\u0000')), [filters, colKeys]);
+  const passes = (r, except = null) => applied.every(([key, values]) => key === except || values.has(cellText(r.cells[key])));
+  // One column's checklist: the values in the rows every OTHER filter leaves.
+  const optionsFor = (key) => columnOptions(rows.filter((r) => passes(r, key)), (r) => cellText(r.cells[key]), (r) => r.cells[key]?.raw);
+
   const view = useMemo(() => {
-    let out = rows.filter((r) =>
-      Object.entries(filters).every(([key, f]) => {
-        if (!f) return true;
-        const raw = r.cells[key]?.raw;
-        if (f.op === 'contains') return String(raw ?? '').toLowerCase().includes(String(f.a).toLowerCase());
-        const n = Number(raw) || 0;
-        if (f.a != null && n < f.a) return false;
-        if (f.b != null && n > f.b) return false;
-        return true;
-      }),
-    );
+    let out = applied.length
+      ? rows.filter((r) => applied.every(([key, values]) => values.has(cellText(r.cells[key]))))
+      : rows;
     if (sort?.key) {
       const dir = sort.dir === 'asc' ? 1 : -1;
       out = [...out].sort((a, b) => {
@@ -86,7 +91,7 @@ export default function DetailsTable({
       });
     }
     return out;
-  }, [rows, filters, sort]);
+  }, [rows, applied, sort]);
 
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
@@ -115,7 +120,20 @@ export default function DetailsTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-divider bg-background">
-      <div className="max-h-[65vh] overflow-auto">
+      {/* Filters on: say so on the table itself — on the dashboard the pager (and
+          its row count) lives up in the header bar. */}
+      {applied.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
+          <span>
+            {applied.length} filter{applied.length === 1 ? '' : 's'} on — showing <span className="font-semibold">{view.length}</span> of {rows.length} row{rows.length === 1 ? '' : 's'}
+          </span>
+          <button type="button" onClick={() => setFilters({})} className="font-semibold text-link hover:underline">
+            Clear all filters
+          </button>
+        </div>
+      )}
+      {/* min-h while a filter menu is open: with only a few rows the menu would otherwise be cut off by this scroll area */}
+      <div data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[25rem]' : ''}`}>
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-divider">
@@ -139,6 +157,8 @@ export default function DetailsTable({
                       onSortChange={setSort}
                       filter={filters[col.key]}
                       onFilterChange={(f) => setFilters((prev) => ({ ...prev, [col.key]: f }))}
+                      getFilterOptions={() => optionsFor(col.key)}
+                      onFilterOpenChange={setFilterOpen}
                       editMode={editMode}
                       showArrange={editMode && !col.sticky}
                       items={arrange?.allItems}

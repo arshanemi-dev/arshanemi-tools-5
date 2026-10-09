@@ -11,9 +11,10 @@ import { ACCEPT } from '@/lib/sheet/readAnyFile';
 // (via the searchable/creatable BrandPicker, backed by the user's saved
 // brand list); every file upload button stays disabled until a brand is
 // picked or created, since that's what tags the upload as
-// "MarketPlace_Brand" (see DashboardWorkspace.onUpload). The SKU Cost buttons
-// need actual uploaded rows to act on, so they unlock separately once
-// `hasData`. Then — right-aligned, signed-in users only — the
+// "MarketPlace_Brand" — its Account Name (see DashboardWorkspace.onUpload).
+// The SKU Cost buttons (download the sheet of the fixed cost headers, upload
+// it back filled in) need actual uploaded rows to act on, so they unlock
+// separately once `hasData`. Then — right-aligned, signed-in users only — the
 // dashboard-personalization toggle (Position Settings -> Save Position, plus
 // Reset Position while active). Upload buttons are generated from
 // config.fileSlots so a template with 3 aux "Header N" slots renders exactly
@@ -66,7 +67,7 @@ export default function DashboardToolbar({
         <FileIconButton
           icon={FileUp}
           label="Upload SKU Cost"
-          title={hasData ? 'Upload your SKU → cost sheet' : 'Upload a settlement sheet first'}
+          title={hasData ? 'Upload your filled-in SKU Cost sheet — COGS (Product Cost), Cost GST in, Final Product Cost, Other Expense (per order)' : 'Upload a settlement sheet first'}
           accept=".csv,.tsv,.txt,.xlsx,.xls"
           multiple={false}
           onFiles={(f) => onUploadSkuCost(f[0])}
@@ -78,7 +79,7 @@ export default function DashboardToolbar({
           onClick={onDownloadSkuTemplate}
           disabled={!hasData}
           className="inline-flex h-9 items-center gap-1.5 rounded-full border border-divider-light bg-background px-3 text-sm font-medium text-foreground transition-colors hover:border-divider disabled:opacity-45"
-          title={hasData ? 'Download a blank SKU cost sheet, pre-filled with your SKUs' : 'Upload a settlement sheet first'}
+          title={hasData ? 'Download the SKU Cost sheet — your SKUs with the costs saved so far; fill it in and upload it back' : 'Upload a settlement sheet first'}
         >
           <FileDown size={15} className="shrink-0" />
           <span className="hidden sm:inline">Download SKU Cost</span>

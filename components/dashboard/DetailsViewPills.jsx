@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import Popover from './Popover';
+import { ListSearchBox, matchesSearch, sortByLabel } from './SearchChecklist';
 import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 
 // "My Details ▾" — the column set the table shows. Its dropdown is a
@@ -15,7 +17,9 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // The first header is always shown (it's the row key / sticky column — on an
 // Overview tab, its hierarchy), so it's tagged "key" and locked.
 // `emptyShowsAll={false}` (Overview tabs) — with no ticks and no default,
-// nothing is ticked, instead of everything.
+// nothing is ticked, instead of everything. A search box on top narrows the
+// list (a template can have dozens of headers) and its toggle orders it
+// A → Z / Z → A; ticks apply as they're made.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows this; the default stays compact for the builder preview.
 const SIZES = {
@@ -34,6 +38,9 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
   const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds, emptyShowsAll ? toggleable : []).map((h) => h.id));
   const ownTicks = toggleable.some((h) => myColumns.includes(h.id));
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState(null); // the checklist's own order — the table's column order is untouched
+  const listed = sortByLabel(toggleable.filter((h) => matchesSearch(h.name, q)), (h) => h.name, sort);
 
   // Until the user has ticks of their own here, the default is what's
   // showing — so the first tick / untick starts from that, not from nothing.
@@ -46,7 +53,8 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
     <div className="flex flex-wrap items-center gap-2">
       <Popover
         align="left"
-        panelClass="min-w-[15rem] max-h-72 overflow-y-auto p-1"
+        panelClass="min-w-[15rem] max-h-80 overflow-y-auto p-1"
+        onOpenChange={(open) => { if (!open) setQ(''); }}
         trigger={() => (
           <button
             type="button"
@@ -60,7 +68,12 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
         )}
       >
         <ListTitle>Columns in “My Details”</ListTitle>
-        {keyHeader && (
+        {toggleable.length > 0 && (
+          <div className="px-1 pb-1">
+            <ListSearchBox value={q} onChange={setQ} placeholder="Search columns…" label="Search columns" sort={sort} onSort={setSort} />
+          </div>
+        )}
+        {keyHeader && matchesSearch(keyHeader.name, q) && (
           <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground" title="Row key — always shown">
             <input type="checkbox" checked disabled readOnly className="accent-[var(--color-action)] opacity-60" />
             <span className="min-w-0 truncate">{keyHeader.name}</span>
@@ -68,7 +81,8 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
           </div>
         )}
         {toggleable.length === 0 && <div className="px-2 py-2 text-sm text-muted">Only one column on this tab.</div>}
-        {toggleable.map((h) => (
+        {toggleable.length > 0 && listed.length === 0 && <div className="px-2 py-2 text-sm text-muted">No column matches.</div>}
+        {listed.map((h) => (
           <label key={h.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-card-hover">
             <input type="checkbox" checked={shown.has(h.id)} onChange={() => toggle(h.id)} className="accent-[var(--color-action)]" />
             {h.name}

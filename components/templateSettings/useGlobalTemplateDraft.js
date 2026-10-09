@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { makeEmptyGlobalConfig, validateGlobalConfig } from '@/data/templateSchema';
+import { withFixedHeaders } from '@/data/fixedHeaders';
 import {
   getGlobalTemplateMeta, getTemplate, getVersion,
   saveDraftVersion, updateDraftVersion, publishVersion, deleteVersion,
@@ -67,9 +68,13 @@ export default function useGlobalTemplateDraft() {
       if (target) {
         const res = await getVersion(tid, target.id);
         if (alive && res.ok) {
-          const cfg = res.data.version?.config && Object.keys(res.data.version.config).length
+          // withFixedHeaders: a version saved before Account Name / the SKU
+          // Cost headers were built in opens with them locked in place — as
+          // the loaded state, not as an unsaved change (the dashboard reads
+          // them the same way, saved yet or not).
+          const cfg = withFixedHeaders(res.data.version?.config && Object.keys(res.data.version.config).length
             ? res.data.version.config
-            : makeEmptyGlobalConfig();
+            : makeEmptyGlobalConfig());
           setConfig(cfg);
           setSavedJson(JSON.stringify(cfg));
           setActiveVersionId(target.id);
@@ -179,7 +184,7 @@ export default function useGlobalTemplateDraft() {
       // "reload the page" state) rather than leave a blank editor that a
       // Save Draft would then store as if it were real work.
       if (!loaded.ok) { setLoadError(true); return res; }
-      if (loaded.data.version?.config && Object.keys(loaded.data.version.config).length) cfg = loaded.data.version.config;
+      if (loaded.data.version?.config && Object.keys(loaded.data.version.config).length) cfg = withFixedHeaders(loaded.data.version.config);
     }
     setConfig(cfg);
     setSavedJson(JSON.stringify(cfg));

@@ -62,7 +62,7 @@ export default function DashboardHeaderBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <ValueFilter label="Companies" allLabel="All Companies" options={companyOptions} value={company} onChange={onCompanyChange} />
+        <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
         {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
         <div ref={pagerSlotRef} className="contents" />

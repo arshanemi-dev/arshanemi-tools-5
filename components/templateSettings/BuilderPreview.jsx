@@ -39,6 +39,8 @@ function demoMeta(headers, i, seeds) {
     if (h.id === RESERVED_HEADER_IDS.transactionId) { meta[h.id] = `TX-${5001 + i}`; return; }
     const counted = seeds.get(String(h.name).trim().toLowerCase());
     if (counted) { meta[h.id] = counted[(i + hi) % counted.length]; return; }
+    // a Date header: a spread of days in early 2026, each header a few days after the one before
+    if (h.type === 'date') { meta[h.id] = new Date(Date.UTC(2026, 0, 1 + ((i * 3) % 21) + (hi % 5) * 2)).toISOString().slice(0, 10); return; }
     if (h.type === 'number') { meta[h.id] = 10 + ((i * 7 + hi * 13) % 90); return; }
     const variants = 2 + (hi % 3);
     meta[h.id] = `${h.name} ${String.fromCharCode(65 + ((Math.floor(i / (hi % 4 + 1)) + hi) % variants))}`;

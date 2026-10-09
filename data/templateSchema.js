@@ -14,10 +14,14 @@
 
 import { nanoid } from 'nanoid';
 import { MAX_OVERVIEW_LEVELS, overviewLevelIds } from '@/lib/profitLoss/overviewTree';
+import { makeFixedHeaders } from './fixedHeaders';
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
-export const HEADER_TYPES = ['formula', 'number', 'text', 'alphanumeric'];
+// 'date' — any date / date-time the sheet holds, read into a timestamp and
+// shown as a local date (lib/profitLoss/dates.js); formulas can subtract two
+// of them into days.
+export const HEADER_TYPES = ['formula', 'number', 'text', 'alphanumeric', 'date'];
 export const VALUE_TYPES = ['formula', 'number', 'text']; // title-card / series measure
 export const CHART_TYPES = ['line', 'bar', 'area', 'pie'];
 export const CHART_LABELS = { line: 'Line chart', bar: 'Bar chart', area: 'Area chart', pie: 'Pie chart' };
@@ -36,7 +40,10 @@ export const FILE_SLOT_KINDS = ['payment', 'order', 'aux'];
 // published live (see validateMarketplaceConfig) — they're the canonical
 // join/identity keys the P&L tool relies on regardless of marketplace. Fixed
 // (not generated) ids so the check always has something stable to look for;
-// the builder disables Delete (and locks name/type) for these two.
+// the builder disables Delete (and locks name/type) for these two. The
+// other built-in headers — Account Name and the SKU Cost ones — are locked
+// the same way (`reserved: true`) but never have to be mapped: see
+// data/fixedHeaders.js.
 export const RESERVED_HEADER_IDS = {
   orderId: 'hdr_order_id',
   transactionId: 'hdr_transaction_id',
@@ -78,6 +85,7 @@ export function makeEmptyGlobalConfig() {
     headers: [
       makeReservedHeader(RESERVED_HEADER_IDS.orderId, 'Order Id'),
       makeReservedHeader(RESERVED_HEADER_IDS.transactionId, 'Transaction Id'),
+      ...makeFixedHeaders(),
     ],
     titleCards: [],
     graphs: [],
@@ -135,7 +143,7 @@ export function makeHeader({ name = 'Header', type = 'number', source = 'manual'
     primitive: null, // default headers bind to an engine base metric
     mappedFrom: null, // { slot, sheetHeader } — set per marketplace at resolve time, not stored on the global header itself
     note: '',
-    format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money',
+    format: type === 'text' || type === 'alphanumeric' || type === 'date' ? 'text' : 'money',
     signed: false,
     showInTable: true,
     createdAt: new Date().toISOString(), // Header / Title Card lists sort by it (lib/profitLoss/listSort.js)
