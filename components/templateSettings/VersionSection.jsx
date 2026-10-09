@@ -1,24 +1,38 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import { failureMessage } from '@/lib/profitLoss/templatesApi';
+import { versionToOpen } from './useGlobalTemplateDraft';
 import SectionHead from './SectionHead';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+const label = (v) => `v${v.versionNumber}.${v.subVersionNumber}`;
 
 // image 2 · Version Page — every saved version with an on/off toggle that
 // publishes / unpublishes it. Create date = created_at, Live date = published_at.
+// Every row also has a Delete (behind a confirm): any version except the one
+// that is live — the dashboard is showing that one. The button is disabled
+// there, but the rule itself is the hub's (it answers 409), so a stale list
+// or a second admin can't get round it.
 export default function VersionSection({ draft }) {
   const { addToast } = useToast();
-  const { versions = [], template, publish, activeVersionId } = draft;
+  const { versions = [], template, publish, removeVersion, activeVersionId, dirty } = draft;
   const [q, setQ] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const [deleteId, setDeleteId] = useState(null); // version awaiting the delete confirm
+  const [deleting, setDeleting] = useState(false);
 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
     return versions.filter((v) => !s || `v${v.versionNumber}.${v.subVersionNumber}`.includes(s) || (v.note || '').toLowerCase().includes(s));
   }, [versions, q]);
+
+  // Live = its own status, or the template still pointing at it.
+  const isLive = (v) => v.status === 'live' || v.id === template?.liveVersionId;
+  const deleteTarget = versions.find((v) => v.id === deleteId) || null;
 
   async function toggle(v) {
     const goLive = v.status !== 'live';
@@ -26,6 +40,32 @@ export default function VersionSection({ draft }) {
     const res = await publish(v.id, goLive);
     setBusyId(null);
     addToast(res.ok ? (goLive ? `Published v${v.versionNumber}.${v.subVersionNumber}` : 'Unpublished') : (res.data?.error || 'Failed'), res.ok ? 'success' : 'error');
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    const name = label(deleteTarget);
+    setDeleting(true);
+    try {
+      const res = await removeVersion(deleteTarget.id);
+      addToast(res.ok ? `Version ${name} deleted` : failureMessage(res, `Could not delete ${name}`), res.ok ? 'success' : 'error');
+    } catch (err) {
+      addToast(failureMessage(err, `Could not delete ${name}`), 'error');
+    } finally {
+      setDeleting(false);
+      setDeleteId(null);
+    }
+  }
+
+  // What the confirm says: what goes, and — when it's the version open in
+  // the editor — where the editor lands and what is lost with it.
+  function deleteDescription(v) {
+    const parts = [`This permanently removes ${label(v)} (${v.status}, created ${fmtDate(v.createdAt)}). It can’t be undone.`];
+    if (v.id === activeVersionId) {
+      const next = versionToOpen(versions.filter((x) => x.id !== v.id), template);
+      parts.push(`This is the version open in the editor — it will switch to ${next ? `${label(next)} (${next.status})` : 'an empty template'}${dirty ? ', and your unsaved changes will be lost' : ''}.`);
+    }
+    return parts.join(' ');
   }
 
   return (
@@ -50,11 +90,12 @@ export default function VersionSection({ draft }) {
               <th className="px-3 py-2.5 font-medium">Create date</th>
               <th className="px-3 py-2.5 font-medium">Live date</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
+              <th className="px-3 py-2.5 text-right font-medium">Delete</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">No versions yet.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">No versions yet.</td></tr>
             )}
             {rows.map((v) => (
               <tr key={v.id} className={`border-t border-divider ${v.id === activeVersionId ? 'bg-accent/5' : ''}`}>
@@ -81,11 +122,33 @@ export default function VersionSection({ draft }) {
                     v.status === 'live' ? 'bg-action-soft text-action' : v.status === 'archived' ? 'bg-card text-subtle' : 'bg-accent/10 text-accent'
                   }`}>{v.status}</span>
                 </td>
+                <td className="px-3 py-2.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteId(v.id)}
+                    disabled={isLive(v) || busyId === v.id}
+                    aria-label={`Delete ${label(v)}`}
+                    title={isLive(v) ? 'Live on the dashboard — publish another version, or switch this one off, before deleting it' : `Delete ${label(v)}`}
+                    className="inline-flex items-center justify-center rounded p-1.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-subtle"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={`Delete version ${deleteTarget ? label(deleteTarget) : ''}?`}
+        description={deleteTarget ? deleteDescription(deleteTarget) : ''}
+        confirmLabel="Delete version"
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => { if (!deleting) setDeleteId(null); }}
+      />
     </div>
   );
 }
