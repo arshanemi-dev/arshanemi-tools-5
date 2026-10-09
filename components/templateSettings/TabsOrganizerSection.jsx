@@ -11,8 +11,10 @@ const KINDS = {
 };
 
 // The GLOBAL position of every Tab (or Overview Tab): the order the
-// dashboard's sidebar lists them in for every user — someone who saved
-// their own arrangement with the dashboard's Position Settings keeps theirs.
+// dashboard's sidebar lists them in for every user. Someone who saved their
+// own arrangement with the dashboard's Position Settings keeps it only until
+// this order is changed and published — the newer change wins (see `base` in
+// lib/profitLoss/layoutSections.js); they can re-arrange afterwards.
 // Three ways to move one: drag its ⋮⋮ handle onto another row (a green line
 // shows where it lands), pick a "Position N" from its dropdown, or ↑ / ↓ one
 // step, ⇈ / ⇊ to the top / bottom. Every move renumbers `order` 0..n-1 in
@@ -68,7 +70,7 @@ export default function TabsOrganizerSection({ draft, kind = 'tab', onSave, savi
       />
       <div className="rounded-xl border border-divider bg-background p-4">
         <p className="mb-3 text-[12px] text-subtle">
-          The order every user&rsquo;s dashboard sidebar shows these {k.noun}s in (top = first). A user who saved their own arrangement with Position Settings keeps theirs.
+          The order every user&rsquo;s dashboard sidebar shows these {k.noun}s in (top = first). Changing it and publishing replaces a user&rsquo;s own earlier arrangement from Position Settings — they can re-arrange again afterwards.
         </p>
         {!items.length ? (
           <p className="py-6 text-center text-[12.5px] text-subtle">No {k.noun}s yet.</p>

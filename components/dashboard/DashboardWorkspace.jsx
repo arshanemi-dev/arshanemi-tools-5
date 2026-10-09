@@ -368,7 +368,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // string, so ticking a column on some OTHER tab (a new myColumnsFor, the
   // same ids here) doesn't recompute the whole dashboard.
   const overviewHeaderKey = useMemo(() => JSON.stringify(Object.fromEntries(
-    (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, false)).map((h) => h.id)]),
+    (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false)).map((h) => h.id)]),
   )), [config, myColumnsFor]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
@@ -666,6 +666,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // grouping (a SKU) has no meaning in the other (a fixed-header value).
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  // Reset Position saves straight away (see resetLayout), so it asks first.
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   useEffect(() => {
     (() => setSelectedKeys(new Set()))();
   }, [activeTabId]);
@@ -761,7 +763,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
     } else {
       const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
-      if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id), tabDef?.headerIds)];
+      if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id, tabDef?.headerIds || []), tabDef?.headerIds)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
     const cards = (tabDef?.titleCardIds || []).map((id) => {
@@ -929,7 +931,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           editMode={editMode}
           onEnterEditMode={() => setEditMode(true)}
           onSaveLayout={saveLayout}
-          onResetLayout={resetLayout}
+          onResetLayout={() => setConfirmResetOpen(true)}
           savingLayout={savingLayout}
         />
         )}
@@ -1031,8 +1033,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 pagerSlot={pagerSlot}
-                myColumns={myColumnsFor(activeOverviewTab?.id, false)}
-                onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next)}
+                myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
+                onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
                 viewPillsSlot={viewPillsSlot}
               />
             ) : (
@@ -1040,8 +1042,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 config={config}
                 tab={activeTab}
                 resolved={resolved.tableRows === displayTableRows ? resolved : { ...resolved, tableRows: displayTableRows }}
-                myColumns={myColumnsFor(activeTab?.id)}
-                onMyColumnsChange={(next) => onMyColumnsChange(activeTab?.id, next)}
+                myColumns={myColumnsFor(activeTab?.id, activeTab?.headerIds || [])}
+                onMyColumnsChange={(next) => onMyColumnsChange(activeTab?.id, next, activeTab?.headerIds || [])}
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
@@ -1094,6 +1096,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         confirmLabel="Delete"
         onConfirm={onDeleteSelected}
         onCancel={() => setConfirmDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmResetOpen}
+        title="Reset your dashboard to the default layout?"
+        description="Your own arrangement — tab order, hidden items, column order and My Details columns, on every tab — goes back to what the template sets. It is saved straight away."
+        confirmLabel="Reset"
+        loadingLabel="Resetting…"
+        loading={savingLayout}
+        onConfirm={async () => { await resetLayout(); setConfirmResetOpen(false); }}
+        onCancel={() => { if (!savingLayout) setConfirmResetOpen(false); }}
       />
     </div>
   );

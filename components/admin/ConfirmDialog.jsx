@@ -15,6 +15,7 @@ function ConfirmDialogBody({
   onConfirm, onCancel, loading,
   confirmText,
   confirmLabel = 'Delete',
+  loadingLabel = 'Deleting…',
 }) {
   const [typed, setTyped] = useState('')
 
@@ -85,7 +86,7 @@ function ConfirmDialogBody({
             disabled={loading || !canConfirm}
             className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {loading ? 'Deleting…' : confirmLabel}
+            {loading ? loadingLabel : confirmLabel}
           </button>
         </div>
       </div>
