@@ -611,7 +611,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     setDebugSlotId(null); // not a marketplace file slot — nothing to match against
     setBusy(true);
     try {
-      const { costs, fields, count } = await parseSkuCostSheet(file);
+      const { costs, fields, count, unread } = await parseSkuCostSheet(file);
       if (!fields.length) { addToast('No SKU cost columns found — the sheet needs a SKU column and the cost columns from Download SKU Cost', 'error'); return; }
       // Laid over what's already there, not swapped for it: a SKU the sheet
       // doesn't list keeps its costs, an emptied cell clears that one cost.
@@ -619,7 +619,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       const next = mergeSkuCosts(skuCosts, costs);
       setSkuCosts(next);
       onSkuCostsChange(next);
-      addToast(count ? `Loaded costs for ${count} SKU${count === 1 ? '' : 's'}` : 'SKU Cost sheet read — it has no costs filled in', count ? 'success' : 'error');
+      const skipped = unread ? ` · ${unread} cell${unread === 1 ? ' isn’t a number' : 's aren’t numbers'} — left as before` : '';
+      addToast(count ? `Loaded costs for ${count} SKU${count === 1 ? '' : 's'}${skipped}` : `SKU Cost sheet read — it has no costs filled in${skipped}`, count ? 'success' : 'error');
     } finally {
       setBusy(false);
     }

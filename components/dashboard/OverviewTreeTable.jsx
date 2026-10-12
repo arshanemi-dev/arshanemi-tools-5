@@ -7,19 +7,18 @@ import TablePager, { PAGE_SIZES } from './TablePager';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
-import { activeFilters, cellText, columnOptions } from '@/lib/profitLoss/columnFilter';
+import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 
 const CHILD_PAGE = 100; // children rendered per open node before "Show more"
 
-// What a node shows in one column — its own value in the hierarchy column.
-const nodeText = (node, key) => (key === TREE_COL ? String(node.value ?? '').trim() : cellText(node.cells[key]));
-const nodeRaw = (node, key) => (key === TREE_COL ? node.value : node.cells[key]?.raw);
+// A node's cell in one column — its own value in the hierarchy column.
+const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: node.value } : node.cells[key]);
 
 // The Overview tab's right-hand table — DetailsTable's look and features
 // (only the overview's own picked headers — no automatic Company column —
 // plus the Cost input, row checkboxes, sort/filter per column,
 // edit-mode arrange, pagination, spreadsheet-style filters whose checklist
-// holds the values of every level's rows) but over the unique-value hierarchy: every
+// and Min / Max range hold the values of every level's rows) but over the unique-value hierarchy: every
 // Level-1 value is a row, and opening it (here or in the left
 // OverviewHierarchyNav — they share `expanded`) reveals its Level-2 rows
 // underneath, tinted in that level's colour, and so on down. Parent rows are
@@ -35,7 +34,7 @@ export default function OverviewTreeTable({
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, pagerSlot = null,
 }) {
   const [sort, setSort] = useState(null);
-  const [filters, setFilters] = useState({}); // { [columnKey]: { values } | null }
+  const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -55,16 +54,15 @@ export default function OverviewTreeTable({
   const applied = useMemo(() => activeFilters(filters, colKeys.split('\u0000')), [filters, colKeys]);
   const filtering = applied.length > 0;
   const view = useMemo(() => {
-    const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, values]) => values.has(nodeText(n, k)))) : tree;
+    const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, f]) => cellPasses(f, nodeCell(n, k)))) : tree;
     return sortTree(kept, sort);
   }, [tree, applied, sort]);
   // One column's checklist: its value on every row of every level that the
-  // OTHER columns' filters leave.
-  const optionsFor = (key) => columnOptions(
-    flattenTree(tree).filter((n) => applied.every(([k, values]) => k === key || values.has(nodeText(n, k)))),
-    (n) => nodeText(n, key),
-    (n) => nodeRaw(n, key),
-  );
+  // OTHER columns' filters leave — and its Min / Max range: the numbers
+  // those same rows span (a parent's subtotal is a row like any other).
+  const leftFor = (key) => flattenTree(tree).filter((n) => applied.every(([k, f]) => k === key || cellPasses(f, nodeCell(n, k))));
+  const optionsFor = (key) => columnOptions(leftFor(key), (n) => cellText(nodeCell(n, key)), (n) => nodeCell(n, key)?.raw);
+  const rangeFor = (key) => columnRange(leftFor(key), (n) => cellNumber(nodeCell(n, key)));
 
   const pageCount = Math.max(1, Math.ceil(view.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -116,7 +114,7 @@ export default function OverviewTreeTable({
   const skuLevels = new Set(levels.map((h, i) => (h.primitive === 'sku' ? i : -1)).filter((i) => i >= 0));
   const showCost = skuLevels.size > 0;
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
-  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', signed: !!h.signed }));
+  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed }));
   const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers
 
   const resetPaging = () => setPage(1);
@@ -137,6 +135,7 @@ export default function OverviewTreeTable({
         filter={filters[col.key]}
         onFilterChange={(f) => { setFilters((prev) => ({ ...prev, [col.key]: f })); resetPaging(); }}
         getFilterOptions={() => optionsFor(col.key)}
+        getFilterRange={col.numeric ? () => rangeFor(col.key) : null}
         onFilterOpenChange={setFilterOpen}
         editMode={editMode}
         showArrange={editMode && col.key !== TREE_COL}
@@ -162,7 +161,7 @@ export default function OverviewTreeTable({
           </button>
         </div>
       )}
-      <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[25rem]' : ''}`}>
+      <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-divider">

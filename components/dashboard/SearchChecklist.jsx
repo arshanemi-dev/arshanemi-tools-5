@@ -69,9 +69,11 @@ export function ListSearchBox({ value, onChange, onEnter, placeholder = 'Search�
 // `options` = [{ value, label, count? }]; `initial` = the values ticked to
 // start with. `onSubmit(values, { all })` — `all` = every option is chosen.
 // `okLabel` = text, or (count) => text. `header` = extra rows above the
-// search (a column's Sort A → Z / Z → A); `footer` = an extra control on the
-// left of the buttons (e.g. "Clear filter").
-export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true }) {
+// search (a column's Sort A → Z / Z → A), or (submit) => those rows when
+// they hold a field of their own that Enter should OK from; `footer` = an
+// extra control on the left of the buttons (e.g. "Clear filter").
+// `canSubmit={false}` holds OK back while something in `header` is wrong.
+export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true, canSubmit = true }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
   const [ticked, setTicked] = useState(() => new Set(initial));
@@ -95,7 +97,7 @@ export default function SearchChecklist({ label = 'options', options = [], initi
     return next;
   });
   const submit = () => {
-    if (!chosen.length) return;
+    if (!chosen.length || !canSubmit) return;
     onSubmit(chosen, { all: chosen.length >= options.length });
     onClose();
   };
@@ -105,7 +107,7 @@ export default function SearchChecklist({ label = 'options', options = [], initi
 
   return (
     <div className="flex w-64 flex-col gap-2 p-1 text-left font-normal whitespace-normal text-foreground">
-      {header}
+      {typeof header === 'function' ? header(submit) : header}
       <ListSearchBox value={q} onChange={setQ} onEnter={submit} placeholder={placeholder} label={`Search ${label}`} sort={sort} onSort={sortable ? setSort : undefined} />
 
       <div className="max-h-56 overflow-y-auto rounded-lg border border-divider p-1">
@@ -137,7 +139,7 @@ export default function SearchChecklist({ label = 'options', options = [], initi
         <button type="button" onClick={onClose} className="rounded-lg border border-divider-light px-2.5 py-1 text-[12px] font-medium text-muted hover:bg-card-hover">
           Cancel
         </button>
-        <button type="button" onClick={submit} disabled={!chosen.length} className="rounded-lg bg-action px-3 py-1 text-[12px] font-semibold text-white hover:bg-action-hover disabled:opacity-40">
+        <button type="button" onClick={submit} disabled={!chosen.length || !canSubmit} className="rounded-lg bg-action px-3 py-1 text-[12px] font-semibold text-white hover:bg-action-hover disabled:opacity-40">
           {typeof okLabel === 'function' ? okLabel(chosen.length) : okLabel}
         </button>
       </div>

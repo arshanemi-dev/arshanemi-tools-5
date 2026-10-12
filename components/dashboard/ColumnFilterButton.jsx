@@ -4,24 +4,34 @@ import { useState } from 'react';
 import { Filter } from 'lucide-react';
 import Popover from './Popover';
 import ColumnFilterMenu from './ColumnFilterMenu';
+import { rangeText } from '@/lib/profitLoss/columnFilter';
 
 const MENU_WIDTH = 272; // px — the menu's w-64 plus its padding and border
 
 // The funnel in a table column header + its spreadsheet-style menu
-// (ColumnFilterMenu — Sort A → Z / Z → A, then search + tick the values to
-// keep). Used by the
+// (ColumnFilterMenu — Sort A → Z / Z → A, a Min / Max range on a number
+// column, then search + tick the values to keep). Used by the
 // dashboard tables (ColumnHeaderCell) and Template Settings' Header table.
-// filter shape: { values: [text, ...] } | null (lib/profitLoss/columnFilter.js)
+// filter shape: { values: [text, ...], min, max } | null — any of the three
+// (lib/profitLoss/columnFilter.js)
 // `getOptions()` → the column's distinct values, read when the menu opens.
+// `getRange()` → { min, max } the column's numbers span, or null — pass it
+// only for a column that can hold numbers; without it there is no range.
 // `sortDir` ('asc' | 'desc' | null) + `onSort(dir | null)` = the table's
 // sort on this column; the funnel is lit while either a filter or a sort is on.
 // `onOpenChange(open)` lets the table make room for the menu: it opens
 // inside the table's scroll area (mark that element `data-table-scroll`),
 // hanging left instead of right near its right edge so it stays in view.
-export default function ColumnFilterButton({ label, filter, getOptions = () => [], onChange, onOpenChange, size = 12, sortDir = null, onSort = null }) {
+export default function ColumnFilterButton({ label, filter, getOptions = () => [], getRange = null, onChange, onOpenChange, size = 12, sortDir = null, onSort = null }) {
   const [align, setAlign] = useState('left');
   const active = !!filter;
   const sorted = sortDir ? `sorted ${sortDir === 'asc' ? 'A → Z' : 'Z → A'}` : '';
+  const range = rangeText(filter);
+  const narrowed = [
+    filter?.values && `${filter.values.length} value${filter.values.length === 1 ? '' : 's'} shown`,
+    range,
+    sorted,
+  ].filter(Boolean).join(' · ');
 
   const placeMenu = (e) => {
     const at = e.currentTarget.getBoundingClientRect();
@@ -42,7 +52,7 @@ export default function ColumnFilterButton({ label, filter, getOptions = () => [
           className={`rounded p-0.5 transition-colors hover:bg-card-hover ${active || sortDir ? 'text-action' : 'text-subtle'}`}
           aria-label={`Filter ${label}`}
           title={active
-            ? `Filtered — ${filter.values.length} value${filter.values.length === 1 ? '' : 's'} shown${sorted ? ` · ${sorted}` : ''}`
+            ? `Filtered — ${narrowed}`
             : sorted ? `${label} — ${sorted}` : `Sort / filter ${label}`}
         >
           <Filter size={size} fill={active ? 'currentColor' : 'none'} />
@@ -54,6 +64,8 @@ export default function ColumnFilterButton({ label, filter, getOptions = () => [
           label={label}
           getOptions={getOptions}
           selected={filter?.values || null}
+          getRange={getRange}
+          range={range ? filter : null}
           onApply={onChange}
           onClose={close}
           sortDir={sortDir}

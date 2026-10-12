@@ -5,16 +5,20 @@ import ArrangeControl from './ArrangeControl';
 import ColumnFilterButton from './ColumnFilterButton';
 
 // One <th> body: label + tri-state sort toggle + a spreadsheet-style menu
-// (ColumnFilterButton — the same sort as "Sort A → Z / Z → A", then search +
-// tick the values to keep), plus an inline
+// (ColumnFilterButton — the same sort as "Sort A → Z / Z → A", a Min / Max
+// range on a number column, then search + tick the values to keep), plus an
+// inline
 // ArrangeControl when this column offers one (never for the sticky first
 // column — see DetailsTable). Sort/filter hide entirely while the table is
 // in edit mode — arranging is the only thing to do with a header then, on
 // every column including the sticky one.
-// filter shape: { values: [text, ...] } | null (lib/profitLoss/columnFilter.js)
+// filter shape: { values: [text, ...], min, max } | null — any of the three
+// (lib/profitLoss/columnFilter.js)
 // `getFilterOptions()` → the column's distinct values, read when the menu
-// opens. `onFilterOpenChange(open)` lets the table make room for the menu.
-export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFilterChange, getFilterOptions = () => [], onFilterOpenChange, editMode = false, showArrange = false, items, hiddenIds, onSwapWith, onHide }) {
+// opens; `getFilterRange()` → { min, max } its numbers span, or null — pass
+// it only for a number column (`col.numeric`).
+// `onFilterOpenChange(open)` lets the table make room for the menu.
+export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFilterChange, getFilterOptions = () => [], getFilterRange = null, onFilterOpenChange, editMode = false, showArrange = false, items, hiddenIds, onSwapWith, onHide }) {
   const dir = sort?.key === col.key ? sort.dir : null;
 
   const cycleSort = () => {
@@ -42,6 +46,7 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
             label={col.label}
             filter={filter}
             getOptions={getFilterOptions}
+            getRange={getFilterRange}
             onChange={onFilterChange}
             onOpenChange={onFilterOpenChange}
             sortDir={dir}
