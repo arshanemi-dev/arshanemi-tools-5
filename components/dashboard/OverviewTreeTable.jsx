@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
+import CostCell from './CostCell';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
-import { TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
+import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
+import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 
 const CHILD_PAGE = 100; // children rendered per open node before "Show more"
 
@@ -16,7 +18,10 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 
 // The Overview tab's right-hand table — DetailsTable's look and features
 // (only the overview's own picked headers — no automatic Company column —
-// plus the Cost input, row checkboxes, sort/filter per column,
+// plus the cost inputs — on the rows of a level that is the SKU header, each
+// cost header's column is a CostCell, exactly as in DetailsTable; every
+// other level shows those columns as the numbers they add up to — row
+// checkboxes, sort/filter per column,
 // edit-mode arrange, pagination, spreadsheet-style filters whose checklist
 // and Min / Max range hold the values of every level's rows) but over the unique-value hierarchy: every
 // Level-1 value is a row, and opening it (here or in the left
@@ -30,8 +35,8 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 // The pager renders in the footer, or wherever `pagerSlot` points.
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
-  editMode = false, arrange, costBySku = {}, onCostChange,
-  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, pagerSlot = null,
+  editMode = false, arrange, skuCosts = {}, onCostChange,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null,
 }) {
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
@@ -112,9 +117,21 @@ export default function OverviewTreeTable({
   walk(pageNodes, null);
 
   const skuLevels = new Set(levels.map((h, i) => (h.primitive === 'sku' ? i : -1)).filter((i) => i >= 0));
-  const showCost = skuLevels.size > 0;
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
-  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed }));
+  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h) }));
+  // The standalone Cost column (a SKU's COGS) steps aside when the COGS
+  // header's own column is here to type into.
+  const showCost = skuLevels.size > 0 && !cols.some((c) => c.costField === 'cogs');
+  const dirtyCells = dirtyCostCells || new Set();
+  const costInput = (sku, field, name, total = null) => (
+    <CostCell
+      value={skuCosts[sku]?.[field]}
+      total={total}
+      onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
+      dirty={dirtyCells.has(costCellKey(sku, field))}
+      label={`${name} for ${sku}`}
+    />
+  );
   const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers
 
   const resetPaging = () => setPage(1);
@@ -207,6 +224,7 @@ export default function OverviewTreeTable({
               const isActive = activeKey === n.key;
               const inherited = !selected.has(n.key) && n.depth > 0 && ancestorKeys(n.key).some((k) => selected.has(k));
               const isSkuRow = skuLevels.has(n.depth);
+              const canType = isSkuRow && isRealSku(n.value) && n.value !== BLANK_VALUE; // a real SKU to keep the cost under
               const isDirty = isSkuRow && dirty.has(n.value);
               return (
                 <tr
@@ -257,23 +275,18 @@ export default function OverviewTreeTable({
                   </td>
                   {showCost && (
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {isSkuRow && (
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          value={costBySku[n.value] ?? ''}
-                          onChange={(e) => onCostChange?.(n.value, e.target.value)}
-                          placeholder="—"
-                          aria-label={`Cost for ${n.value}`}
-                          className="w-24 rounded-lg border border-divider bg-background px-2 py-1 text-sm focus:border-accent focus:outline-none"
-                        />
-                      )}
+                      {canType && costInput(n.value, 'cogs', 'Cost')}
                     </td>
                   )}
                   {cols.map((c) => {
                     const cell = n.cells[c.key] || {};
+                    if (c.costField && canType) {
+                      return (
+                        <td key={c.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
+                          {costInput(n.value, c.costField, c.label, cell)}
+                        </td>
+                      );
+                    }
                     const neg = c.signed && Number(cell.raw) < 0;
                     return (
                       <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { failureMessage, listLiveTemplates } from '@/lib/profitLoss/templatesApi';
+import { useLiveTemplates } from '@/lib/profitLoss/useLiveTemplates';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
@@ -15,14 +15,15 @@ import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
 import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
 import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData } from '@/lib/profitLoss/extractedDataStore';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
+import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
 import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
 import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
-import { mergeSkuCosts, normalizeSkuCosts, unitCostMap, withSkuCostField, withSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { normalizeSkuCosts, stampSkuCosts, unitCostMap, withSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { withFixedHeaders } from '@/data/fixedHeaders';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -63,6 +64,8 @@ const normTabName = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, 
 // below), not what gets loaded, so title cards/graphs/table and the table's
 // own sort/search always see the complete dataset.
 const RESTORE_PAGE_SIZE = 500;
+// How many of those pages are in flight at once, after the first.
+const RESTORE_CONCURRENCY = 4;
 // Same suffix app/layout.js's metadata title template adds — the browser tab
 // follows whichever page (Tab / Overview Tab / Transactions) is open.
 const DOC_TITLE_SUFFIX = ' | Barmeto Profit & Loss';
@@ -76,40 +79,19 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // configured shows "No marketplaces" instead of a fake dashboard.
   // Headers/Title Cards/Graphs/Tabs/Overview Tabs are global (`global`,
   // shared, fetched once) — switching marketplace only changes `templates`'
-  // per-marketplace fileSlots/mappings, never the dashboard's shape. The
-  // built-in Account Name + SKU Cost headers are recognised on the way in
-  // (withFixedHeaders), so a version published before they existed fills
-  // them the same as one saved since.
-  const [templates, setTemplates] = useState([]);
-  const [globalConfig, setGlobalConfig] = useState(null);
-  const [templatesReady, setTemplatesReady] = useState(false);
+  // per-marketplace fileSlots/mappings, never the dashboard's shape.
+  // Loading them — drawn from the last visit's copy first, then checked
+  // against the server — is lib/profitLoss/useLiveTemplates.js. A failed
+  // load (hub unreachable / restarting, server error) with no copy to show
+  // is its own state there (templatesError) — never treated as "zero
+  // marketplaces" — so the page can say why and offer Try again
+  // (TemplatesLoadError) instead of "No marketplaces yet".
+  const {
+    templates, globalConfig, templatesReady, templatesChecked, templatesError, retryTemplates,
+  } = useLiveTemplates({ addToast });
+  // The marketplace picked in the toolbar; until one is (or once it's gone
+  // from `templates`) the first one is the active one.
   const [activeTemplateId, setActiveTemplateId] = useState(null);
-  // A failed load (hub unreachable / restarting, server error) is its own
-  // state — never treated as "zero marketplaces" — so the page can say why
-  // and offer Try again (TemplatesLoadError) instead of "No marketplaces yet".
-  const [templatesError, setTemplatesError] = useState(null);
-
-  // State is only set inside the promise callbacks (never synchronously) —
-  // the first load runs from the mount effect with the initial "loading, no
-  // error" state already in place; Try again (retryTemplates) resets that
-  // state itself first.
-  const fetchTemplates = useCallback(() => listLiveTemplates()
-    .then((res) => {
-      if (!res.ok) { setTemplatesError(failureMessage(res, 'Could not load the marketplaces')); return; }
-      const live = Array.isArray(res.data?.templates) ? res.data.templates : [];
-      setGlobalConfig(withFixedHeaders(res.data?.global || {}));
-      setTemplates(live);
-      setActiveTemplateId((cur) => (live.some((t) => t.id === cur) ? cur : live[0]?.id ?? null));
-    })
-    .catch((err) => setTemplatesError(failureMessage(err, 'Could not load the marketplaces')))
-    .finally(() => setTemplatesReady(true)), []);
-
-  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
-  const retryTemplates = () => {
-    setTemplatesReady(false);
-    setTemplatesError(null);
-    fetchTemplates();
-  };
 
   const activeMarketplace = useMemo(
     () => templates.find((t) => t.id === activeTemplateId) || templates[0],
@@ -139,7 +121,18 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   // ── uploads ─────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
-  const [skuCosts, setSkuCosts] = useState({}); // { [sku]: { cogs, costGst, finalCost, otherExpense } } — lib/profitLoss/skuCosts.js
+  // Each SKU's DEFAULT costs ({ [sku]: { cogs, costGst, finalCost,
+  // otherExpense } } — lib/profitLoss/skuCosts.js): the live copy, its home
+  // in the hub's profit_loss_sku_costs table, and the tables' cost inputs —
+  // the four cost headers' own columns on a SKU's row (CostCell), one cost
+  // at a time: `onCostChange(sku, field, text)` makes it live at once and
+  // saves it as a request of its own. `dirtyCostCells` / `dirtySkuKeys` mark
+  // the box and its row light blue ("unsaved") until that cost's own save
+  // has landed — signed out that never happens, so the highlight correctly
+  // stays on. See lib/profitLoss/useSkuCosts.js.
+  const {
+    skuCosts, onCostChange, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
+  } = useSkuCosts({ addToast });
   const [busy, setBusy] = useState(false);
   // The most recently uploaded raw File (any slot, or the SKU Cost button) —
   // fed to the embedded SheetDebugger below the toolbar so it always shows
@@ -185,12 +178,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader, config.headers),
     [uploads, orderIdHeader, transactionIdHeader, config.headers],
   );
-  // The same rows with each one's SKU Cost record attached — what the
-  // dashboard is resolved from, so the fixed cost headers (COGS (Product
-  // Cost), Cost GST in, Final Product Cost, Other Expense (per order)) read
-  // like any sheet column. `canonicalRows` itself stays what gets saved.
-  // `unitCosts` = each SKU's COGS alone: the engine's unit cost and the
-  // table's inline Cost input.
+  // The same rows as the dashboard is resolved from them: an order keeps the
+  // costs written onto it when it was uploaded (see onUpload), and one that
+  // has none yet shows its SKU's default — so the fixed cost headers (COGS
+  // (Product Cost), Cost GST in, Final Product Cost, Other Expense (per
+  // order)) read like any sheet column. `canonicalRows` itself stays what
+  // gets saved. `unitCosts` = each SKU's default COGS alone: the engine's
+  // unit cost for an order with no COGS of its own.
   const pricedRows = useMemo(() => withSkuCosts(canonicalRows, skuCosts), [canonicalRows, skuCosts]);
   const unitCosts = useMemo(() => unitCostMap(skuCosts), [skuCosts]);
 
@@ -240,7 +234,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     loggedIn, myColumnsFor, onMyColumnsChange,
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
-    onSkuCostsChange, skuCostsSaveTick,
+    dropLegacySkuCosts,
     extractedData, onExtractedDataChange,
     editMode, setEditMode, saveLayout, savingLayout,
   } = useDashboardSettings({
@@ -250,15 +244,15 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     onLoadedPreferences: (p) => {
       if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
       if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
-      // A returning signed-in user's SKU costs — the SKU Cost sheet they
-      // uploaded and anything typed into the table's Cost column, both saved
-      // (debounced) — restored here so they don't have to redo them every
-      // session. A later SKU Cost sheet upload is laid over these (see
-      // onUploadSkuCost).
-      const savedCosts = normalizeSkuCosts(p.skuCosts);
-      if (Object.keys(savedCosts).length) setSkuCosts(savedCosts);
+      // SKU costs used to be saved in this settings row; whatever an account
+      // still has there is handed to the costs table's hook, which moves it
+      // across (once) and then says so — `legacyMoved`, below.
+      adoptLegacyCosts(normalizeSkuCosts(p.skuCosts));
     },
   });
+  useEffect(() => {
+    if (legacyMoved) dropLegacySkuCosts();
+  }, [legacyMoved, dropLegacySkuCosts]);
 
   // Every Marketplace x Brand combo ("company") this user has actually used,
   // from the dedicated market_place_companies table — reloaded on every
@@ -293,33 +287,36 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // because it was silently computing off just the one loaded page. Sorted
   // newest-saved-first by the API; covers every company for this user, not
   // just the active marketplace.
+  // How the pages are fetched and added (page 1 at once, the rest a few at a
+  // time, in order) is lib/profitLoss/loadAllPages.js.
   const [restorePaging, setRestorePaging] = useState(null);
   const [restoring, setRestoring] = useState(false);
-  const loadRestoredPage = useCallback(async (page) => {
-    const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE });
-    if (!ok) return null;
-    const rows = rowsFromExtractedPayload(data.rows || []);
+  const addRestoredRows = useCallback((rows) => {
     setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
       ? prev.map((u) => (u.slotId === RESTORED_SLOT_ID ? { ...u, rows: [...u.rows, ...rows] } : u))
       : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
-    return data;
   }, []);
   useEffect(() => {
     if (!loggedIn) return;
     let cancelled = false;
+    const fetchPage = async (page) => {
+      try {
+        const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE });
+        return ok ? { ...data, rows: rowsFromExtractedPayload(data.rows || []) } : null;
+      } catch {
+        return null;
+      }
+    };
     (async () => {
       setRestoring(true);
       try {
-        let page = 1;
-        let data = await loadRestoredPage(page);
-        while (data && !cancelled && page < data.totalPages) {
-          setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
-          page += 1;
-          data = await loadRestoredPage(page);
-        }
-        if (!cancelled && data) {
-          setRestorePaging({ page, totalPages: data.totalPages, totalCount: data.totalCount });
-        }
+        await loadAllPages({
+          fetchPage,
+          onRows: addRestoredRows,
+          onProgress: setRestorePaging,
+          cancelled: () => cancelled,
+          concurrency: RESTORE_CONCURRENCY,
+        });
       } finally {
         if (!cancelled) setRestoring(false);
       }
@@ -550,6 +547,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // instead of silently producing a table with holes in it.
   const onUpload = useCallback(async (slotId, files) => {
     if (!selectedBrand) { addToast('Pick or create a brand first', 'error'); return; }
+    // The file slots + mappings on screen may still be the last visit's copy
+    // (useLiveTemplates) — a sheet isn't read against them until the server
+    // has confirmed they're current.
+    if (!templatesChecked) { addToast('Still checking the marketplace setup — try again in a moment', 'error'); return; }
     setBusy(true);
     try {
       const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
@@ -594,8 +595,21 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         }
       }
       if (added.length) {
-        setUploads((prev) => [...prev, ...added]);
-        const fresh = added.flatMap((a) => a.rows);
+        // The price an order is uploaded at: its SKU's default costs as they
+        // stand right now are written onto the new rows — and onto the older
+        // rows of those same SKUs that had no price yet — and stay there
+        // (stampSkuCosts). A default changed after this prices the next
+        // upload, never these.
+        const skus = new Set(added.flatMap((a) => a.rows.map((r) => r.sku)));
+        const priced = added.map((a) => ({ ...a, rows: stampSkuCosts(a.rows, skuCosts) }));
+        setUploads((prev) => [
+          ...prev.map((u) => {
+            const rows = stampSkuCosts(u.rows, skuCosts, skus);
+            return rows === u.rows ? u : { ...u, rows };
+          }),
+          ...priced,
+        ]);
+        const fresh = priced.flatMap((a) => a.rows);
         const sheets = added.length > files.length ? ` from ${added.length} sheets` : '';
         addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
         fitDateRangeTo(fresh);
@@ -603,7 +617,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     } finally {
       setBusy(false);
     }
-  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo]);
+  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts]);
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
@@ -615,41 +629,19 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       if (!fields.length) { addToast('No SKU cost columns found — the sheet needs a SKU column and the cost columns from Download SKU Cost', 'error'); return; }
       // Laid over what's already there, not swapped for it: a SKU the sheet
       // doesn't list keeps its costs, an emptied cell clears that one cost.
-      // Saved for a signed-in user, the same as a typed Cost.
-      const next = mergeSkuCosts(skuCosts, costs);
-      setSkuCosts(next);
-      onSkuCostsChange(next);
+      // Saved for a signed-in user, the same as a typed cost. These are the
+      // defaults: orders that already carry a price keep it.
+      applyCostSheet(costs);
       const skipped = unread ? ` · ${unread} cell${unread === 1 ? ' isn’t a number' : 's aren’t numbers'} — left as before` : '';
       addToast(count ? `Loaded costs for ${count} SKU${count === 1 ? '' : 's'}${skipped}` : `SKU Cost sheet read — it has no costs filled in${skipped}`, count ? 'success' : 'error');
     } finally {
       setBusy(false);
     }
-  }, [addToast, skuCosts, onSkuCostsChange]);
+  }, [addToast, applyCostSheet]);
 
   const onDownloadSkuTemplate = useCallback(() => {
     downloadSkuCostTemplate(canonicalRows.map((r) => r.sku), skuCosts);
   }, [canonicalRows, skuCosts]);
-
-  // The table's inline Cost input — a SKU's COGS (Product Cost). Updates the
-  // live costs immediately (so Product Cost / COGS / Profit-Loss recompute as
-  // the user types) and hands them to the debounced-save hook for signed-in
-  // users.
-  // `dirtySkuKeys` marks the row light blue ("unsaved") the moment a Cost is
-  // typed; it clears (back to normal) once useDashboardSettings' debounced
-  // PUT actually succeeds (skuCostsSaveTick below) — for a signed-out user
-  // that never happens, so the highlight correctly stays on forever (it
-  // really isn't being saved anywhere for them).
-  const [dirtySkuKeys, setDirtySkuKeys] = useState(() => new Set());
-  const onCostChange = useCallback((sku, rawValue) => {
-    const next = withSkuCostField(skuCosts, sku, 'cogs', rawValue);
-    setSkuCosts(next);
-    onSkuCostsChange(next);
-    setDirtySkuKeys((prev) => new Set(prev).add(sku));
-  }, [skuCosts, onSkuCostsChange]);
-
-  useEffect(() => {
-    if (skuCostsSaveTick > 0) (() => setDirtySkuKeys(new Set()))();
-  }, [skuCostsSaveTick]);
 
   const resetFilters = () => {
     const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
@@ -929,7 +921,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         {(!uploadTab || activeTabId === uploadTab.id || editMode) && (
         <DashboardToolbar
           templates={templates}
-          activeTemplateId={activeTemplateId}
+          activeTemplateId={activeMarketplace?.id ?? null}
           onSelectTemplate={setActiveTemplateId}
           brands={effectiveBrands}
           brand={selectedBrand}
@@ -1040,12 +1032,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
-                costBySku={unitCosts}
+                skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
+                dirtyCostCells={dirtyCostCells}
                 pagerSlot={pagerSlot}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
@@ -1061,12 +1054,13 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 editMode={editMode}
                 layout={layout}
                 onSetTabSection={setTabSection}
-                costBySku={unitCosts}
+                skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
+                dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
                 pagerSlot={pagerSlot}

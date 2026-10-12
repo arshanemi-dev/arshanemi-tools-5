@@ -35,6 +35,8 @@ const nextConfig = {
   // workspace root and warn on every run.
   outputFileTracingRoot: __dirname,
   poweredByHeader: false,
+  // The Redis client (lib/cache.js) is loaded by Node as it is, not bundled.
+  serverExternalPackages: ['ioredis'],
   images: {
     remotePatterns: [
       {

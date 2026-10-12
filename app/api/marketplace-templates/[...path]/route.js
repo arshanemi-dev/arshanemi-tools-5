@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { proxyAdminCall, authHeaderFrom, hubUnreachable } from '@/lib/connect'
+import { invalidateLiveTemplates } from '@/lib/liveTemplates'
 
 export const runtime = 'nodejs'
 
@@ -28,6 +29,11 @@ async function forward(req, params, method) {
     return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
     return NextResponse.json({ error: hubUnreachable(err, target) }, { status: 503 })
+  } finally {
+    // Any write here can change what the dashboard shows — and one that
+    // failed on the way back may still have landed on the hub — so the cached
+    // copy (lib/liveTemplates.js) is dropped either way.
+    if (method !== 'GET') await invalidateLiveTemplates()
   }
 }
 

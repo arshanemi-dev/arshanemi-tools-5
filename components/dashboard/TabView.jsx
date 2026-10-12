@@ -40,7 +40,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // My Details pill and the table's pager portal into DashboardHeaderBar
 // instead of sitting above/below the table. Template Settings' preview
 // passes neither and keeps them in place.
-export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -69,6 +69,11 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   const headersArrange = useArrangeableList(restHeaderDefs, headersSection, (next) => onSetTabSection(tabId, 'headers', next));
 
   if (!tab) return null;
+
+  // Costs are typed per SKU, so only into a table whose rows are SKUs — the
+  // grouping unless the marketplace names another header to group by.
+  const groupBy = (config.headers || []).find((h) => h.id === config.marketplace?.groupByHeaderId);
+  const rowsAreSkus = !groupBy || groupBy.primitive === 'sku';
 
   const tabHeaderDefs = firstHeaderDef ? [firstHeaderDef, ...headersArrange.visible] : headersArrange.visible;
 
@@ -126,12 +131,14 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
             rows={resolved.tableRows}
             editMode={editMode}
             arrange={headersArrange}
-            costBySku={costBySku}
+            skuCosts={skuCosts}
             onCostChange={onCostChange}
+            disableCostColumn={!rowsAreSkus}
             selectedKeys={selectedKeys}
             onToggleRow={onToggleRow}
             onToggleAll={onToggleAll}
             dirtyKeys={dirtyKeys}
+            dirtyCostCells={dirtyCostCells}
             totalCount={totalCount}
             pagerSlot={pagerSlot}
           />

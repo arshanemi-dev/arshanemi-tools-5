@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
+import CostCell from './CostCell';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
+import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 
 // Template-driven details table. `columns` = resolved header defs
 // ({ id, name, type, format, signed, primitive }) in display order; `rows` =
@@ -17,18 +19,29 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 //
 // Only the template's own columns show — the upload's "MarketPlace_Brand"
 // tag is the built-in "Account Name" header (data/fixedHeaders.js), there
-// when a tab picks it. The one injected column is a "Cost" input right after
-// whichever header is bound to the `sku` engine primitive, if any — a SKU's
-// COGS (Product Cost), which the user can type directly instead of only via
-// the SKU Cost sheet upload.
+// when a tab picks it.
+//
+// Costs are typed in the table itself, per SKU, instead of only via the SKU
+// Cost sheet upload: the column of each of the four cost headers (COGS
+// (Product Cost), Cost GST in, Final Product Cost, Other Expense (per order)
+// — costFieldOf) is an input box on every SKU's row (CostCell — it saves by
+// itself, one cost at a time). The box holds the SKU's DEFAULT (`skuCosts` =
+// { [sku]: { cogs, costGst, finalCost, otherExpense } }) — what the next
+// upload is priced at; the column's own cell, shown beside it, adds up what
+// the SKU's orders actually carry. `onCostChange(sku, field, text)`. While the
+// COGS header isn't one of the columns, a "Cost" input for it is injected
+// right after whichever header is bound to the `sku` engine primitive, if
+// any. `disableCostColumn` = the rows aren't SKUs (Transactions, a table
+// grouped by something else): no inputs, the cost columns show as numbers.
 //
 // Row selection (the checkboxes) is controlled from DashboardWorkspace, not
 // local state — the header bar's Delete button acts on `selectedKeys`
 // regardless of which tab/table it was checked in.
 //
-// `dirtyKeys` (a Set of row keys, e.g. SKUs with a just-typed Cost) tints a
-// row light blue — "edited, not saved yet". It clears back to normal once
-// DashboardWorkspace's debounced save actually succeeds; for a signed-out
+// `dirtyKeys` (a Set of row keys — SKUs with a just-typed cost) tints a row
+// light blue — "edited, not saved yet" — and `dirtyCostCells` (a Set of
+// costCellKey) the exact box. Each goes back to normal once that cost's own
+// save succeeds (lib/profitLoss/useSkuCosts.js); for a signed-out
 // user nothing ever saves, so it correctly stays on.
 //
 // Paginated client-side — `pageSize` rows at a time, with Prev/Next + a
@@ -37,8 +50,8 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 // sort changes, so it never gets stuck showing an out-of-range empty page.
 
 export default function DetailsTable({
-  columns = [], rows = [], editMode = false, arrange, costBySku = {}, onCostChange,
-  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, disableCostColumn = false, totalCount = null,
+  columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
   pagerSlot = null,
 }) {
   const cols = columns.map((h, i) => ({
@@ -50,12 +63,24 @@ export default function DetailsTable({
     sticky: i === 0,
     signed: !!h.signed,
     isSku: h.primitive === 'sku',
+    costField: disableCostColumn ? null : costFieldOf(h),
   }));
 
-  // A Cost input keyed by SKU only makes sense on a table actually grouped
+  // A cost input keyed by SKU only makes sense on a table actually grouped
   // by SKU — never on a per-transaction table (see resolveTransactionRows),
-  // where the row key is an Order Id, not a SKU.
-  const showCost = !disableCostColumn && cols.some((c) => c.isSku);
+  // where the row key is an Order Id, not a SKU. The injected one steps
+  // aside when the COGS header's own column is here to type into.
+  const showCost = !disableCostColumn && cols.some((c) => c.isSku) && !cols.some((c) => c.costField === 'cogs');
+  const dirtyCells = dirtyCostCells || new Set();
+  const costInput = (sku, field, name, total = null) => (
+    <CostCell
+      value={skuCosts[sku]?.[field]}
+      total={total}
+      onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
+      dirty={dirtyCells.has(costCellKey(sku, field))}
+      label={`${name} for ${sku}`}
+    />
+  );
   const displayCols = [];
   for (const c of cols) {
     displayCols.push({ ...c, kind: 'header' });
@@ -194,24 +219,20 @@ export default function DetailsTable({
                 </td>
                 {displayCols.map((col) => {
                   if (col.kind === 'cost') {
-                    const val = costBySku[r.key];
                     return (
                       <td key="__cost__" className="px-3 py-2.5 whitespace-nowrap">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          value={val ?? ''}
-                          onChange={(e) => onCostChange?.(r.key, e.target.value)}
-                          placeholder="—"
-                          aria-label={`Cost for ${r.key}`}
-                          className="w-24 rounded-lg border border-divider bg-background px-2 py-1 text-sm focus:border-accent focus:outline-none"
-                        />
+                        {isRealSku(r.key) && costInput(r.key, 'cogs', 'Cost')}
                       </td>
                     );
                   }
                   const cell = r.cells[col.key] || {};
+                  if (col.costField && isRealSku(r.key)) {
+                    return (
+                      <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''}`}>
+                        {costInput(r.key, col.costField, col.label, cell)}
+                      </td>
+                    );
+                  }
                   const neg = col.signed && Number(cell.raw) < 0;
                   return (
                     <td

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthPayload } from '@/lib/auth'
 import { proxyAdminCall, authHeaderFrom, hubUnreachable } from '@/lib/connect'
+import { invalidateLiveTemplates } from '@/lib/liveTemplates'
 
 export const runtime = 'nodejs'
 
@@ -37,5 +38,9 @@ export async function POST(req) {
     return NextResponse.json(data, { status })
   } catch (err) {
     return NextResponse.json({ error: hubUnreachable(err, '/api/marketplace-templates') }, { status: 503 })
+  } finally {
+    // A new marketplace is on the dashboard the moment it exists — see the
+    // same step in ./[...path]/route.js.
+    await invalidateLiveTemplates()
   }
 }

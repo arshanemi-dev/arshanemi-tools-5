@@ -49,7 +49,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, costBySku, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -206,12 +206,13 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               onActivate={activateFromTable}
               editMode={editMode}
               arrange={headersArrange}
-              costBySku={costBySku}
+              skuCosts={skuCosts}
               onCostChange={onCostChange}
               selectedKeys={selectedKeys}
               onToggleRow={onToggleRow}
               onToggleAll={onToggleAll}
               dirtyKeys={dirtyKeys}
+              dirtyCostCells={dirtyCostCells}
               pagerSlot={pagerSlot}
             />
           </div>
