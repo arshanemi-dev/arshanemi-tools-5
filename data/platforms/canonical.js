@@ -33,11 +33,21 @@ export function classifyStatus(raw) {
 
 // ── Header normalisation ────────────────────────────────────────────────────
 // "Sub_Order_ID" -> "suborderid" ; "TCS (0.5%)" -> "tcs05" ; "  Net  Payout " -> "netpayout"
+// Remembered per text: a dashboard update normalises the same few hundred
+// column names millions of times (readHeaderFromRow tries every column of
+// every row for a header it has no direct match for), and running the regex
+// each time was a large share of what an update cost.
+const NORMALISED = new Map();
+const MAX_NORMALISED = 5000;
 export function normHeader(s) {
-  return String(s ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_\-./()%,:]+/g, '');
+  const text = String(s ?? '');
+  let out = NORMALISED.get(text);
+  if (out === undefined) {
+    out = text.trim().toLowerCase().replace(/[\s_\-./()%,:]+/g, '');
+    if (NORMALISED.size >= MAX_NORMALISED) NORMALISED.clear();
+    NORMALISED.set(text, out);
+  }
+  return out;
 }
 
 // ── Value coercion ─────────────────────────────────────────────────────────

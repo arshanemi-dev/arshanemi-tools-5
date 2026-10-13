@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useLiveTemplates } from '@/lib/profitLoss/useLiveTemplates';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
@@ -13,11 +13,13 @@ import { rangeForPreset, todayISO } from '@/lib/profitLoss/dateRanges';
 import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
 import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
 import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
-import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData } from '@/lib/profitLoss/extractedDataStore';
+import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData, snapshotConfig } from '@/lib/profitLoss/extractedDataStore';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
+import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
+import { nextPaint } from '@/lib/profitLoss/nextPaint';
 import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
-import { listCompanies, saveCompany, saveExtractedRows, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
+import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
@@ -39,6 +41,7 @@ import HistoryDrawer from './HistoryDrawer';
 import NoMarketplaces from './NoMarketplaces';
 import NoTemplateSidebar from './NoTemplateSidebar';
 import TemplatesLoadError from './TemplatesLoadError';
+import UploadProgress, { SavingRowsLine } from './UploadProgress';
 import NextLevelSheetDebugger from '@/components/templateSettings/NextLevelSheetDebugger';
 
 const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
@@ -190,7 +193,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   // ── filters (pending vs applied) ────────────────────────────────────────
   // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
-  // fullResolved below) but still respects company/platform. All three (plus
+  // resolveEverything below) but still respects company/platform. All three (plus
   // ads) feed resolveTemplate directly, in-browser (see `resolved` below) —
   // there's no server round-trip left to protect, so nothing here caps how
   // many rows feed the calculation anymore; every saved row is always in
@@ -204,8 +207,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // after a short pause, so picking a date/company or typing an ads value
   // doesn't recompute the whole dashboard on every keystroke. resetFilters
   // (below) sets `applied` directly for an instant reset, bypassing this.
+  // `applied` is only replaced when something in it really differs: a new
+  // object with the same values (an upload sets both to the same range) used
+  // to recalculate the whole dashboard a second time for nothing.
   useEffect(() => {
-    const t = setTimeout(() => setApplied(pending), 500);
+    const t = setTimeout(() => setApplied((cur) => (JSON.stringify(cur) === JSON.stringify(pending) ? cur : pending)), 500);
     return () => clearTimeout(t);
   }, [pending]);
 
@@ -254,6 +260,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     if (legacyMoved) dropLegacySkuCosts();
   }, [legacyMoved, dropLegacySkuCosts]);
 
+  // Automatic, unmetered per-ROW persistence (Task: "save all my headers
+  // data user-wise... one row one json") — distinct from the per-SKU
+  // extractedData snapshot below and from the deliberate, coin-metered Save
+  // to History. Whenever the rows change, the ones not stored yet go to the
+  // hub in parts; `rowSave` says how far along that is (the upload window
+  // and SavingRowsLine show it). Only once something was uploaded this
+  // session: what was just fetched back from that same table is stored
+  // already (markRowsStored, in addRestoredRows). See useRowSaver.
+  const {
+    status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored, forget: forgetStoredRows,
+  } = useRowSaver({
+    enabled: loggedIn && uploads.some((u) => u.slotId !== RESTORED_SLOT_ID),
+    rows: canonicalRows,
+    orderIdHeader,
+    transactionIdHeader,
+  });
+
   // Every Marketplace x Brand combo ("company") this user has actually used,
   // from the dedicated market_place_companies table — reloaded on every
   // mount so a returning session's Brand picker isn't limited to only what
@@ -292,10 +315,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const [restorePaging, setRestorePaging] = useState(null);
   const [restoring, setRestoring] = useState(false);
   const addRestoredRows = useCallback((rows) => {
+    markRowsStored(rows); // they came from the hub — nothing to save back
     setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
       ? prev.map((u) => (u.slotId === RESTORED_SLOT_ID ? { ...u, rows: [...u.rows, ...rows] } : u))
       : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
-  }, []);
+  }, [markRowsStored]);
   useEffect(() => {
     if (!loggedIn) return;
     let cancelled = false;
@@ -360,8 +384,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // ── resolve (computed right here in the browser) ────────────────────────
   // Title cards, graphs, the table, overview pivots — every formula — run
   // via resolveTemplate/resolveTransactionRows directly against the FULL
-  // canonicalRows, the same way the export-only fullResolved below already
-  // did. Date range, Company and Platform are the only things that narrow
+  // canonicalRows. Date range, Company and Platform are the only things that narrow
   // what counts (resolveTemplate's own dateFrom/dateTo/company/platform
   // filter, unchanged) — everything past that (which columns show, sort
   // order, per-column search, page size/page) is DetailsTable's own
@@ -401,8 +424,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     }
   }, [config, pricedRows, unitCosts, applied, overviewHeaderIds]);
 
+  // The per-transaction view is only worked out while it is the page on
+  // screen — it used to be recalculated on every change to the dashboard,
+  // whichever tab was open. (Export resolves its own, below.)
+  const noTransactions = useMemo(() => ({ headers: config.headers || [], rows: [], rowCount: 0 }), [config]);
   const transactionResolved = useMemo(() => {
-    if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
+    if (!showTransactions || !orderIdHeader || !config.headers?.length) return noTransactions;
     try {
       return resolveTransactionRows(config, {
         canonicalRows: pricedRows,
@@ -415,75 +442,68 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       });
     } catch (err) {
       console.error('resolveTransactionRows failed:', err);
-      return { headers: config.headers || [], rows: [], rowCount: 0 };
+      return noTransactions;
     }
-  }, [orderIdHeader, config, pricedRows, unitCosts, applied]);
+  }, [showTransactions, noTransactions, orderIdHeader, config, pricedRows, unitCosts, applied]);
 
   // The complete, unlimited dataset — every uploaded row, no date bound —
-  // resolved once so Download PDF/Excel can pull "all data" regardless of
-  // the live view's date-range. Still respects an intentional Company/
-  // Platform scope, since those are a deliberate choice, not a performance
-  // limit. Only computed lazily inside doExport (not on every keystroke)
-  // would be nicer, but resolveTemplate is cheap enough over this dataset's
-  // realistic size that resolving it here eagerly is fine.
-  const fullResolved = useMemo(() => {
-    if (!config.headers?.length) return emptyResolved;
+  // for Download PDF/Excel, which pulls "all data" regardless of the live
+  // view's date range. Still respects an intentional Company/Platform scope,
+  // since those are a deliberate choice, not a performance limit. Worked out
+  // when an export asks for it (doExport) — it used to be recalculated,
+  // together with its Transactions counterpart, on every change to the
+  // dashboard, which doubled what each change cost.
+  const resolveEverything = useCallback(() => {
+    const everything = { canonicalRows: pricedRows, skuCostMap: unitCosts, ads: applied.ads, dateFrom: null, dateTo: null, platform: applied.platform, company: applied.company };
+    let full = emptyResolved;
+    let fullTransactions = noTransactions;
+    if (!config.headers?.length) return { full, fullTransactions };
     try {
-      return resolveTemplate(config, {
-        canonicalRows: pricedRows,
-        skuCostMap: unitCosts,
-        ads: applied.ads,
-        dateFrom: null,
-        dateTo: null,
-        platform: applied.platform,
-        company: applied.company,
-        overviewHeaderIds,
-      });
+      // With no date bound in effect the live view IS the whole dataset.
+      full = !applied.dateRange.from && !applied.dateRange.to ? resolved : resolveTemplate(config, { ...everything, overviewHeaderIds });
     } catch (err) {
       console.error('resolveTemplate (export) failed:', err);
-      return emptyResolved;
     }
-  }, [config, pricedRows, unitCosts, applied.ads, applied.platform, applied.company, overviewHeaderIds]);
-
-  // Transactions' own "all data" counterpart to fullResolved — same reason:
-  // Download PDF/Excel pulls every row regardless of the live view's date
-  // range. Computed unconditionally (not gated on showTransactions) since
-  // export needs it even when some other tab is the one on screen.
-  const fullTransactionResolved = useMemo(() => {
-    if (!orderIdHeader || !config.headers?.length) return { headers: config.headers || [], rows: [], rowCount: 0 };
     try {
-      return resolveTransactionRows(config, {
-        canonicalRows: pricedRows,
-        skuCostMap: unitCosts,
-        ads: applied.ads,
-        dateFrom: null,
-        dateTo: null,
-        platform: applied.platform,
-        company: applied.company,
-      });
+      if (orderIdHeader) fullTransactions = resolveTransactionRows(config, everything);
     } catch (err) {
       console.error('resolveTransactionRows (export) failed:', err);
-      return { headers: config.headers || [], rows: [], rowCount: 0 };
     }
-  }, [orderIdHeader, config, pricedRows, unitCosts, applied.ads, applied.platform, applied.company]);
+    return { full, fullTransactions };
+  }, [config, pricedRows, unitCosts, applied, overviewHeaderIds, resolved, orderIdHeader, noTransactions]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
   // extractedDataStore.js) so a header this session's upload doesn't happen
   // to touch still shows what it was last known to be, without ever
   // freezing a computed metric (Profit/Loss, COGS, ...) from a stale
-  // session. Uses fullResolved (every row, no row-limit) rather than the
-  // live/limited `resolved` so an older row falling outside the "smart
-  // limit" doesn't look like its data disappeared.
+  // session. Read off every row (no date bound) rather than the live view,
+  // so an older row falling outside the date filter doesn't look like its
+  // data disappeared. Those headers' values depend on the rows alone, so
+  // only they are resolved (snapshotConfig) — and a moment after the rows
+  // settle, not while an upload is still being put on screen.
+  const snapConfig = useMemo(() => snapshotConfig(config), [config]);
+  const extractedLatest = useRef(extractedData);
+  useEffect(() => { extractedLatest.current = extractedData; }, [extractedData]);
   useEffect(() => {
-    if (!loggedIn || !fullResolved.tableRows.length) return;
-    const snapshot = buildExtractedSnapshot(fullResolved.tableRows, fullResolved.headers);
-    if (!Object.keys(snapshot).length) return;
-    const merged = mergeExtractedData(extractedData, snapshot);
-    if (JSON.stringify(merged) === JSON.stringify(extractedData)) return;
-    (() => onExtractedDataChange(merged))();
+    if (!loggedIn || !canonicalRows.length || !snapConfig.headers.length) return undefined;
+    const t = setTimeout(() => {
+      let tableRows;
+      try {
+        ({ tableRows } = resolveTemplate(snapConfig, { canonicalRows, platform: applied.platform, company: applied.company }));
+      } catch (err) {
+        console.error('resolveTemplate (snapshot) failed:', err);
+        return;
+      }
+      const snapshot = buildExtractedSnapshot(tableRows, snapConfig.headers);
+      if (!Object.keys(snapshot).length) return;
+      const merged = mergeExtractedData(extractedLatest.current, snapshot);
+      if (JSON.stringify(merged) === JSON.stringify(extractedLatest.current)) return;
+      onExtractedDataChange(merged);
+    }, 1200);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fullResolved, loggedIn]);
+  }, [snapConfig, canonicalRows, applied.platform, applied.company, loggedIn]);
 
   // The live table's rows, with any header this SKU has no CURRENT value
   // for filled in from that same saved snapshot — display only (aggregate/
@@ -492,24 +512,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     () => fillFromExtractedData(resolved.tableRows, resolved.headers, extractedData),
     [resolved, extractedData],
   );
-
-  // Automatic, unmetered per-ROW persistence (Task: "save all my headers
-  // data user-wise... one row one json") — distinct from the per-SKU
-  // extractedData snapshot above. Debounced against canonicalRows churn (a
-  // multi-file upload fires setUploads more than once); best-effort — a
-  // failure here is silent (never a toast) since this is background
-  // enrichment, not the deliberate, coin-metered Save to History.
-  useEffect(() => {
-    // Nothing freshly uploaded this session — everything on screen is what
-    // was just fetched back from this same table, so writing it straight
-    // back would be a pointless (if harmless) round-trip.
-    if (!loggedIn || !canonicalRows.length || !uploads.some((u) => u.slotId !== RESTORED_SLOT_ID)) return;
-    const t = setTimeout(() => {
-      const payload = buildExtractedRowsPayload(canonicalRows, orderIdHeader, transactionIdHeader);
-      if (payload.length) saveExtractedRows(payload).catch(() => {});
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [canonicalRows, uploads, orderIdHeader, transactionIdHeader, loggedIn]);
 
   const hasData = uploads.length > 0;
 
@@ -545,6 +547,15 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Template Settings when its sample sheet was mapped) before it's parsed —
   // a sheet missing columns the template expects is rejected with an error
   // instead of silently producing a table with holes in it.
+  //
+  // A large sheet holds the page while it is read and again while the
+  // dashboard recalculates with its rows, so the upload says what it is doing
+  // in a progress window (UploadProgress): `uploadStage` is the step it is
+  // on, set — and painted (nextPaint) — BEFORE each piece of work starts.
+  // The last step, saving the rows to the account in parts, is useRowSaver's
+  // (`rowSave`); the rows are on the dashboard by then, so the window can be
+  // hidden while it runs.
+  const [uploadStage, setUploadStage] = useState(null); // { step: 'reading' | 'adding' | 'saving' | 'done', fileIndex, fileCount, fileName, rows, hidden }
   const onUpload = useCallback(async (slotId, files) => {
     if (!selectedBrand) { addToast('Pick or create a brand first', 'error'); return; }
     // The file slots + mappings on screen may still be the last visit's copy
@@ -552,6 +563,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     // has confirmed they're current.
     if (!templatesChecked) { addToast('Still checking the marketplace setup — try again in a moment', 'error'); return; }
     setBusy(true);
+    resetRowSave(); // the window's last step must be THIS upload's save, not the one before
+    setUploadStage({ step: 'reading', fileIndex: 0, fileCount: files.length, fileName: files[0]?.name || '', rows: 0 });
+    await nextPaint();
+    let landed = false;
     try {
       const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
       const rowOverride = rowOverrideFor(slotDef);
@@ -562,7 +577,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       // already-known to this table just gets its updated_at bumped.
       if (loggedIn) saveCompany({ marketplace: marketplaceName, brand: selectedBrand }).catch(() => {});
       const added = [];
-      for (const file of files) {
+      for (const [fileIndex, file] of [...files].entries()) {
+        if (fileIndex) {
+          setUploadStage((s) => s && { ...s, fileIndex, fileName: file.name });
+          await nextPaint();
+        }
         setDebugFile(file);
         setDebugSlotId(slotId);
         let wb;
@@ -602,6 +621,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         // upload, never these.
         const skus = new Set(added.flatMap((a) => a.rows.map((r) => r.sku)));
         const priced = added.map((a) => ({ ...a, rows: stampSkuCosts(a.rows, skuCosts) }));
+        const fresh = priced.flatMap((a) => a.rows);
+        // Shown before the rows go in: putting them on the dashboard is the
+        // recalculation, and the page is held until it is done.
+        setUploadStage((s) => s && { ...s, step: 'adding', rows: fresh.length });
+        await nextPaint();
         setUploads((prev) => [
           ...prev.map((u) => {
             const rows = stampSkuCosts(u.rows, skuCosts, skus);
@@ -609,15 +633,28 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           }),
           ...priced,
         ]);
-        const fresh = priced.flatMap((a) => a.rows);
         const sheets = added.length > files.length ? ` from ${added.length} sheets` : '';
         addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
         fitDateRangeTo(fresh);
+        landed = fresh.length > 0;
       }
     } finally {
       setBusy(false);
+      // Rows went in: on to saving them (signed in), else that's it. Nothing
+      // went in (every file was turned down — the toasts say why): no window.
+      setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts]);
+  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave]);
+
+  // The window closes by itself a moment after its last step is done — a
+  // failed save keeps it open (it offers Try again), and so does one still
+  // running.
+  const uploadDone = uploadStage?.step === 'done' || (uploadStage?.step === 'saving' && rowSave?.phase === 'saved');
+  useEffect(() => {
+    if (!uploadDone) return undefined;
+    const t = setTimeout(() => setUploadStage(null), 1400);
+    return () => clearTimeout(t);
+  }, [uploadDone]);
 
   const onUploadSkuCost = useCallback(async (file) => {
     if (!file) return;
@@ -716,14 +753,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
     // Removing rows from `uploads` only clears the in-browser view — every
     // one of them may already be mirrored in profit_loss_extracted_rows by
-    // the background auto-save effect above, and load-on-refresh reloads
-    // ALL of it, so without this a "deleted" row just comes right back on
-    // the next visit. Keyed off the same {orderId, transactionId} the
-    // auto-save itself uses (buildExtractedRowsPayload), deduped since a
-    // SKU/Overview-group delete can match many raw rows that share one
-    // order. Best-effort like the auto-save, but — unlike that silent
-    // background sync — surfaced as a toast on failure, since this is a
-    // deliberate action the user just took.
+    // the automatic save (useRowSaver), and load-on-refresh reloads ALL of
+    // it, so without this a "deleted" row just comes right back on the next
+    // visit. Keyed off the same {orderId, transactionId} the save itself
+    // uses (buildExtractedRowsPayload), deduped since a SKU/Overview-group
+    // delete can match many raw rows that share one order. Surfaced as a
+    // toast on failure, since this is a deliberate action the user just
+    // took. The saver is told too (forgetStoredRows): the same rows uploaded
+    // again must be saved again, not taken for still stored.
     if (loggedIn && orderIdHeader && removedRows.length) {
       const seen = new Set();
       const keys = buildExtractedRowsPayload(removedRows, orderIdHeader, transactionIdHeader)
@@ -735,6 +772,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           return true;
         });
       if (keys.length) {
+        forgetStoredRows({ keys });
         deleteExtractedRows(keys)
           .then(({ ok }) => {
             if (!ok) addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error');
@@ -742,12 +780,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           .catch(() => addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error'));
       }
     }
-  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast]);
+  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast, forgetStoredRows]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
-  // date-filtered view) by default, or `fullResolved` (every uploaded row,
-  // no date bound) when Download PDF/Excel calls it.
+  // date-filtered view) by default, or every uploaded row with no date
+  // bound (resolveEverything) when Download PDF/Excel calls it.
   // One tab's export view — the table respects "My Details" (that tab's own
   // ticks, the same ones the screen itself uses): only the fields currently
   // ticked there, or the tab's default headers while nothing is (the same
@@ -819,15 +857,16 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   }), [showTransactions, buildTransactionsView, transactionResolved, buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
 
   // Excel/PDF always pull "all data" — every uploaded row, no date bound
-  // (fullResolved/fullTransactionResolved) — and every visible Tab +
-  // Overview Tab, PLUS Transactions (when Order Id is mapped), not just the
-  // active one, each its own sheet/section.
+  // (resolveEverything, worked out here, when asked for) — and every visible
+  // Tab + Overview Tab, PLUS Transactions (when Order Id is mapped), not
+  // just the active one, each its own sheet/section.
   const doExport = async (kind) => {
     if (restoring) { addToast('Still loading your saved data — try again in a moment', 'error'); return; }
+    const { full, fullTransactions } = resolveEverything();
     const tabs = [
-      ...visibleTabs.map((t) => buildTabView(t, false, fullResolved)),
-      ...visibleOverviewTabs.map((t) => buildTabView(t, true, fullResolved)),
-      ...(orderIdHeader ? [buildTransactionsView(fullTransactionResolved)] : []),
+      ...visibleTabs.map((t) => buildTabView(t, false, full)),
+      ...visibleOverviewTabs.map((t) => buildTabView(t, true, full)),
+      ...(orderIdHeader ? [buildTransactionsView(fullTransactions)] : []),
     ].filter((v) => v.table.columns.length);
     if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
     try {
@@ -1002,6 +1041,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             </div>
           )}
 
+          {/* The save of an upload whose window was hidden, or of rows written back outside one. */}
+          {(!uploadStage || uploadStage.hidden) && <SavingRowsLine saving={rowSave} onRetry={retryRowSave} />}
+
           <div className="mt-6 space-y-5">
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
@@ -1096,6 +1138,14 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       </div>
 
       <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} onOpenRun={() => {}} />
+
+      <UploadProgress
+        stage={uploadStage}
+        saving={rowSave}
+        signedIn={loggedIn}
+        onHide={() => setUploadStage((s) => (rowSave?.phase === 'failed' ? null : s && { ...s, hidden: true }))}
+        onRetry={retryRowSave}
+      />
 
       <ConfirmDialog
         open={confirmDeleteOpen}

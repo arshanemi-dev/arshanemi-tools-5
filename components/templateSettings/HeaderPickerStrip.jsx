@@ -1,29 +1,32 @@
 'use client';
 
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { ChevronDown, Plus, X } from 'lucide-react';
 import Popover from '@/components/dashboard/Popover';
 import SearchSelect from '@/components/dashboard/SearchSelect';
 import SearchChecklist from '@/components/dashboard/SearchChecklist';
+import PositionList from './PositionList';
 
-// The reorderable "Add Header ▾ / Add Title Card ▾ / Add Graph ▾" strip from
-// image 2's Tab + Overview sections. Every added slot is itself a searchable
-// dropdown (SearchSelect) — pick a different item straight from it to swap it
-// in — and "Add …" opens a searchable checklist, so several can be added in
-// one go (in the order listed). Picking one
-// that's already used in another slot swaps the two slots (same idea as the
-// sidebar's reorder mode) instead of creating a duplicate; picking an unused
-// one just replaces this slot (the old item returns to the "Add" pool).
+// The "pick some, put them in order" list from image 2's Tab + Overview
+// sections (and a Graph's headers): the Headers / Title Cards / Graphs a tab
+// shows, top = first. Arranged exactly like the Tabs / Overview Organizers —
+// drag a row's ⋮⋮ handle, pick its "Position N", or ↑ / ↓ / ⇈ / ⇊
+// (PositionList) — plus two things an organizer row has no use for: every
+// row is itself a searchable dropdown (SearchSelect) — pick a different item
+// straight from it to swap it in — and × takes it off the list. "Add …"
+// opens a searchable checklist, so several can be added in one go (in the
+// order listed). Picking one that's already used in another row swaps the
+// two rows instead of creating a duplicate; picking an unused one just
+// replaces this row (the old item returns to the "Add" pool).
 // `options` = every available item ({ id, name }); `selectedIds` = the
 // ordered subset; `onChange(nextIds)`.
 export default function HeaderPickerStrip({ label = 'Header', options = [], selectedIds = [], onChange, disabled = false }) {
   const byId = new Map(options.map((o) => [o.id, o]));
   const unselected = options.filter((o) => !selectedIds.includes(o.id));
 
-  const move = (i, dir) => {
-    const j = i + dir;
-    if (j < 0 || j >= selectedIds.length) return;
+  const moveTo = (from, to) => {
     const next = [...selectedIds];
-    [next[i], next[j]] = [next[j], next[i]];
+    const [id] = next.splice(from, 1);
+    next.splice(to, 0, id);
     onChange(next);
   };
   const remove = (id) => onChange(selectedIds.filter((x) => x !== id));
@@ -34,35 +37,47 @@ export default function HeaderPickerStrip({ label = 'Header', options = [], sele
     const j = selectedIds.indexOf(newId);
     const next = [...selectedIds];
     next[i] = newId;
-    if (j !== -1) next[j] = oldId; // already used elsewhere — swap the two slots
+    if (j !== -1) next[j] = oldId; // already used elsewhere — swap the two rows
     onChange(next);
   };
 
   return (
     <div className="flex flex-col gap-1.5">
-      {selectedIds.map((id, i) => (
-        <div key={id} className="flex items-center gap-1 rounded-lg border border-divider-light bg-background py-1 pl-1.5 pr-1">
-          <button type="button" onClick={() => move(i, -1)} className="shrink-0 text-subtle hover:text-foreground disabled:opacity-30" disabled={disabled || i === 0}>
-            <ChevronLeft size={12} />
-          </button>
-          <SearchSelect
-            value={id}
-            options={options.map((o) => ({ value: o.id, label: o.name, hint: o.id !== id && selectedIds.includes(o.id) ? 'swap' : undefined }))}
-            onChange={(newId) => pick(i, newId)}
-            disabled={disabled}
-            ariaLabel={`${label} ${i + 1}`}
-            searchPlaceholder={`Search ${label.toLowerCase()}s…`}
-            missingLabel={byId.has(id) ? null : id}
-            className="min-w-0 flex-1"
-          />
-          <button type="button" onClick={() => move(i, 1)} className="shrink-0 text-subtle hover:text-foreground disabled:opacity-30" disabled={disabled || i === selectedIds.length - 1}>
-            <ChevronRight size={12} />
-          </button>
-          <button type="button" onClick={() => remove(id)} disabled={disabled} className="shrink-0 rounded-full p-0.5 text-subtle hover:bg-card-hover hover:text-neg disabled:opacity-30">
-            <X size={11} />
-          </button>
-        </div>
-      ))}
+      {selectedIds.length > 0 && (
+        <PositionList
+          items={selectedIds.map((id) => ({ id }))}
+          onMove={moveTo}
+          nameOf={(it) => byId.get(it.id)?.name || it.id}
+          disabled={disabled}
+          dragHandleOnly // the row's dropdown has a search box and a list of its own to click and drag in
+          compact // these sit inside a card, often in half the screen (the live preview takes the other half)
+          className="bg-background"
+          renderRow={(it, i) => (
+            <SearchSelect
+              value={it.id}
+              options={options.map((o) => ({ value: o.id, label: o.name, hint: o.id !== it.id && selectedIds.includes(o.id) ? 'swap' : undefined }))}
+              onChange={(newId) => pick(i, newId)}
+              disabled={disabled}
+              ariaLabel={`${label} ${i + 1}`}
+              searchPlaceholder={`Search ${label.toLowerCase()}s…`}
+              missingLabel={byId.has(it.id) ? null : it.id}
+              className="min-w-0 flex-1"
+            />
+          )}
+          renderEnd={(it) => (
+            <button
+              type="button"
+              title="Remove"
+              aria-label={`Remove ${byId.get(it.id)?.name || it.id}`}
+              onClick={() => remove(it.id)}
+              disabled={disabled}
+              className="rounded-md p-1 text-subtle hover:bg-card-hover hover:text-neg disabled:opacity-25 disabled:hover:bg-transparent"
+            >
+              <X size={14} />
+            </button>
+          )}
+        />
+      )}
 
       <Popover
         className="self-start"
