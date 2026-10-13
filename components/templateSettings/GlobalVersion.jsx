@@ -94,7 +94,7 @@ export function GlobalSaveButtons({ draft, save }) {
         title={`Saves a new draft that starts the next version number — ${names.major}`}
         className="rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-card-hover disabled:opacity-50"
       >
-        New major version
+        Save Drafts
       </button>
       <button
         type="button"
