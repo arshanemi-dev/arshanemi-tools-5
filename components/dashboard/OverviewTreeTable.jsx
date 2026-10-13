@@ -181,16 +181,10 @@ export default function OverviewTreeTable({
         </div>
       )}
       <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
-        <table className={`${styles.table} text-sm`} style={{ width: 40 + (colSpan - 1) * 160 }}>
-          <colgroup>
-            <col style={{ width: 40 }} />
-            <col style={{ width: 160 }} />
-            {showCost && <col style={{ width: 160 }} />}
-            {cols.map((col) => <col key={col.key} style={{ width: 160 }} />)}
-          </colgroup>
+        <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
+              <th className="sticky top-0 z-10 w-10 bg-th px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
               {headCell(treeCol, 'left-0 z-20')}

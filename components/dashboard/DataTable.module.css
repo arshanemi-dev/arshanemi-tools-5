@@ -1,5 +1,6 @@
 .table {
-  table-layout: fixed;
+  table-layout: auto;
+  width: max-content;
   /* Separate borders stay attached to sticky cells while scrolling.
      Draw each shared edge once so the grid stays one pixel wide. */
   border-collapse: separate;

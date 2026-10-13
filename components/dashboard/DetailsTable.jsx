@@ -164,14 +164,10 @@ export default function DetailsTable({
       )}
       {/* min-h while a filter menu is open: with only a few rows the menu (taller on a number column — its Min / Max range) would otherwise be cut off by this scroll area */}
       <div data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
-        <table className={`${styles.table} text-sm`} style={{ width: 40 + displayCols.length * 160 }}>
-          <colgroup>
-            <col style={{ width: 40 }} />
-            {displayCols.map((col) => <col key={col.key} style={{ width: 160 }} />)}
-          </colgroup>
+        <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
+              <th className="sticky top-0 z-10 w-10 bg-th px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
               {displayCols.map((col) => {

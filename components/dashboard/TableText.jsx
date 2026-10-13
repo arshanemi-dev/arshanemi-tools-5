@@ -1,4 +1,4 @@
-// Keep labels readable in fixed-width columns without truncating their values.
+// Wrap labels after two words without truncating their values.
 export default function TableText({ children }) {
   const text = String(children ?? '');
   return (
