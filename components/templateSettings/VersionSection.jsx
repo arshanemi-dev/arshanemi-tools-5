@@ -11,8 +11,10 @@ import SectionHead from './SectionHead';
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 const label = (v) => `v${v.versionNumber}.${v.subVersionNumber}`;
 
-// image 2 · Version Page — every saved version with an on/off toggle that
-// publishes / unpublishes it. Create date = created_at, Live date = published_at.
+// image 2 · Version Page — every saved version with a Live on/off switch:
+// the one place a version is put on the dashboard, or taken off it (there is
+// no Publish button anywhere else — see GlobalVersion.jsx). Create date =
+// created_at, Live date = published_at.
 // Every row also has a Delete (behind a confirm): any version except the one
 // that is live — the dashboard is showing that one. The button is disabled
 // there, but the rule itself is the hub's (it answers 409), so a stale list
@@ -39,7 +41,7 @@ export default function VersionSection({ draft }) {
     setBusyId(v.id);
     const res = await publish(v.id, goLive);
     setBusyId(null);
-    addToast(res.ok ? (goLive ? `Published v${v.versionNumber}.${v.subVersionNumber}` : 'Unpublished') : (res.data?.error || 'Failed'), res.ok ? 'success' : 'error');
+    addToast(res.ok ? (goLive ? `${label(v)} is now live on the dashboard` : `${label(v)} switched off — no version is live now`) : (res.data?.error || 'Failed'), res.ok ? 'success' : 'error');
   }
 
   async function confirmDelete() {
@@ -128,7 +130,7 @@ export default function VersionSection({ draft }) {
                     onClick={() => setDeleteId(v.id)}
                     disabled={isLive(v) || busyId === v.id}
                     aria-label={`Delete ${label(v)}`}
-                    title={isLive(v) ? 'Live on the dashboard — publish another version, or switch this one off, before deleting it' : `Delete ${label(v)}`}
+                    title={isLive(v) ? 'Live on the dashboard — switch another version Live, or switch this one off, before deleting it' : `Delete ${label(v)}`}
                     className="inline-flex items-center justify-center rounded p-1.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-subtle"
                   >
                     <Trash2 size={14} />

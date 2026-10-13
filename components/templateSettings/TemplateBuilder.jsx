@@ -21,7 +21,7 @@ import TabsOrganizerSection from './TabsOrganizerSection';
 import MarketPlaceSection from './MarketPlaceSection';
 import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
-import { GlobalPublishBanner, PublishButton, usePublishGlobal } from './GlobalPublish';
+import { GlobalSaveButtons, GlobalVersionBar, useGlobalSave } from './GlobalVersion';
 
 function scrollToAnchor(anchor) {
   if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -45,7 +45,7 @@ export default function TemplateBuilder() {
   const activeArea = isGlobal ? 'global' : marketplaceId ? 'marketplace' : null;
 
   const globalDraft = useGlobalTemplateDraft();
-  const publishGlobal = usePublishGlobal(globalDraft);
+  const globalSave = useGlobalSave(globalDraft); // "Update v2.3" / "Save New Version" — see GlobalVersion.jsx
   const draft = useTemplateDraft(marketplaceId, { globalHeaderIds: globalDraft.headerIds });
 
   const [templates, setTemplates] = useState(null);
@@ -141,23 +141,7 @@ export default function TemplateBuilder() {
 
   // Every failure toast says why (failureMessage / validationMessage) — a
   // thrown request (no response at all) used to fail with no toast whatsoever.
-  async function saveGlobalDraft({ major = false } = {}) {
-    if (!globalDraft.valid) { addToast(validationMessage(globalDraft.errors), 'error'); return; }
-    let res;
-    try {
-      res = await globalDraft.saveDraft({ major });
-    } catch (err) {
-      addToast(failureMessage(err, 'Save failed'), 'error');
-      return;
-    }
-    if (!res.ok) {
-      addToast(failureMessage(res, 'Save failed'), 'error');
-      if (res.details?.length) console.error('global config validation:', res.details);
-      return;
-    }
-    addToast(`Saved draft v${res.version.versionNumber}.${res.version.subVersionNumber}`);
-  }
-
+  // (Global Settings' own save is useGlobalSave, above.)
   async function saveMarketplace() {
     if (!marketplaceId) return;
     if (!draft.valid) { addToast(validationMessage(draft.errors), 'error'); return; }
@@ -274,7 +258,7 @@ export default function TemplateBuilder() {
                 <div className="w-full space-y-5">
                   {isGlobal ? (
                     <>
-                      <GlobalPublishBanner draft={globalDraft} publish={publishGlobal} />
+                      <GlobalVersionBar draft={globalDraft} onOpenVersionPage={() => onOpenSection('version', 'section-version')} />
                       <GlobalSectionPicker sections={GLOBAL_SECTIONS} openKey={openSection} onOpen={onOpenSection} />
                       {openSection === 'header' && (
                         <HeaderSection
@@ -287,11 +271,11 @@ export default function TemplateBuilder() {
                       {openSection === 'titleCard' && <TitleCardSection {...sectionProps('titleCard')} />}
                       {openSection === 'tab' && <TabSection {...sectionProps('tab')} />}
                       {openSection === 'tabsOrganizer' && (
-                        <TabsOrganizerSection draft={globalDraft} kind="tab" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
+                        <TabsOrganizerSection draft={globalDraft} kind="tab" onSave={() => globalSave.save()} saving={globalDraft.saving} />
                       )}
                       {openSection === 'overview' && <OverviewTabSection {...sectionProps('overview')} />}
                       {openSection === 'overviewOrganizer' && (
-                        <TabsOrganizerSection draft={globalDraft} kind="overview" onSave={() => saveGlobalDraft()} saving={globalDraft.saving} />
+                        <TabsOrganizerSection draft={globalDraft} kind="overview" onSave={() => globalSave.save()} saving={globalDraft.saving} />
                       )}
                       {openSection === 'version' && <VersionSection draft={globalDraft} />}
                     </>
@@ -338,16 +322,7 @@ export default function TemplateBuilder() {
                   <History size={14} /> Log
                 </button>
                 {isGlobal ? (
-                  <>
-                    <button type="button" onClick={() => saveGlobalDraft({ major: true })} disabled={globalDraft.saving} className="rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-card-hover disabled:opacity-50">
-                      Save as new version
-                    </button>
-                    <button type="button" onClick={() => saveGlobalDraft()} disabled={globalDraft.saving || (!globalDraft.dirty && !!globalDraft.activeVersionId)} className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50">
-                      {globalDraft.saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                      Save Draft
-                    </button>
-                    <PublishButton publish={publishGlobal} />
-                  </>
+                  <GlobalSaveButtons draft={globalDraft} save={globalSave} />
                 ) : (
                   <button type="button" onClick={saveMarketplace} disabled={draft.saving || !draft.dirty} className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50">
                     {draft.saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}

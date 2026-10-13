@@ -43,6 +43,9 @@ export function versionToOpen(versions = [], template = null) {
 // change (the dashboard reads them the same way, saved yet or not).
 const editorConfig = (stored) => withFixedHeaders(stored && Object.keys(stored).length ? stored : makeEmptyGlobalConfig());
 
+// A save the hub turned down, in the shape the builder's toasts read.
+const failed = (res) => ({ ok: false, status: res.status, error: res.data?.error, details: res.data?.details });
+
 export default function useGlobalTemplateDraft() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -153,8 +156,6 @@ export default function useGlobalTemplateDraft() {
   }, []);
 
   // ── save ───────────────────────────────────────────────────────────────
-  const failed = (res) => ({ ok: false, status: res.status, error: res.data?.error, details: res.data?.details });
-
   // What is in the editor as a NEW version — a draft, which becomes the
   // selected version. `major` starts the next version number (v3.1) instead
   // of the next sub-version (v2.5). → { ok, created: true, version }
