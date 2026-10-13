@@ -14,13 +14,17 @@ export async function GET(req) {
 
   const sp = req.nextUrl.searchParams
   const qs = new URLSearchParams()
-  for (const key of ['page', 'limit']) {
+  for (const key of ['page', 'limit', 'includeCount']) {
     const v = sp.get(key)
     if (v) qs.set(key, v)
   }
   try {
-    const { status, data } = await proxyAdminCall(`/api/profit-loss/rows?${qs}`, { authHeader: authHeaderFrom(req) })
-    return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } })
+    const { status, data, etag } = await proxyAdminCall(`/api/profit-loss/rows?${qs}`, {
+      authHeader: authHeaderFrom(req), ifNoneMatch: req.headers.get('if-none-match'), signal: req.signal,
+    })
+    const headers = { 'Cache-Control': status === 200 || status === 304 ? 'private, no-cache' : 'no-store', Vary: 'Authorization, Cookie' }
+    if (etag) headers.ETag = etag
+    return status === 304 ? new NextResponse(null, { status, headers }) : NextResponse.json(data, { status, headers })
   } catch {
     return NextResponse.json({ error: 'Persistence service unavailable' }, { status: 503 })
   }

@@ -40,6 +40,7 @@ export default function DashboardHeaderBar({
   onAdsChange,
   updating,
   hasData,
+  actionsDisabled = false,
   selectedCount = 0,
   onDeleteClick,
   onExportExcel,
@@ -67,9 +68,9 @@ export default function DashboardHeaderBar({
         {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
         <div ref={pagerSlotRef} className="contents" />
         <div ref={viewPillsSlotRef} className="contents" />
-        <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData} />
+        <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
         <AdsCostControl value={ads} onChange={onAdsChange} />
-        <IconButton icon={FileText} label="PDF" title="Export to PDF" onClick={onExportPdf} disabled={!hasData} />
+        <IconButton icon={FileText} label="PDF" title="Export to PDF" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
         {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
 
         <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
@@ -80,7 +81,7 @@ export default function DashboardHeaderBar({
           title={selectedCount ? `Delete ${selectedCount} selected row${selectedCount === 1 ? '' : 's'}` : 'Select rows in the table to delete them'}
           tone="outline"
           badge={selectedCount || null}
-          disabled={!selectedCount}
+          disabled={!selectedCount || actionsDisabled}
           onClick={onDeleteClick}
         />
       

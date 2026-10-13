@@ -77,7 +77,7 @@ export default function DashboardToolbar({
         <button
           type="button"
           onClick={onDownloadSkuTemplate}
-          disabled={!hasData}
+          disabled={busy || !hasData}
           className="inline-flex h-9 items-center gap-1.5 rounded-full border border-divider-light bg-background px-3 text-sm font-medium text-foreground transition-colors hover:border-divider disabled:opacity-45"
           title={hasData ? 'Download the SKU Cost sheet — your SKUs with the costs saved so far; fill it in and upload it back' : 'Upload a settlement sheet first'}
         >

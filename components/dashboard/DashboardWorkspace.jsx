@@ -1,19 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
 import { useLiveTemplates } from '@/lib/profitLoss/useLiveTemplates';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
-import { parseSkuCostSheet } from '@/lib/sheet/parseWorkbook';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
-import { ingestWorkbook } from '@/lib/profitLoss/ingest';
 import { effectiveConfig } from '@/lib/profitLoss/effectiveConfig';
 import { rangeForPreset, todayISO } from '@/lib/profitLoss/dateRanges';
-import { resolveTemplate, readHeaderFromRow, resolveTransactionRows, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
+import { readHeaderFromRow, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
 import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
-import { mergeUploadsAcrossSlots } from '@/lib/profitLoss/mergeRows';
-import { buildExtractedSnapshot, mergeExtractedData, fillFromExtractedData, snapshotConfig } from '@/lib/profitLoss/extractedDataStore';
+import { mergeExtractedData, fillFromExtractedData, snapshotConfig } from '@/lib/profitLoss/extractedDataStore';
+import { createCalculationClient } from '@/lib/profitLoss/calculationClient';
+import { useCalculation } from '@/lib/profitLoss/useCalculation';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
 import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
@@ -23,7 +23,7 @@ import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } fr
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
-import { normalizeSkuCosts, stampSkuCosts, unitCostMap, withSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
@@ -36,17 +36,19 @@ import DashboardHeaderBar from './DashboardHeaderBar';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
 import DetailsTable from './DetailsTable';
-import MergedCommonHeadersTable from './MergedCommonHeadersTable';
-import HistoryDrawer from './HistoryDrawer';
 import NoMarketplaces from './NoMarketplaces';
 import NoTemplateSidebar from './NoTemplateSidebar';
 import TemplatesLoadError from './TemplatesLoadError';
 import UploadProgress, { SavingRowsLine } from './UploadProgress';
-import NextLevelSheetDebugger from '@/components/templateSettings/NextLevelSheetDebugger';
+const HistoryDrawer = dynamic(() => import('./HistoryDrawer'));
+const MergedCommonHeadersTable = dynamic(() => import('./MergedCommonHeadersTable'));
+const NextLevelSheetDebugger = dynamic(() => import('@/components/templateSettings/NextLevelSheetDebugger'));
 
 const DEFAULT_RANGE = { preset: '7d', ...rangeForPreset('7d') };
 const DEFAULT_ADS = { mode: 'percent', value: 0 };
 const emptyResolved = { headers: [], tableRows: [], titleCardValues: {}, graphSeries: {}, overviews: {}, aggregate: {}, companyOptions: [], rowCount: 0, platforms: [] };
+const EMPTY_ROWS = [];
+const EMPTY_VIEW = { resolved: emptyResolved, transactionResolved: { headers: [], rows: [], rowCount: 0 } };
 // The synthetic `uploads` entry a signed-in user's own previously-saved
 // rows (GET /api/profit-loss/rows) land in on load — never a real file
 // slot id, so it's easy to tell apart from an actual upload.
@@ -75,6 +77,8 @@ const DOC_TITLE_SUFFIX = ' | Barmeto Profit & Loss';
 
 export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
   const { addToast } = useToast();
+  const [calculations] = useState(() => createCalculationClient());
+  useEffect(() => () => calculations.dispose(), [calculations]);
 
   // ── templates ───────────────────────────────────────────────────────────
   // Starts empty and stays empty unless a real marketplace template is
@@ -137,6 +141,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     skuCosts, onCostChange, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
   } = useSkuCosts({ addToast });
   const [busy, setBusy] = useState(false);
+  const [restorePaging, setRestorePaging] = useState(null);
+  const [restoring, setRestoring] = useState(true);
+  const [restoreError, setRestoreError] = useState(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
   // The most recently uploaded raw File (any slot, or the SKU Cost button) —
   // fed to the embedded SheetDebugger below the toolbar so it always shows
   // the real upload just made, no picker of its own needed there. debugSlotId
@@ -177,19 +185,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // + Transaction Id match/de-dupe) lives in mergeUploadsAcrossSlots — the
   // Sheet Debugger's "Merged" preview tab runs that exact same function
   // against whatever files are open there, so the two can never disagree.
-  const canonicalRows = useMemo(
-    () => mergeUploadsAcrossSlots(uploads, orderIdHeader, transactionIdHeader, config.headers),
+  const mergeInput = useMemo(
+    () => ({ uploads, orderIdHeader, transactionIdHeader, headers: config.headers }),
     [uploads, orderIdHeader, transactionIdHeader, config.headers],
   );
-  // The same rows as the dashboard is resolved from them: an order keeps the
-  // costs written onto it when it was uploaded (see onUpload), and one that
-  // has none yet shows its SKU's default — so the fixed cost headers (COGS
-  // (Product Cost), Cost GST in, Final Product Cost, Other Expense (per
-  // order)) read like any sheet column. `canonicalRows` itself stays what
-  // gets saved. `unitCosts` = each SKU's default COGS alone: the engine's
-  // unit cost for an order with no COGS of its own.
-  const pricedRows = useMemo(() => withSkuCosts(canonicalRows, skuCosts), [canonicalRows, skuCosts]);
-  const unitCosts = useMemo(() => unitCostMap(skuCosts), [skuCosts]);
+  const merged = useCalculation(calculations, 'merge', mergeInput, EMPTY_ROWS);
+  const canonicalRows = useMemo(() => {
+    const originals = merged.input?.uploads.flatMap((upload) => upload.rows) || EMPTY_ROWS;
+    return merged.value.map((row) => typeof row === 'number' ? originals[row] : row);
+  }, [merged.value, merged.input]);
+  // Pricing is applied in the calculation worker; these canonical rows stay
+  // unmodified for persistence. Untouched rows retain their original identity.
 
   // ── filters (pending vs applied) ────────────────────────────────────────
   // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
@@ -271,7 +277,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const {
     status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored, forget: forgetStoredRows,
   } = useRowSaver({
-    enabled: loggedIn && uploads.some((u) => u.slotId !== RESTORED_SLOT_ID),
+    enabled: loggedIn && !restoring && !restoreError && !merged.pending && !merged.error && uploads.some((u) => u.slotId !== RESTORED_SLOT_ID),
     rows: canonicalRows,
     orderIdHeader,
     transactionIdHeader,
@@ -312,8 +318,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // just the active marketplace.
   // How the pages are fetched and added (page 1 at once, the rest a few at a
   // time, in order) is lib/profitLoss/loadAllPages.js.
-  const [restorePaging, setRestorePaging] = useState(null);
-  const [restoring, setRestoring] = useState(false);
   const addRestoredRows = useCallback((rows) => {
     markRowsStored(rows); // they came from the hub — nothing to save back
     setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
@@ -321,11 +325,15 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
   }, [markRowsStored]);
   useEffect(() => {
-    if (!loggedIn) return;
+    if (!loggedIn) {
+      Promise.resolve().then(() => setRestoring(false));
+      return;
+    }
     let cancelled = false;
+    const controller = new AbortController();
     const fetchPage = async (page) => {
       try {
-        const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE });
+        const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE, signal: controller.signal, includeCount: page === 1 });
         return ok ? { ...data, rows: rowsFromExtractedPayload(data.rows || []) } : null;
       } catch {
         return null;
@@ -333,21 +341,27 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     };
     (async () => {
       setRestoring(true);
+      setRestoreError(null);
+      setRestorePaging(null);
+      setUploads((prev) => prev.filter((upload) => upload.slotId !== RESTORED_SLOT_ID));
       try {
-        await loadAllPages({
+        const result = await loadAllPages({
           fetchPage,
           onRows: addRestoredRows,
           onProgress: setRestorePaging,
           cancelled: () => cancelled,
           concurrency: RESTORE_CONCURRENCY,
         });
+        if (!cancelled && !result.complete) setRestoreError('Some saved rows could not be loaded. Retry to get complete totals and enable uploads and exports.');
+      } catch {
+        if (!cancelled) setRestoreError('Saved data could not be loaded. Retry before uploading or exporting.');
       } finally {
         if (!cancelled) setRestoring(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loggedIn]);
+  }, [loggedIn, restoreAttempt]);
 
   const visibleTabs = useMemo(
     () => applyLayout(allTabsSorted, layout.tabs || emptySection()),
@@ -381,19 +395,11 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     [visibleTabs, visibleOverviewTabs],
   );
 
-  // ── resolve (computed right here in the browser) ────────────────────────
-  // Title cards, graphs, the table, overview pivots — every formula — run
-  // via resolveTemplate/resolveTransactionRows directly against the FULL
-  // canonicalRows. Date range, Company and Platform are the only things that narrow
-  // what counts (resolveTemplate's own dateFrom/dateTo/company/platform
-  // filter, unchanged) — everything past that (which columns show, sort
-  // order, per-column search, page size/page) is DetailsTable's own
-  // client-side concern and never touches this. No network round trip
-  // anymore, so no separate debounce/request-race guard is needed beyond
-  // the existing pending->applied one above — a useMemo just recomputes
-  // synchronously whenever an input changes. Falls back to the config's own
-  // zero/empty shape on any failure so tabs/title cards/graphs/table headers
-  // still render — just with blank values.
+  // ── resolve (in the calculation worker) ────────────────────────────────
+  // Preserve the full dataset and the existing formula/filter semantics, but
+  // compute only the active tab's outputs. useCalculation discards obsolete
+  // results after a filter change. Failed work is visible and blocks exports;
+  // it must never silently turn financial results into zeros.
   //
   // Which headers each Overview tab shows — its My Details ticks, else its
   // own picks (overviewShownHeaders). resolveTemplate builds an overview's
@@ -405,72 +411,31 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   )), [config, myColumnsFor]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
-  const resolved = useMemo(() => {
-    if (!config.headers?.length) return emptyResolved;
-    try {
-      return resolveTemplate(config, {
-        canonicalRows: pricedRows,
-        skuCostMap: unitCosts,
-        ads: applied.ads,
-        dateFrom: applied.dateRange.from,
-        dateTo: applied.dateRange.to,
-        platform: applied.platform,
-        company: applied.company,
-        overviewHeaderIds,
-      });
-    } catch (err) {
-      console.error('resolveTemplate failed:', err);
-      return emptyResolved;
-    }
-  }, [config, pricedRows, unitCosts, applied, overviewHeaderIds]);
+  const viewOptions = useMemo(() => ({
+    ads: applied.ads,
+    dateFrom: applied.dateRange.from,
+    dateTo: applied.dateRange.to,
+    platform: applied.platform,
+    company: applied.company,
+    overviewHeaderIds,
+  }), [applied, overviewHeaderIds]);
+  const viewInput = useMemo(() => ({
+    config, rows: canonicalRows, skuCosts, options: viewOptions,
+    activeTabId, transactions: showTransactions,
+  }), [config, canonicalRows, skuCosts, viewOptions, activeTabId, showTransactions]);
+  const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
+  const { resolved, transactionResolved } = computed.value;
+  const calculating = merged.pending || computed.pending;
+  const calculationError = merged.error || computed.error;
+  const [exporting, setExporting] = useState(false);
 
-  // The per-transaction view is only worked out while it is the page on
-  // screen — it used to be recalculated on every change to the dashboard,
-  // whichever tab was open. (Export resolves its own, below.)
-  const noTransactions = useMemo(() => ({ headers: config.headers || [], rows: [], rowCount: 0 }), [config]);
-  const transactionResolved = useMemo(() => {
-    if (!showTransactions || !orderIdHeader || !config.headers?.length) return noTransactions;
-    try {
-      return resolveTransactionRows(config, {
-        canonicalRows: pricedRows,
-        skuCostMap: unitCosts,
-        ads: applied.ads,
-        dateFrom: applied.dateRange.from,
-        dateTo: applied.dateRange.to,
-        platform: applied.platform,
-        company: applied.company,
-      });
-    } catch (err) {
-      console.error('resolveTransactionRows failed:', err);
-      return noTransactions;
-    }
-  }, [showTransactions, noTransactions, orderIdHeader, config, pricedRows, unitCosts, applied]);
-
-  // The complete, unlimited dataset — every uploaded row, no date bound —
-  // for Download PDF/Excel, which pulls "all data" regardless of the live
-  // view's date range. Still respects an intentional Company/Platform scope,
-  // since those are a deliberate choice, not a performance limit. Worked out
-  // when an export asks for it (doExport) — it used to be recalculated,
-  // together with its Transactions counterpart, on every change to the
-  // dashboard, which doubled what each change cost.
-  const resolveEverything = useCallback(() => {
-    const everything = { canonicalRows: pricedRows, skuCostMap: unitCosts, ads: applied.ads, dateFrom: null, dateTo: null, platform: applied.platform, company: applied.company };
-    let full = emptyResolved;
-    let fullTransactions = noTransactions;
-    if (!config.headers?.length) return { full, fullTransactions };
-    try {
-      // With no date bound in effect the live view IS the whole dataset.
-      full = !applied.dateRange.from && !applied.dateRange.to ? resolved : resolveTemplate(config, { ...everything, overviewHeaderIds });
-    } catch (err) {
-      console.error('resolveTemplate (export) failed:', err);
-    }
-    try {
-      if (orderIdHeader) fullTransactions = resolveTransactionRows(config, everything);
-    } catch (err) {
-      console.error('resolveTransactionRows (export) failed:', err);
-    }
-    return { full, fullTransactions };
-  }, [config, pricedRows, unitCosts, applied, overviewHeaderIds, resolved, orderIdHeader, noTransactions]);
+  // Export resolves ALL tabs and all dates explicitly. A single active view
+  // is deliberately incomplete for export, even when its date filter is empty.
+  const resolveEverything = useCallback(() => calculations.run('export', {
+    config, rows: canonicalRows, skuCosts,
+    options: { ...viewOptions, dateFrom: null, dateTo: null },
+    transactions: !!orderIdHeader,
+  }), [calculations, config, canonicalRows, skuCosts, viewOptions, orderIdHeader]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
@@ -486,24 +451,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const extractedLatest = useRef(extractedData);
   useEffect(() => { extractedLatest.current = extractedData; }, [extractedData]);
   useEffect(() => {
-    if (!loggedIn || !canonicalRows.length || !snapConfig.headers.length) return undefined;
-    const t = setTimeout(() => {
-      let tableRows;
+    if (!loggedIn || restoring || restoreError || merged.pending || merged.error || !canonicalRows.length || !snapConfig.headers.length) return undefined;
+    const controller = new AbortController();
+    const t = setTimeout(async () => {
       try {
-        ({ tableRows } = resolveTemplate(snapConfig, { canonicalRows, platform: applied.platform, company: applied.company }));
-      } catch (err) {
-        console.error('resolveTemplate (snapshot) failed:', err);
-        return;
+        const snapshot = await calculations.run('snapshot', {
+          config: snapConfig, rows: canonicalRows,
+          options: { platform: applied.platform, company: applied.company },
+        }, { signal: controller.signal });
+        if (controller.signal.aborted || !Object.keys(snapshot).length) return;
+        const next = mergeExtractedData(extractedLatest.current, snapshot);
+        if (JSON.stringify(next) !== JSON.stringify(extractedLatest.current)) onExtractedDataChange(next);
+      } catch (error) {
+        if (error.name !== 'AbortError') addToast('Could not update saved header values', 'error');
       }
-      const snapshot = buildExtractedSnapshot(tableRows, snapConfig.headers);
-      if (!Object.keys(snapshot).length) return;
-      const merged = mergeExtractedData(extractedLatest.current, snapshot);
-      if (JSON.stringify(merged) === JSON.stringify(extractedLatest.current)) return;
-      onExtractedDataChange(merged);
     }, 1200);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapConfig, canonicalRows, applied.platform, applied.company, loggedIn]);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [snapConfig, canonicalRows, applied.platform, applied.company, loggedIn, calculations, onExtractedDataChange, addToast, restoring, restoreError, merged.pending, merged.error]);
 
   // The live table's rows, with any header this SKU has no CURRENT value
   // for filled in from that same saved snapshot — display only (aggregate/
@@ -548,8 +512,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // a sheet missing columns the template expects is rejected with an error
   // instead of silently producing a table with holes in it.
   //
-  // A large sheet holds the page while it is read and again while the
-  // dashboard recalculates with its rows, so the upload says what it is doing
+  // Parsing and calculation run in the worker while the upload reports progress
   // in a progress window (UploadProgress): `uploadStage` is the step it is
   // on, set — and painted (nextPaint) — BEFORE each piece of work starts.
   // The last step, saving the rows to the account in parts, is useRowSaver's
@@ -557,6 +520,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // hidden while it runs.
   const [uploadStage, setUploadStage] = useState(null); // { step: 'reading' | 'adding' | 'saving' | 'done', fileIndex, fileCount, fileName, rows, hidden }
   const onUpload = useCallback(async (slotId, files) => {
+    if (restoring || restoreError || merged.pending || merged.error) { addToast('Wait for your saved data to finish loading, or retry the failed load', 'error'); return; }
     if (!selectedBrand) { addToast('Pick or create a brand first', 'error'); return; }
     // The file slots + mappings on screen may still be the last visit's copy
     // (useLiveTemplates) — a sheet isn't read against them until the server
@@ -584,20 +548,25 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         }
         setDebugFile(file);
         setDebugSlotId(slotId);
-        let wb;
+        let res;
         try {
-          wb = await readAnyFile(file, rowOverride);
-        } catch {
-          addToast(`${file.name}: could not be read`, 'error');
+          const options = { slotDef, config, tag, fileName: file.name };
+          if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+            // PDF.js already uses its own worker; only the mapping goes to ours.
+            const workbook = await readAnyFile(file, rowOverride);
+            res = workbook.sheetNames.length
+              ? await calculations.run('ingest', { workbook, options })
+              : { ok: false, empty: true };
+          } else {
+            res = await calculations.run('upload', { file, override: rowOverride, options });
+          }
+        } catch (error) {
+          addToast(file.name + ': could not be read (' + error.message + ')', 'error');
           continue;
         }
-        if (!wb.sheetNames.length) { addToast(`No table found in ${file.name}`, 'error'); continue; }
-        // Reads every sheet the slot's Template Settings included (or the
-        // best one for an older slot) and applies the marketplace's own
-        // Order Id / SKU / Order Date mappings — see lib/profitLoss/ingest.js.
-        const res = ingestWorkbook(wb, { slotDef, config, tag, fileName: file.name });
+        if (res.empty) { addToast('No table found in ' + file.name, 'error'); continue; }
         if (!res.ok) {
-          addToast(`${file.name}: doesn't match "${slotDef.label}" — missing column${res.missing.length === 1 ? '' : 's'}: ${res.missing.join(', ')}`, 'error');
+          addToast(file.name + ': missing columns: ' + res.missing.join(', '), 'error');
           continue;
         }
         const fileId = crypto.randomUUID();
@@ -622,8 +591,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         const skus = new Set(added.flatMap((a) => a.rows.map((r) => r.sku)));
         const priced = added.map((a) => ({ ...a, rows: stampSkuCosts(a.rows, skuCosts) }));
         const fresh = priced.flatMap((a) => a.rows);
-        // Shown before the rows go in: putting them on the dashboard is the
-        // recalculation, and the page is held until it is done.
+        // The worker merges and calculates the new rows after they are queued.
         setUploadStage((s) => s && { ...s, step: 'adding', rows: fresh.length });
         await nextPaint();
         setUploads((prev) => [
@@ -644,7 +612,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       // went in (every file was turned down — the toasts say why): no window.
       setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave]);
+  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error]);
 
   // The window closes by itself a moment after its last step is done — a
   // failed save keeps it open (it offers Try again), and so does one still
@@ -662,7 +630,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     setDebugSlotId(null); // not a marketplace file slot — nothing to match against
     setBusy(true);
     try {
-      const { costs, fields, count, unread } = await parseSkuCostSheet(file);
+      const { costs, fields, count, unread } = await calculations.run('skuCosts', { file });
       if (!fields.length) { addToast('No SKU cost columns found — the sheet needs a SKU column and the cost columns from Download SKU Cost', 'error'); return; }
       // Laid over what's already there, not swapped for it: a SKU the sheet
       // doesn't list keeps its costs, an emptied cell clears that one cost.
@@ -671,14 +639,17 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
       applyCostSheet(costs);
       const skipped = unread ? ` · ${unread} cell${unread === 1 ? ' isn’t a number' : 's aren’t numbers'} — left as before` : '';
       addToast(count ? `Loaded costs for ${count} SKU${count === 1 ? '' : 's'}${skipped}` : `SKU Cost sheet read — it has no costs filled in${skipped}`, count ? 'success' : 'error');
+    } catch (error) {
+      addToast(`Could not read SKU costs: ${error.message}`, 'error');
     } finally {
       setBusy(false);
     }
-  }, [addToast, applyCostSheet]);
+  }, [addToast, applyCostSheet, calculations]);
 
-  const onDownloadSkuTemplate = useCallback(() => {
-    downloadSkuCostTemplate(canonicalRows.map((r) => r.sku), skuCosts);
-  }, [canonicalRows, skuCosts]);
+  const onDownloadSkuTemplate = useCallback(async () => {
+    try { await downloadSkuCostTemplate(canonicalRows.map((r) => r.sku), skuCosts); }
+    catch { addToast('Could not download the SKU cost template', 'error'); }
+  }, [canonicalRows, skuCosts, addToast]);
 
   const resetFilters = () => {
     const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };
@@ -689,7 +660,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   const openTemplateSettings = () => { window.location.href = '/profit-loss/template-settings'; };
 
   const activeOverview = resolved.overviews?.[activeTabId] || null;
-  const showOverview = !!activeOverview;
+  const showOverview = (config.overviewTabs || []).some((tab) => tab.id === activeTabId);
   const activeTab = visibleTabs.find((t) => t.id === activeTabId) || null;
   const activeOverviewTab = (config.overviewTabs || []).find((o) => o.id === activeTabId) || null;
   // The open page's own name — the header bar's title, the browser tab, and
@@ -732,6 +703,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   }, []);
 
   const onDeleteSelected = useCallback(() => {
+    if (calculating || calculationError || restoring || restoreError) return;
     const count = selectedKeys.size;
     if (!count) return;
     // An Overview row is a hierarchy node (Company → Sku → …) keyed by its
@@ -780,7 +752,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           .catch(() => addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error'));
       }
     }
-  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast, forgetStoredRows]);
+  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast, forgetStoredRows, calculating, calculationError, restoring, restoreError]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
@@ -861,15 +833,16 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // Tab + Overview Tab, PLUS Transactions (when Order Id is mapped), not
   // just the active one, each its own sheet/section.
   const doExport = async (kind) => {
-    if (restoring) { addToast('Still loading your saved data — try again in a moment', 'error'); return; }
-    const { full, fullTransactions } = resolveEverything();
-    const tabs = [
-      ...visibleTabs.map((t) => buildTabView(t, false, full)),
-      ...visibleOverviewTabs.map((t) => buildTabView(t, true, full)),
-      ...(orderIdHeader ? [buildTransactionsView(fullTransactions)] : []),
-    ].filter((v) => v.table.columns.length);
-    if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
+    if (restoring || restoreError || calculating || calculationError || exporting || busy) { addToast('Wait for complete data and calculations before exporting', 'error'); return; }
+    setExporting(true);
     try {
+      const { full, fullTransactions } = await resolveEverything();
+      const tabs = [
+        ...visibleTabs.map((t) => buildTabView(t, false, full)),
+        ...visibleOverviewTabs.map((t) => buildTabView(t, true, full)),
+        ...(orderIdHeader ? [buildTransactionsView(fullTransactions)] : []),
+      ].filter((v) => v.table.columns.length);
+      if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
       const label = config.marketplace?.name || 'Dashboard';
       await (kind === 'pdf'
         ? downloadMultiTabPdf({ label, activeTabName: activePageName, tabs })
@@ -877,6 +850,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
     } catch (err) {
       console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -971,7 +946,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           onUploadSkuCost={onUploadSkuCost}
           onDownloadSkuTemplate={onDownloadSkuTemplate}
           hasData={hasData}
-          busy={busy}
+          busy={busy || restoring || !!restoreError || merged.pending || !!merged.error}
           loggedIn={loggedIn}
           editMode={editMode}
           onEnterEditMode={() => setEditMode(true)}
@@ -998,14 +973,15 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
             ads={pending.ads}
             onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
-            updating={dirty}
+            updating={dirty || calculating || exporting}
+            actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
             hasData={hasData}
             selectedCount={selectedKeys.size}
             onDeleteClick={() => setConfirmDeleteOpen(true)}
             onExportExcel={() => doExport('xlsx')}
             onExportPdf={() => doExport('pdf')}
             onOpenHistory={() => setHistoryOpen(true)}
-            saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy }}
+            saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
           />
 
           {/* Rows were uploaded and mapped fine, but every one of them falls
@@ -1013,7 +989,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
               look identical to "nothing was ever uploaded", with no clue
               why. Settlement exports are almost always older than the
               default 7-day window. */}
-          {hasData && canonicalRows.length > 0 && !showTransactions && resolved.rowCount === 0 && (
+          {!calculating && !calculationError && hasData && canonicalRows.length > 0 && !showTransactions && resolved.rowCount === 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neg/10 px-3 py-2 text-[13px] text-neg">
               <span>
                 {canonicalRows.length} row{canonicalRows.length === 1 ? '' : 's'} uploaded, but none fall in the selected date range.
@@ -1032,19 +1008,26 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
             </div>
           )}
 
-          {restoring && restorePaging && (
+          {restoring && (
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">
               <Loader2 size={14} className="shrink-0 animate-spin" />
               <span>
-                Loading your saved data — {Math.min(restorePaging.page * RESTORE_PAGE_SIZE, restorePaging.totalCount)} of {restorePaging.totalCount} rows…
+                {restorePaging ? `Loading your saved data — ${Math.min(restorePaging.page * RESTORE_PAGE_SIZE, restorePaging.totalCount)} of ${restorePaging.totalCount} rows… Totals are provisional.` : 'Loading your saved data…'}
               </span>
             </div>
           )}
+          {restoreError && (
+            <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-neg/10 px-3 py-2 text-sm text-neg">
+              <span>{restoreError}</span>
+              <button type="button" className="font-semibold underline" onClick={() => setRestoreAttempt((attempt) => attempt + 1)}>Retry</button>
+            </div>
+          )}
+          {calculationError && <p role="alert" className="mt-4 text-sm text-neg">Could not calculate this view: {calculationError.message}. Change the filters or reload to retry.</p>}
 
           {/* The save of an upload whose window was hidden, or of rows written back outside one. */}
           {(!uploadStage || uploadStage.hidden) && <SavingRowsLine saving={rowSave} onRetry={retryRowSave} />}
 
-          <div className="mt-6 space-y-5">
+          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-6 space-y-5 ${calculating ? 'opacity-60' : ''}`}>
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
                 their zero/empty state — only the rows are empty. */}
@@ -1137,7 +1120,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         </main>
       </div>
 
-      <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} onOpenRun={() => {}} />
+      {historyOpen && <HistoryDrawer open onClose={() => setHistoryOpen(false)} onOpenRun={() => {}} />}
 
       <UploadProgress
         stage={uploadStage}

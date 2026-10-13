@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Dashboard worker smoke test</title>
+<body><h1>Dashboard worker smoke test</h1><p>Synthetic data only. No account or backend requests.</p>
+<button id="run">Run worker check</button><pre id="result" role="status">Ready</pre>
+<script>
+const button = document.querySelector('#run');
+const output = document.querySelector('#result');
+button.onclick = async () => {
+  button.disabled = true;
+  output.textContent = 'Running…';
+  // Webpack compiles the module worker to a classic worker using importScripts.
+  const worker = new Worker('__WORKER_URL__');
+  let id = 0;
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 10);
+  const run = (type, patch) => new Promise((resolve, reject) => {
+    const requestId = ++id;
+    const timeout = setTimeout(() => reject(new Error('Worker timed out')), 30000);
+    worker.onerror = (event) => { clearTimeout(timeout); reject(new Error(event.message)); };
+    worker.onmessage = ({ data }) => {
+      if (data.id !== requestId) return;
+      clearTimeout(timeout);
+      if (data.error) reject(new Error(data.error)); else resolve(data.result);
+    };
+    worker.postMessage({ id: requestId, type, patch });
+  });
+  try {
+    const rows = Array.from({ length: 20000 }, (_, i) => ({
+      orderId: 'O' + i, rowId: 'R' + i, sku: 'SKU' + (i % 50), company: i % 2 ? 'Shop_A' : 'Shop_B',
+      orderDate: '2026-10-10', platform: 'manual', status: 'delivered', qty: 1,
+      grossSale: 200, settlement: 160, fees: {}, taxes: {}, meta: {},
+    }));
+    const config = {
+      headers: [{ id: 'sku', name: 'SKU', type: 'text', primitive: 'sku' }, { id: 'orders', name: 'Orders', type: 'number', primitive: 'totalOrderQty' }],
+      tabs: [{ id: 'details' }],
+    };
+    const merge = await run('merge', { uploads: [{ slotId: 'restored', rows }], orderIdHeader: null, transactionIdHeader: null, headers: config.headers });
+    if (merge.length !== rows.length || !merge.every((row) => typeof row === 'number')) throw new Error('Merge reference check failed');
+    const view = await run('view', { config, rows, skuCosts: {}, options: {}, activeTabId: 'details' });
+    if (view.resolved.rowCount !== 20000) throw new Error('Full row count is incorrect');
+    // Only options change: the compiled worker must retain the dataset.
+    const filtered = await run('view', { options: { company: 'Shop_A' } });
+    if (filtered.resolved.rowCount !== 10000) throw new Error('Patched filter count is incorrect');
+    const file = new File(['Order Id,SKU,Order Date,Settlement\nA1,SKU1,2026-10-10,160\nA2,SKU2,2026-10-11,190'], 'orders.csv');
+    const upload = await run('upload', { file, options: { config, fileName: file.name } });
+    if (!upload.ok || upload.parts[0].rows.length !== 2) throw new Error('Lazy spreadsheet parser failed');
+    if (!ticks) throw new Error('No main-thread heartbeat during worker processing');
+    output.textContent = 'PASS: 20,000 rows merged; full count 20,000; filtered count 10,000; CSV parsed 2 rows. Main-thread heartbeat ticks: ' + ticks;
+  } catch (error) { output.textContent = 'FAIL: ' + error.message; }
+  finally { clearInterval(timer); worker.terminate(); button.disabled = false; }
+};
+</script></body></html>
