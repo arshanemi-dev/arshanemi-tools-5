@@ -5,6 +5,7 @@ import { ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
 import styles from './DataTable.module.css';
+import TableText from './TableText';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
@@ -145,7 +146,7 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-muted'} ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-th px-1 py-1 text-left font-bold whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-muted'} ${extra}`}>
       <ColumnHeaderCell
         col={col}
         sort={sort}
@@ -180,14 +181,20 @@ export default function OverviewTreeTable({
         </div>
       )}
       <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
-        <table className={`${styles.table} w-full min-w-max text-sm`}>
+        <table className={`${styles.table} text-sm`} style={{ width: 40 + (colSpan - 1) * 160 }}>
+          <colgroup>
+            <col style={{ width: 40 }} />
+            <col style={{ width: 160 }} />
+            {showCost && <col style={{ width: 160 }} />}
+            {cols.map((col) => <col key={col.key} style={{ width: 160 }} />)}
+          </colgroup>
           <thead>
             <tr className="border-b border-divider">
               <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
-              {headCell(treeCol, 'left-0 z-20 min-w-48')}
-              {showCost && <th className="sticky top-0 z-10 bg-th px-3 py-2.5 text-left font-bold text-muted whitespace-nowrap">Cost</th>}
+              {headCell(treeCol, 'left-0 z-20')}
+              {showCost && <th className="sticky top-0 z-10 bg-th px-1 py-1 text-left font-bold text-muted whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
           </thead>
@@ -249,7 +256,7 @@ export default function OverviewTreeTable({
                     />
                   </td>
                   <td className="sticky left-0 z-[1] bg-inherit p-0">
-                    <div className={`flex items-center gap-1 border-l-4 py-2 pr-3 ${st.stripe} ${st.indent}`}>
+                    <div className={`flex items-center gap-1 border-l-4 py-2 ${st.stripe}`}>
                       {hasKids ? (
                         <button
                           type="button"
@@ -268,9 +275,9 @@ export default function OverviewTreeTable({
                         type="button"
                         onClick={() => onActivate(n.key)}
                         title={`${levels[n.depth]?.name || `Level ${n.depth + 1}`}: ${n.value}`}
-                        className={`truncate text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${isActive ? st.text : 'text-foreground'}`}
+                        className={`min-w-0 text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${isActive ? st.text : 'text-foreground'}`}
                       >
-                        {n.value}
+                        <TableText>{n.value}</TableText>
                       </button>
                       {hasKids && (
                         <span className={`ml-1 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${st.badge}`}>{n.children.length}</span>
@@ -294,7 +301,7 @@ export default function OverviewTreeTable({
                     const neg = c.signed && Number(cell.raw) < 0;
                     return (
                       <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
-                        {cell.display ?? ''}
+                        <TableText>{cell.display ?? ''}</TableText>
                       </td>
                     );
                   })}

@@ -1,4 +1,5 @@
 .table {
+  table-layout: fixed;
   /* Separate borders stay attached to sticky cells while scrolling.
      Draw each shared edge once so the grid stays one pixel wide. */
   border-collapse: separate;
@@ -8,6 +9,10 @@
 }
 
 .table > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+  padding-left: 0;
+  padding-right: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
   border-right: 1px solid var(--color-divider-light);
   border-bottom: 1px solid var(--color-divider-light);
 }
@@ -34,4 +39,9 @@
 .table > tbody > tr[data-selected='true'],
 .table > tbody > tr[data-selected='true'] > td {
   background-color: var(--color-action-soft);
+}
+
+.table > tbody > tr[data-selected='true']:nth-child(even),
+.table > tbody > tr[data-selected='true']:nth-child(even) > td {
+  background-color: color-mix(in srgb, var(--color-action) 20%, var(--color-action-soft));
 }

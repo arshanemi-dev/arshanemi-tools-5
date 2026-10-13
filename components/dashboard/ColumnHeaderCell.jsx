@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import ArrangeControl from './ArrangeControl';
 import ColumnFilterButton from './ColumnFilterButton';
+import TableText from './TableText';
 
 // One <th> body: label + tri-state sort toggle + a spreadsheet-style menu
 // (ColumnFilterButton — the same sort as "Sort A → Z / Z → A", a Min / Max
@@ -31,13 +32,13 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
 
   return (
     <div className="flex items-center gap-1">
-      <span>{col.label}</span>
+      <TableText>{col.label}</TableText>
       {!editMode && (
         <>
           <button
             type="button"
             onClick={cycleSort}
-            className={`rounded p-0.5 transition-colors hover:bg-card-hover ${dir ? 'text-action' : 'text-subtle'}`}
+            className={`shrink-0 rounded p-0.5 transition-colors hover:bg-card-hover ${dir ? 'text-action' : 'text-subtle'}`}
             aria-label={`Sort by ${col.label}`}
           >
             <SortIcon size={12} />
