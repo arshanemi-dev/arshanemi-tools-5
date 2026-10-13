@@ -1,0 +1,37 @@
+.table {
+  /* Separate borders stay attached to sticky cells while scrolling.
+     Draw each shared edge once so the grid stays one pixel wide. */
+  border-collapse: separate;
+  border-spacing: 0;
+  border-top: 1px solid var(--color-divider-light);
+  border-left: 1px solid var(--color-divider-light);
+}
+
+.table > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+  border-right: 1px solid var(--color-divider-light);
+  border-bottom: 1px solid var(--color-divider-light);
+}
+
+.table > tbody > tr:nth-child(odd) {
+  background-color: var(--color-background);
+}
+
+.table > tbody > tr:nth-child(even) {
+  background-color: var(--color-card);
+}
+
+.table > tbody > tr:hover {
+  background-color: var(--color-card-hover);
+}
+
+.table > tbody > tr[data-active='true'],
+.table > tbody > tr[data-dirty='true'] {
+  background-color: color-mix(in srgb, var(--color-link) 12%, var(--color-background));
+}
+
+/* Selection wins over stripes, hover, edited rows and preview cell tints.
+   Opaque cell backgrounds also keep sticky columns readable. */
+.table > tbody > tr[data-selected='true'],
+.table > tbody > tr[data-selected='true'] > td {
+  background-color: var(--color-action-soft);
+}

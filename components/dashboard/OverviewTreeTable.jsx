@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
+import styles from './DataTable.module.css';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
@@ -26,7 +27,7 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 // and Min / Max range hold the values of every level's rows) but over the unique-value hierarchy: every
 // Level-1 value is a row, and opening it (here or in the left
 // OverviewHierarchyNav — they share `expanded`) reveals its Level-2 rows
-// underneath, tinted in that level's colour, and so on down. Parent rows are
+// underneath, marked with that level's colour, and so on down. Parent rows are
 // subtotals of their children. Sort orders siblings within each level;
 // filters keep a row when it or anything beneath it matches, with the path
 // to a deeper match opened automatically. Pagination is over Level-1 rows.
@@ -179,7 +180,7 @@ export default function OverviewTreeTable({
         </div>
       )}
       <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
-        <table className="w-full min-w-max text-sm">
+        <table className={`${styles.table} w-full min-w-max text-sm`}>
           <thead>
             <tr className="border-b border-divider">
               <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
@@ -230,7 +231,10 @@ export default function OverviewTreeTable({
                 <tr
                   key={n.key}
                   data-row-key={n.key}
-                  className={`border-t border-divider transition-colors ${isDirty ? 'bg-link/10' : isActive ? st.soft : st.tint}`}
+                  data-selected={inherited || selected.has(n.key)}
+                  data-dirty={isDirty}
+                  data-active={isActive}
+                  className="transition-colors"
                   title={isDirty ? 'Edited — not saved yet' : undefined}
                 >
                   <td className="px-3 py-2">
@@ -244,8 +248,8 @@ export default function OverviewTreeTable({
                       aria-label={`Select ${n.value}`}
                     />
                   </td>
-                  <td className="sticky left-0 z-[1] bg-background p-0">
-                    <div className={`flex items-center gap-1 border-l-4 py-2 pr-3 ${st.stripe} ${isActive ? st.soft : st.tint} ${st.indent}`}>
+                  <td className="sticky left-0 z-[1] bg-inherit p-0">
+                    <div className={`flex items-center gap-1 border-l-4 py-2 pr-3 ${st.stripe} ${st.indent}`}>
                       {hasKids ? (
                         <button
                           type="button"

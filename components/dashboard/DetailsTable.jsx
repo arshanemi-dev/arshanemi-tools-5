@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
+import styles from './DataTable.module.css';
 import TablePager, { PAGE_SIZES } from './TablePager';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
@@ -162,7 +163,7 @@ export default function DetailsTable({
       )}
       {/* min-h while a filter menu is open: with only a few rows the menu (taller on a number column — its Min / Max range) would otherwise be cut off by this scroll area */}
       <div data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
-        <table className="w-full min-w-max text-sm">
+        <table className={`${styles.table} w-full min-w-max text-sm`}>
           <thead>
             <tr className="border-b border-divider">
               <th className="sticky top-0 z-10 w-10 bg-th px-3 py-2.5">
@@ -211,7 +212,9 @@ export default function DetailsTable({
             {pageRows.map((r) => (
               <tr
                 key={r.key}
-                className={`border-t border-divider transition-colors hover:bg-card-hover ${dirty.has(r.key) ? 'bg-link/10' : ''}`}
+                data-selected={selected.has(r.key)}
+                data-dirty={dirty.has(r.key)}
+                className="transition-colors"
                 title={dirty.has(r.key) ? 'Edited — not saved yet' : undefined}
               >
                 <td className="px-3 py-2.5">
