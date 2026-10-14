@@ -5,14 +5,25 @@ import { useCallback, useEffect, useRef } from 'react';
 const EDGE = 36; // px from the scroll area's top / bottom where a drag scrolls it
 const STEP = 14; // px it scrolls per frame there
 
+// The nearest box above `el` that actually scrolls up/down — the table's own
+// scroll area where it has one (Template Settings' preview), else the page
+// around it (the dashboard, where a table only scrolls sideways).
+function scrollerOf(el) {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return null;
+}
+
 // Excel's fill handle for a table's cost boxes (CostCell). Grab the small
 // square at a box's corner, drag up or down, let go: every box passed over
 // in that column takes the grabbed box's value — copied, the way Excel
 // copies one cell. Esc while dragging cancels.
 //
 // Like Excel the drag follows the pointer's height only (it needn't stay
-// over the column), and near the table's scroll area's top or bottom edge
-// it scrolls it. Boxes are found in the DOM by the attributes CostCell puts
+// over the column), and near the top or bottom edge of whatever scrolls the
+// rows (scrollerOf) it scrolls it. Boxes are found in the DOM by the attributes CostCell puts
 // on them — `data-fill-col` (the cost field) and `data-fill-sku` — so rows
 // without a box (an Overview parent row, a non-SKU row) are simply skipped.
 // The range being dragged over is marked `data-fill-on` for CostCell to
@@ -36,7 +47,7 @@ export default function useCostFill(onFill) {
     const cells = [...table.querySelectorAll('[data-fill-col]')].filter((el) => el.dataset.fillCol === field);
     const rows = cells.map((el) => el.closest('tr') || el);
     const from = cells.indexOf(source);
-    const scroller = table.closest('[data-table-scroll]');
+    const scroller = scrollerOf(table);
     let to = from;
     let y = event.clientY;
     let frame = 0;

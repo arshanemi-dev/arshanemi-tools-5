@@ -18,7 +18,7 @@ export default function TablePager({ summary, pageSize, onPageSizeChange, curren
       value={pageSize}
       onChange={(e) => onPageSizeChange(Number(e.target.value))}
       aria-label="Rows per page"
-      className="rounded-lg border border-divider-light bg-background px-1.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none"
+      className="rounded-lg border border-divider-light bg-background px-1.5 py-1 text-xs text-foreground focus:border-accent focus:outline-none hidden"
     >
       {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / page</option>)}
     </select>
