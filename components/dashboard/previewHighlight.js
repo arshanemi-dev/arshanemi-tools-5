@@ -24,8 +24,9 @@ export function isHighlighted(hl, kind, id) {
 // Card / graph / chip: accent outline (follows border-radius) + one glow
 // pulse when it first lights up (--animate-hl-flash in globals.css).
 export const HL_BOX = 'outline-2 outline-offset-2 outline-accent animate-hl-flash';
-// Table column: accent header text + underline, tinted body cells. The
+// Table column: light-accent header text + underline (the header row is the
+// dark navy band — plain accent wouldn't read on it), tinted body cells. The
 // sticky header keeps its opaque background so scrolled rows never show
 // through it.
-export const HL_HEAD = 'text-accent shadow-[inset_0_-3px_0_var(--color-accent)]';
+export const HL_HEAD = 'text-accent-light shadow-[inset_0_-3px_0_var(--color-accent-light)]';
 export const HL_CELL = 'bg-accent/10';

@@ -22,7 +22,9 @@ const MENU_WIDTH = 272; // px — the menu's w-64 plus its padding and border
 // `onOpenChange(open)` lets the table make room for the menu: it opens
 // inside the table's scroll area (mark that element `data-table-scroll`),
 // hanging left instead of right near its right edge so it stays in view.
-export default function ColumnFilterButton({ label, filter, getOptions = () => [], getRange = null, onChange, onOpenChange, size = 12, sortDir = null, onSort = null }) {
+// `onDark` = the header it sits in is the dark navy band (the dashboard
+// tables) — white idle/hover tones instead of the page's grey ones.
+export default function ColumnFilterButton({ label, filter, getOptions = () => [], getRange = null, onChange, onOpenChange, size = 12, sortDir = null, onSort = null, onDark = false }) {
   const [align, setAlign] = useState('left');
   const active = !!filter;
   const sorted = sortDir ? `sorted ${sortDir === 'asc' ? 'A → Z' : 'Z → A'}` : '';
@@ -49,7 +51,9 @@ export default function ColumnFilterButton({ label, filter, getOptions = () => [
         <button
           type="button"
           onClick={placeMenu}
-          className={`rounded p-0.5 transition-colors hover:bg-card-hover ${active || sortDir ? 'text-action' : 'text-subtle'}`}
+          className={`rounded p-0.5 transition-colors ${onDark ? 'hover:bg-white/15' : 'hover:bg-card-hover'} ${
+            active || sortDir ? 'text-action' : onDark ? 'text-white/60 hover:text-white' : 'text-subtle'
+          }`}
           aria-label={`Filter ${label}`}
           title={active
             ? `Filtered — ${narrowed}`

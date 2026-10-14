@@ -138,7 +138,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       )}
 
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
+        {/* <div className="min-w-0">
           <h2 className="text-lg font-bold text-foreground">{ov.name || tab.name || 'Overview'}</h2>
           {levels.length > 0 && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -157,7 +157,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               <span className="ml-1 text-[12px] text-muted">— other columns summed within each level, for the current filters.</span>
             </div>
           )}
-        </div>
+        </div> */}
         <div className="flex items-center gap-2">
           {!navOpen && levels.length > 0 && (
             <button

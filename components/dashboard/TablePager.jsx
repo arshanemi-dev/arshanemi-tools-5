@@ -6,11 +6,11 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 export const PAGE_SIZES = [25, 50, 100];
 
 // The "1–25 of N rows" summary + rows-per-page picker + Prev/Next shared by
-// DetailsTable and OverviewTreeTable. Renders as the table's own footer bar,
-// or — when `slot` (a DOM node) is given — portals into it instead: the
-// /profit-loss dashboard hands over a spot in DashboardHeaderBar just before
-// "All Companies", so the page limit and row counts sit with the filters.
-// Template Settings' live preview passes no slot and keeps the footer.
+// DetailsTable and OverviewTreeTable. Renders as the table's own footer bar —
+// summary on the left, the picker + Prev/Next at the bottom right — or, when
+// `slot` (a DOM node) is given, portals into it instead. Nothing passes a
+// slot right now; the dashboard and Template Settings' preview both use the
+// footer.
 export default function TablePager({ summary, pageSize, onPageSizeChange, currentPage, pageCount, onPageChange, slot = null }) {
   const select = (
     <select
@@ -64,7 +64,7 @@ export default function TablePager({ summary, pageSize, onPageSizeChange, curren
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-divider px-3 py-2 text-xs text-subtle">
       <span>{summary}</span>
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2">
         {select}
         {nav}
       </div>

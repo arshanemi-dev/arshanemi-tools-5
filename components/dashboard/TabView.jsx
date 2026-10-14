@@ -37,9 +37,9 @@ function SectionLabel({ text, hidden, onShow }) {
 // already applies.
 //
 // `viewPillsSlot` / `pagerSlot` (optional DOM nodes): on /profit-loss the
-// My Details pill and the table's pager portal into DashboardHeaderBar
-// instead of sitting above/below the table. Template Settings' preview
-// passes neither and keeps them in place.
+// My Details pill portals into DashboardHeaderBar instead of sitting above
+// the table. The pager stays in the table's footer (no page passes
+// `pagerSlot` now), as does Template Settings' preview.
 export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.

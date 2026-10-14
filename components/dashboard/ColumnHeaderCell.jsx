@@ -13,6 +13,8 @@ import TableText from './TableText';
 // column — see DetailsTable). Sort/filter hide entirely while the table is
 // in edit mode — arranging is the only thing to do with a header then, on
 // every column including the sticky one.
+// The <th> it sits in is the dark navy band (bg-footer, white text), so the
+// sort / filter icons use white tones rather than the page's grey ones.
 // filter shape: { values: [text, ...], min, max } | null — any of the three
 // (lib/profitLoss/columnFilter.js)
 // `getFilterOptions()` → the column's distinct values, read when the menu
@@ -38,7 +40,7 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
           <button
             type="button"
             onClick={cycleSort}
-            className={`shrink-0 rounded p-0.5 transition-colors hover:bg-card-hover ${dir ? 'text-action' : 'text-subtle'}`}
+            className={`shrink-0 rounded p-0.5 transition-colors hover:bg-white/15 ${dir ? 'text-action' : 'text-white/60 hover:text-white'}`}
             aria-label={`Sort by ${col.label}`}
           >
             <SortIcon size={12} />
@@ -52,6 +54,7 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
             onOpenChange={onFilterOpenChange}
             sortDir={dir}
             onSort={(d) => onSortChange(d ? { key: col.key, dir: d } : null)}
+            onDark
           />
         </>
       )}

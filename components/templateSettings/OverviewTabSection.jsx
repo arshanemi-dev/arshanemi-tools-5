@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { makeOverviewTab } from '@/data/templateSchema';
+import { MAX_CARDS_PER_ROW, makeOverviewTab } from '@/data/templateSchema';
 import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
 import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_OVERVIEW_ICON } from '@/components/dashboard/tabIcons';
@@ -96,9 +96,9 @@ export default function OverviewTabSection({ draft, activeId: activeIdProp, onAc
                   <input
                     type="number"
                     min={1}
-                    max={8}
+                    max={MAX_CARDS_PER_ROW}
                     value={active.layout?.titleCards?.columns || 4}
-                    onChange={(e) => patchLayout({ titleCards: { columns: Math.max(1, Math.min(8, Number(e.target.value) || 4)) } })}
+                    onChange={(e) => patchLayout({ titleCards: { columns: Math.max(1, Math.min(MAX_CARDS_PER_ROW, Number(e.target.value) || 4)) } })}
                     className="w-16 rounded-md border border-divider bg-background px-2 py-0.5 text-[11px] focus:outline-none"
                   />
                 </label>

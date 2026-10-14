@@ -7,13 +7,12 @@ import AdsCostControl from './AdsCostControl';
 import IconButton from './IconButton';
 
 // Row B: the active page's name as the title (the open Tab / Overview Tab /
-// Transactions — see DashboardWorkspace's activePageName) + Reset / the
-// table's page limit + row counts / Company filter / Date / My Details, then
-// Delete (selected rows) + the output actions (Excel / PDF) on the far
-// right. The page limit/counts and the My Details pill aren't rendered
-// here — this bar only provides the two empty `display: contents`
-// slots (pagerSlotRef / viewPillsSlotRef) that the active table and TabView
-// / OverviewTab portal into, since that state lives with them.
+// Transactions — see DashboardWorkspace's activePageName) + Reset / Company
+// filter / Date / My Details, then Delete (selected rows) + the output
+// actions (Excel / PDF) on the far right. The My Details pill isn't rendered
+// here — this bar only provides the empty `display: contents` slot
+// (viewPillsSlotRef) that TabView / OverviewTab portal into, since that state
+// lives with them. The table's page limit + Prev/Next sit in its own footer.
 //
 // No Apply button — every change here debounces into effect on its own (see
 // DashboardWorkspace's pending -> applied effect); `updating` shows a brief
@@ -25,7 +24,6 @@ import IconButton from './IconButton';
 // removed the topbar (and its hamburger) — see ProfitLossShell.
 export default function DashboardHeaderBar({
   title = 'Dashboard',
-  pagerSlotRef,
   viewPillsSlotRef,
   onMenuClick,
   onReset,
@@ -66,7 +64,6 @@ export default function DashboardHeaderBar({
         <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
         {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
-        <div ref={pagerSlotRef} className="contents" />
         <div ref={viewPillsSlotRef} className="contents" />
         <IconButton icon={FileSpreadsheet} label="Excel" title="Export to Excel" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
         <AdsCostControl value={ads} onChange={onAdsChange} />

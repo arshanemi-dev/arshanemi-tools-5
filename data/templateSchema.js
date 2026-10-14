@@ -28,6 +28,12 @@ export const CHART_LABELS = { line: 'Line chart', bar: 'Bar chart', area: 'Area 
 export const FORMATS = ['money', 'int', 'pct', 'text'];
 export const TIME_UNITS = ['day', 'week', 'month'];
 
+// A Tab / Overview Tab's "Cards per row" (layout.titleCards.columns) runs
+// 1–MAX_CARDS_PER_ROW. components/dashboard/KpiCardRow.jsx lays the cards
+// out by it, and app/globals.css keeps that many grid classes — change both
+// numbers together.
+export const MAX_CARDS_PER_ROW = 99;
+
 // Scalar tokens the resolver injects into every formula scope (row + aggregate)
 // on top of the template's own headers — see data/defaultHeaders.js
 // AGGREGATE_BUILTINS. Kept here too so validateGlobalConfig accepts them as refs.

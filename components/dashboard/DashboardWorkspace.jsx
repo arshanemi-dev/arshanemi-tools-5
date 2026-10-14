@@ -232,11 +232,9 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   // ── view ────────────────────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
-  // DashboardHeaderBar's two empty slots (callback refs → DOM nodes): the
-  // active table portals its page limit + row counts into the first (before
-  // "All Companies"), TabView its My Details pill into the second (after the
-  // date filter).
-  const [pagerSlot, setPagerSlot] = useState(null);
+  // DashboardHeaderBar's empty slot (callback ref → DOM node): TabView
+  // portals its My Details pill into it (after the date filter). The table's
+  // page limit + Prev/Next stay in its own footer, bottom right.
   const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
   // My Details column ticks (per tab) + the sidebar's Settings -> Save
@@ -926,9 +924,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         allOverviewTabs={allOverviewTabsSorted}
         overviewTabsSection={layout.overviewTabs || emptySection()}
         onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
-        showTransactions={!!orderIdHeader}
-        transactionsActive={showTransactions}
-        onOpenTransactions={() => { setPreferredTabId(TRANSACTIONS_TAB_ID); onCloseMobileNav(); }}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -960,7 +955,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-0 py-6">
           <DashboardHeaderBar
             title={activePageName}
-            pagerSlotRef={setPagerSlot}
             viewPillsSlotRef={setViewPillsSlot}
             onMenuClick={onMenuClick}
             onReset={resetFilters}
@@ -1045,7 +1039,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                   onToggleRow={onToggleRow}
                   onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
-                  pagerSlot={pagerSlot}
                 />
               </div>
             ) : showOverview ? (
@@ -1064,7 +1057,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
-                pagerSlot={pagerSlot}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
                 viewPillsSlot={viewPillsSlot}
@@ -1088,7 +1080,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
-                pagerSlot={pagerSlot}
                 allHeaders
               />
             )}

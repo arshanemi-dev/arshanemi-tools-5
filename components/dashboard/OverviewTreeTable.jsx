@@ -146,7 +146,7 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-th px-1 py-1 text-left font-bold whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-muted'} ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-footer px-1 py-1 text-left font-bold whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
       <ColumnHeaderCell
         col={col}
         sort={sort}
@@ -168,8 +168,7 @@ export default function OverviewTreeTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-divider bg-background">
-      {/* Filters on: say so on the table itself — on the dashboard the pager (and
-          its row count) lives up in the header bar. */}
+      {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
           <span>
@@ -184,11 +183,11 @@ export default function OverviewTreeTable({
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-th px-1 py-1">
+              <th className="sticky top-0 z-10 w-10 bg-footer px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
               {headCell(treeCol, 'left-0 z-20')}
-              {showCost && <th className="sticky top-0 z-10 bg-th px-1 py-1 text-left font-bold text-muted whitespace-nowrap">Cost</th>}
+              {showCost && <th className="sticky top-0 z-10 bg-footer px-1 py-1 text-left font-bold text-white whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
           </thead>

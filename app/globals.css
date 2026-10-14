@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* components/dashboard/KpiCardRow.jsx builds its grid class from a tab's
+   "Cards per row" (1–99, MAX_CARDS_PER_ROW in data/templateSchema.js), so no
+   literal class sits in the source for Tailwind to find — keep all 99 here. */
+@source inline("lg:grid-cols-[repeat({1..99},minmax(180px,1fr))]");
+
 @theme {
   /* Surfaces — Light Theme (default) */
   --color-background:    #ffffff;

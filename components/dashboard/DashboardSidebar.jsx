@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Search, Settings, X, Layers, Receipt } from 'lucide-react';
+import { Settings, X, Layers, Receipt } from 'lucide-react';
 import ArrangeControl from './ArrangeControl';
 import HiddenItemsChip from './HiddenItemsChip';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
@@ -71,10 +70,10 @@ function EditableNavList({ items, section, onSectionChange, activeKey, onSelect,
   );
 }
 
-// The reference dashboard's left sidebar: a folder search + Reset + gear, then
-// the nav list = the active template's visible tabs → its Overview tab(s) →
-// (for master_admin / granted users) Template Settings. Active row = dark
-// filled pill. Off-canvas drawer below lg.
+// The reference dashboard's left sidebar: the nav list = the active
+// template's visible tabs → its Overview tab(s) → (for master_admin / granted
+// users) Template Settings. Active row = dark filled pill. Off-canvas drawer
+// below lg. (The "Search Folder…" box is gone for now.)
 export default function DashboardSidebar({
   tabs = [],
   activeKey,
@@ -100,21 +99,12 @@ export default function DashboardSidebar({
   // Transaction Id" view (see resolveTransactionRows) — only shown once
   // Order Id is actually mapped, since there's nothing to key rows by
   // otherwise. Lives outside the arrangeable tabs/overview lists (edit mode
-  // never touches it), same spot Template Settings sits in.
+  // never touches it), same spot Template Settings sits in. Hidden for now —
+  // DashboardWorkspace doesn't pass these, so the row never renders.
   showTransactions = false,
   transactionsActive = false,
   onOpenTransactions,
 }) {
-  const [q, setQ] = useState('');
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return s ? tabs.filter((t) => t.name.toLowerCase().includes(s)) : tabs;
-  }, [q, tabs]);
-  const filteredOverviews = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return s ? overviewTabs.filter((o) => (o.name || '').toLowerCase().includes(s)) : overviewTabs;
-  }, [q, overviewTabs]);
-
   return (
     <>
       <div
@@ -131,22 +121,10 @@ export default function DashboardSidebar({
           <X size={18} />
         </button>
 
-        <div className="px-3">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-subtle" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search Folder…"
-              className="w-full rounded-lg border border-divider bg-card py-1.5 pl-8 pr-2 text-[12.5px] focus:border-accent focus:outline-none"
-            />
-          </div>
-        </div>
-
         {editMode ? (
           // Edit mode: each tab carries its own ArrangeControl right where
           // it's listed — no separate dropdown/list split.
-          <div className="mt-3 flex flex-col gap-3 px-2">
+          <div className="flex flex-col gap-3 px-2">
             <EditableNavList
               items={allTabs}
               section={tabsSection}
@@ -170,8 +148,8 @@ export default function DashboardSidebar({
             )}
           </div>
         ) : (
-          <nav className="mt-3 flex flex-col gap-0.5 px-2">
-            {filtered.map((t) => (
+          <nav className="flex flex-col gap-0.5 px-2">
+            {tabs.map((t) => (
               <NavRow
                 key={t.id}
                 active={activeKey === t.id}
@@ -181,10 +159,10 @@ export default function DashboardSidebar({
               />
             ))}
 
-            {filteredOverviews.length > 0 && (
+            {overviewTabs.length > 0 && (
               <>
                 <div className="my-1 border-t border-divider" />
-                {filteredOverviews.map((ov) => (
+                {overviewTabs.map((ov) => (
                   <NavRow key={ov.id} active={activeKey === ov.id} icon={overviewIcon(ov)} label={ov.name} onClick={() => onSelect(ov.id)} />
                 ))}
               </>

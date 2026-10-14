@@ -42,7 +42,7 @@ export default function Popover({ trigger, children, align = 'left', panelClass 
       {open && (
         <div
           ref={panelRef}
-          className={`dropdown-panel-in absolute z-40 mt-2 min-w-[12rem] rounded-xl border border-divider-light bg-background p-1 shadow-lg shadow-black/5 ${
+          className={`dropdown-panel-in absolute z-40 mt-2 min-w-[12rem] rounded-xl border border-divider-light bg-background p-1 text-foreground shadow-lg shadow-black/5 ${
             align === 'right' ? 'right-0' : 'left-0'
           } ${panelClass}`}
         >
