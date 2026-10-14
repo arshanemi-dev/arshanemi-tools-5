@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export const PAGE_SIZES = [25, 50, 100];
+export const DEFAULT_PAGE_SIZE = 100; // what a table opens at — one of PAGE_SIZES
 
 // The "1–25 of N rows" summary + rows-per-page picker + Prev/Next shared by
 // DetailsTable and OverviewTreeTable. Renders as the table's own footer bar —

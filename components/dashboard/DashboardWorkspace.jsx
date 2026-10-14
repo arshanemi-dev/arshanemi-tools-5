@@ -952,7 +952,10 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         )}
 
      
-        <main className="w-full min-h-0 min-w-0 flex-1 overflow-y-auto px-0 py-6">
+        {/* A flex column so the active tab's table can take whatever height is
+            left (fillHeight) — its pager sits on the bottom edge, no padding
+            under it. */}
+        <main className="flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-6">
           <DashboardHeaderBar
             title={activePageName}
             viewPillsSlotRef={setViewPillsSlot}
@@ -1021,12 +1024,12 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           {/* The save of an upload whose window was hidden, or of rows written back outside one. */}
           {(!uploadStage || uploadStage.hidden) && <SavingRowsLine saving={rowSave} onRetry={retryRowSave} />}
 
-          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-6 space-y-5 ${calculating ? 'opacity-60' : ''}`}>
+          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-6 flex flex-1 flex-col ${calculating ? 'opacity-60' : ''}`}>
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
                 their zero/empty state — only the rows are empty. */}
             {showTransactions ? (
-              <div className="space-y-3">
+              <div className="flex flex-1 flex-col gap-3">
                 {/* "Transactions" itself is the header bar's title now. */}
                 <p className="text-sm text-muted">
                   One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
@@ -1039,6 +1042,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                   onToggleRow={onToggleRow}
                   onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
+                  fillHeight
                 />
               </div>
             ) : showOverview ? (
@@ -1061,6 +1065,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
                 viewPillsSlot={viewPillsSlot}
+                fillHeight
               />
             ) : (
               <TabView
@@ -1083,6 +1088,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
                 allHeaders
+                fillHeight
               />
             )}
           </div>

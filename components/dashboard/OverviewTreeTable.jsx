@@ -6,7 +6,7 @@ import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
 import styles from './DataTable.module.css';
 import TableText from './TableText';
-import TablePager, { PAGE_SIZES } from './TablePager';
+import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
 import useCostFill from './useCostFill';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
@@ -39,13 +39,13 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
   editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
-  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null,
+  selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null, fillHeight = false,
 }) {
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [childLimits, setChildLimits] = useState({});
   const scrollRef = useRef(null);
   const selected = selectedKeys || new Set();
@@ -170,7 +170,7 @@ export default function OverviewTreeTable({
   );
 
   return (
-    <div className="overflow-hidden rounded-xl border border-divider bg-background">
+    <div className={`overflow-hidden rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-80 flex-1 flex-col' : ''}`}>
       {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
@@ -182,7 +182,7 @@ export default function OverviewTreeTable({
           </button>
         </div>
       )}
-      <div ref={scrollRef} data-table-scroll className={`max-h-[65vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
+      <div ref={scrollRef} data-table-scroll className={`overflow-auto ${fillHeight ? 'flex-1' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : fillHeight ? 'min-h-0' : ''}`}>
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">

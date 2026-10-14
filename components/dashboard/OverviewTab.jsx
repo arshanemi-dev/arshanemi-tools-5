@@ -49,7 +49,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -116,8 +116,11 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
     />
   );
 
+  // fillHeight (the dashboard, not Template Settings' preview): stretch to
+  // the height the page leaves and let the table take what's left over —
+  // the Hierarchy nav keeps its own height beside it.
   return (
-    <div className="@container space-y-5">
+    <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}`}>
       {pills && viewPillsSlot && createPortal(pills, viewPillsSlot)}
       {allCards.length > 0 && (
         <div className="space-y-2">
@@ -180,7 +183,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
           Pick at least one unique value level for this Overview tab in Template Settings.
         </div>
       ) : (
-        <div className="flex flex-col gap-4 @lg:flex-row @lg:items-start">
+        <div className={`flex flex-col gap-4 @lg:flex-row @lg:items-start ${fillHeight ? 'flex-1' : ''}`}>
           {!navOpen && (
             <OverviewHierarchyNav
               className="shrink-0 @lg:sticky @lg:top-4 @lg:w-44 @3xl:w-56 @5xl:w-64"
@@ -194,7 +197,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               onHide={() => setNavOpen(false)}
             />
           )}
-          <div className="min-w-0 flex-1">
+          <div className={`min-w-0 flex-1 ${fillHeight ? 'flex flex-col @lg:self-stretch' : ''}`}>
             <OverviewTreeTable
               levels={levels}
               columns={headersArrange.visible}
@@ -215,6 +218,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               dirtyKeys={dirtyKeys}
               dirtyCostCells={dirtyCostCells}
               pagerSlot={pagerSlot}
+              fillHeight={fillHeight}
             />
           </div>
         </div>
