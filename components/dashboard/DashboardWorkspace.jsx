@@ -30,14 +30,14 @@ import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 
-import DashboardSidebar from './DashboardSidebar';
+import DashboardTabBar from './DashboardTabBar';
 import DashboardToolbar from './DashboardToolbar';
 import DashboardHeaderBar from './DashboardHeaderBar';
 import TabView from './TabView';
 import OverviewTab from './OverviewTab';
 import DetailsTable from './DetailsTable';
 import NoMarketplaces from './NoMarketplaces';
-import NoTemplateSidebar from './NoTemplateSidebar';
+import NoTemplateTabBar from './NoTemplateTabBar';
 import TemplatesLoadError from './TemplatesLoadError';
 import UploadProgress, { SavingRowsLine } from './UploadProgress';
 const HistoryDrawer = dynamic(() => import('./HistoryDrawer'));
@@ -75,7 +75,7 @@ const RESTORE_CONCURRENCY = 4;
 // follows whichever page (Tab / Overview Tab / Transactions) is open.
 const DOC_TITLE_SUFFIX = ' | Barmeto Profit & Loss';
 
-export default function DashboardWorkspace({ canManageTemplates = false, onMenuClick, mobileNavOpen = false, onCloseMobileNav = () => {} }) {
+export default function DashboardWorkspace({ canManageTemplates = false }) {
   const { addToast } = useToast();
   const [calculations] = useState(() => createCalculationClient());
   useEffect(() => () => calculations.dispose(), [calculations]);
@@ -113,7 +113,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   );
 
   // Every tab the template defines, in template order — the full list the
-  // sidebar's edit-mode "Tabs" dropdown reorders/hides from.
+  // tab bar's edit mode reorders/hides from.
   const allTabsSorted = useMemo(
     () => [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [config],
@@ -237,8 +237,8 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // page limit + Prev/Next stay in its own footer, bottom right.
   const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
-  // My Details column ticks (per tab) + the sidebar's Settings -> Save
-  // edit-mode layout (tabs/title-cards/graphs/columns show+order) — one
+  // My Details column ticks (per tab) + the toolbar's Position Settings ->
+  // Save Position edit-mode layout (tabs/title-cards/graphs/columns show+order) — one
   // per-user settings row, see lib/profitLoss/useDashboardSettings.js.
   const {
     loggedIn, myColumnsFor, onMyColumnsChange,
@@ -890,16 +890,16 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   }
   if (templatesError) {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <NoTemplateSidebar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <NoTemplateTabBar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
         <TemplatesLoadError message={templatesError} onRetry={retryTemplates} />
       </div>
     );
   }
   if (templates.length === 0) {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <NoTemplateSidebar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <NoTemplateTabBar showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
         <NoMarketplaces showTemplateSettings={canManageTemplates} onOpenTemplateSettings={openTemplateSettings} />
       </div>
     );
@@ -907,26 +907,23 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <DashboardSidebar
-        tabs={visibleTabs}
-        activeKey={activeTabId}
-        onSelect={(id) => { setPreferredTabId(id); onCloseMobileNav(); }}
-        overviewTabs={visibleOverviewTabs}
-        showTemplateSettings={canManageTemplates}
-        onOpenTemplateSettings={openTemplateSettings}
-        onReset={resetFilters}
-        mobileOpen={mobileNavOpen}
-        onClose={onCloseMobileNav}
-        editMode={editMode}
-        allTabs={allTabsSorted}
-        tabsSection={layout.tabs || emptySection()}
-        onTabsSectionChange={(next) => setTopSection('tabs', next)}
-        allOverviewTabs={allOverviewTabsSorted}
-        overviewTabsSection={layout.overviewTabs || emptySection()}
-        onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
-      />
-
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-2">
+        <DashboardTabBar
+          tabs={visibleTabs}
+          activeKey={activeTabId}
+          onSelect={setPreferredTabId}
+          overviewTabs={visibleOverviewTabs}
+          showTemplateSettings={canManageTemplates}
+          onOpenTemplateSettings={openTemplateSettings}
+          editMode={editMode}
+          allTabs={allTabsSorted}
+          tabsSection={layout.tabs || emptySection()}
+          onTabsSectionChange={(next) => setTopSection('tabs', next)}
+          allOverviewTabs={allOverviewTabsSorted}
+          overviewTabsSection={layout.overviewTabs || emptySection()}
+          onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
+        />
+
         {(!uploadTab || activeTabId === uploadTab.id || editMode) && (
         <DashboardToolbar
           templates={templates}
@@ -963,7 +960,6 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
           <DashboardHeaderBar
             title={activePageName}
             viewPillsSlotRef={setViewPillsSlot}
-            onMenuClick={onMenuClick}
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}

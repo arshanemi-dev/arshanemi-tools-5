@@ -9,8 +9,8 @@ import DashboardWorkspace from './DashboardWorkspace';
 
 const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
 
-// Client shell: owns the topbar session + the mobile nav drawer state, then
-// hands off to <DashboardWorkspace/> (the template-driven dashboard). The page
+// Client shell: owns the topbar session, then hands off to
+// <DashboardWorkspace/> (the template-driven dashboard). The page
 // works fully signed-out — sign-in only unlocks My Details + History, and
 // master_admin / granted users additionally get the Template Settings entry.
 export default function ProfitLossShell() {
@@ -20,7 +20,6 @@ export default function ProfitLossShell() {
   const [profile, setProfile] = useState(null);
   const user = storedUser && profile ? { ...storedUser, ...profile } : storedUser;
   const [canManageTemplates, setCanManageTemplates] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn()) return;
@@ -44,16 +43,9 @@ export default function ProfitLossShell() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
-      {!HEADER_HIDDEN && <DashboardTopbar user={user} onLogout={handleLogout} onMenuClick={() => setNavOpen(true)} />}
+      {!HEADER_HIDDEN && <DashboardTopbar user={user} onLogout={handleLogout} />}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <DashboardWorkspace
-          canManageTemplates={canManageTemplates}
-          // With the topbar hidden its hamburger goes too — the workspace's
-          // own header row renders one instead so the mobile nav stays reachable.
-          onMenuClick={HEADER_HIDDEN ? () => setNavOpen(true) : undefined}
-          mobileNavOpen={navOpen}
-          onCloseMobileNav={() => setNavOpen(false)}
-        />
+        <DashboardWorkspace canManageTemplates={canManageTemplates} />
       </div>
     </div>
   );
