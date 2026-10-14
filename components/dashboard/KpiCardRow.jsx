@@ -45,6 +45,8 @@ export default function KpiCardRow({ cards = [], values = {}, editMode = false, 
               subDisplay={v.sub?.display}
               format={card.mainValue?.format || 'money'}
               signed={!!card.mainValue?.signed}
+              textColor={card.textColor}
+              bgColor={card.bgColor}
               editMode={editMode}
               currentId={card.id}
               items={arrange?.allItems}

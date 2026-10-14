@@ -40,7 +40,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // My Details pill portals into DashboardHeaderBar instead of sitting above
 // the table. The pager stays in the table's footer (no page passes
 // `pagerSlot` now), as does Template Settings' preview.
-export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -133,6 +133,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
             arrange={headersArrange}
             skuCosts={skuCosts}
             onCostChange={onCostChange}
+            onCostFill={onCostFill}
             disableCostColumn={!rowsAreSkus}
             selectedKeys={selectedKeys}
             onToggleRow={onToggleRow}

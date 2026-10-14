@@ -160,12 +160,20 @@ export function makeValue(type = 'formula') {
   return { type, formula: '', format: 'money' };
 }
 
+// A Title Card's own colours — `textColor` / `bgColor`: '#rrggbb', or ''
+// (also a card saved before these existed) for the theme's. The hub checks
+// the same shape (lib/templateConfig.js).
+export const TITLE_CARD_COLORS = { textColor: 'text colour', bgColor: 'background colour' };
+export const isHexColor = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
 export function makeTitleCard(name = 'Title Card') {
   return {
     id: newId('tc'),
     name,
     mainValue: makeValue('formula'),
     subValue: { ...makeValue('formula'), format: 'int' },
+    textColor: '',
+    bgColor: '',
     createdAt: new Date().toISOString(),
   };
 }
@@ -311,6 +319,9 @@ export function validateGlobalConfig(config) {
   for (const c of titleCards) {
     if (!c?.id) { push('every title card needs an id'); continue; }
     cardIds.add(c.id);
+    for (const [field, what] of Object.entries(TITLE_CARD_COLORS)) {
+      if (c[field] && !isHexColor(c[field])) push(`title card "${c.name || c.id}" ${what} must be a #rrggbb colour`);
+    }
     for (const slot of ['mainValue', 'subValue']) {
       for (const ref of refsIn(c[slot]?.formula)) {
         if (!knownRef(ref)) push(`title card "${c.name || c.id}" ${slot} references unknown [${ref}]`);

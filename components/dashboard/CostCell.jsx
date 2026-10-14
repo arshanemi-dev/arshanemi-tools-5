@@ -30,7 +30,12 @@ const sameCost = (text, value) => (isBlank(text) ? !Number.isFinite(value) : Num
 // isn't the typed number itself; it is what the column's sort, filter and
 // formulas go by. Without `onCommit` (Template Settings' preview) the box is
 // read-only.
-export default function CostCell({ value, total = null, onCommit, label, dirty = false }) {
+//
+// `fill` = { col, sku, start } adds Excel's fill handle: a small square on
+// the box's corner (shown on hover / focus) to drag up or down and copy this
+// box's value into the boxes passed over — see useCostFill.js, which also
+// marks the range being dragged over (`data-fill-on`, tinted here).
+export default function CostCell({ value, total = null, onCommit, label, dirty = false, fill = null }) {
   const [text, setText] = useState(null); // what's being typed; null = showing `value`
   const timer = useRef(null);
   const waiting = useRef(null); // typed text not handed over yet
@@ -63,25 +68,48 @@ export default function CostCell({ value, total = null, onCommit, label, dirty =
   const sum = total?.raw;
   const showTotal = typeof sum === 'number' && Number.isFinite(sum) && sum !== 0 && sum !== value;
 
+  const fillable = !!(fill && onCommit);
+  // Hand over what's typed first, so the grabbed box is saved with the same
+  // value it is copied out with. Text that isn't a number has nothing to copy.
+  const startFill = (e) => {
+    if (bad) return;
+    flush();
+    fill.start(e, { field: fill.col, text: text ?? saved });
+  };
+
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      <input
-        type="text"
-        inputMode="decimal"
-        autoComplete="off"
-        value={text ?? saved}
-        readOnly={!onCommit}
-        onChange={(e) => onType(e.target.value)}
-        onBlur={() => { flush(); setText(null); }}
-        onKeyDown={(e) => { if (e.key === 'Enter') flush(); }}
-        placeholder="—"
-        aria-label={label}
-        aria-invalid={bad || undefined}
-        title={bad ? 'Not a number — nothing is changed' : unsaved ? 'Edited — not saved yet' : 'Default price for this SKU — used for orders uploaded from now on'}
-        className={`w-24 rounded-lg border px-2 py-1 text-sm tabular-nums focus:outline-none ${
-          bad ? 'border-neg bg-background' : unsaved ? 'border-link bg-link/10' : 'border-divider bg-background focus:border-accent'
-        }`}
-      />
+    <div
+      data-fill-col={fillable ? fill.col : undefined}
+      data-fill-sku={fillable ? fill.sku : undefined}
+      className="group/fill flex flex-wrap items-center justify-center gap-2"
+    >
+      <span className="relative inline-flex">
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={text ?? saved}
+          readOnly={!onCommit}
+          onChange={(e) => onType(e.target.value)}
+          onBlur={() => { flush(); setText(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') flush(); }}
+          placeholder="—"
+          aria-label={label}
+          aria-invalid={bad || undefined}
+          title={bad ? 'Not a number — nothing is changed' : unsaved ? 'Edited — not saved yet' : 'Default price for this SKU — used for orders uploaded from now on'}
+          className={`w-24 rounded-lg border px-2 py-1 text-sm tabular-nums focus:outline-none group-data-[fill-on]/fill:border-dashed group-data-[fill-on]/fill:border-action group-data-[fill-on]/fill:bg-action-soft ${
+            bad ? 'border-neg bg-background' : unsaved ? 'border-link bg-link/10' : 'border-divider bg-background focus:border-accent'
+          }`}
+        />
+        {fillable && (
+          <span
+            role="presentation"
+            onPointerDown={startFill}
+            title="Drag up or down to copy this value into those rows"
+            className="absolute -bottom-1 -right-1 hidden h-2.5 w-2.5 cursor-crosshair touch-none rounded-[2px] border border-background bg-action group-hover/fill:block group-focus-within/fill:block"
+          />
+        )}
+      </span>
       {showTotal && (
         <span className="text-[11px] tabular-nums text-subtle" title="Across this SKU’s orders, each at the price it was uploaded with — what this column’s sort, filter and formulas use">
           Total {total.display}

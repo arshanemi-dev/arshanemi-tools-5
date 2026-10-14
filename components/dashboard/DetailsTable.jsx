@@ -6,6 +6,7 @@ import CostCell from './CostCell';
 import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { PAGE_SIZES } from './TablePager';
+import useCostFill from './useCostFill';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
@@ -30,7 +31,9 @@ import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 // itself, one cost at a time). The box holds the SKU's DEFAULT (`skuCosts` =
 // { [sku]: { cogs, costGst, finalCost, otherExpense } }) — what the next
 // upload is priced at; the column's own cell, shown beside it, adds up what
-// the SKU's orders actually carry. `onCostChange(sku, field, text)`. While the
+// the SKU's orders actually carry. `onCostChange(sku, field, text)`; a box's
+// fill handle copies its value into the rows dragged over, Excel-style
+// (`onCostFill(field, skus, text)` — useCostFill.js). While the
 // COGS header isn't one of the columns, a "Cost" input for it is injected
 // right after whichever header is bound to the `sku` engine primitive, if
 // any. `disableCostColumn` = the rows aren't SKUs (Transactions, a table
@@ -52,7 +55,7 @@ import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 // sort changes, so it never gets stuck showing an out-of-range empty page.
 
 export default function DetailsTable({
-  columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange,
+  columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
   pagerSlot = null,
 }) {
@@ -74,6 +77,7 @@ export default function DetailsTable({
   // aside when the COGS header's own column is here to type into.
   const showCost = !disableCostColumn && cols.some((c) => c.isSku) && !cols.some((c) => c.costField === 'cogs');
   const dirtyCells = dirtyCostCells || new Set();
+  const startFill = useCostFill(onCostFill); // Excel's fill handle on the cost boxes
   const costInput = (sku, field, name, total = null) => (
     <CostCell
       value={skuCosts[sku]?.[field]}
@@ -81,6 +85,7 @@ export default function DetailsTable({
       onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
+      fill={onCostFill ? { col: field, sku, start: startFill } : null}
     />
   );
   const displayCols = [];

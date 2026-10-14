@@ -10,6 +10,7 @@ import FormulaEditor from './FormulaEditor';
 import SectionHead from './SectionHead';
 import NameField from './NameField';
 import ListSearchSort from './ListSearchSort';
+import ColorField from './ColorField';
 
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
@@ -49,7 +50,8 @@ function ValueEditor({ label, value, onChange, refNames, listNames, previewScope
 }
 
 // image 2 · Title Card — one name + two independently-formula'd values (main +
-// sub), exactly the KPI card shape the dashboard renders. A compact list
+// sub), exactly the KPI card shape the dashboard renders, plus the card's own
+// text / background colour (empty = the theme's). A compact list
 // (search + Name / Created sort — ListSearchSort) beside the editor for
 // whichever card is active; it shares the active card with the sidebar list,
 // where rename / delete live.
@@ -131,6 +133,21 @@ export default function TitleCardSection({ draft, activeId: activeIdProp, onActi
                   placeholder="Enter Title card name"
                   className="w-full max-w-md"
                 />
+                <div className="space-y-2 rounded-lg border border-divider bg-card p-3">
+                  <span className="text-[13px] font-semibold text-foreground">Card colours</span>
+                  <ColorField
+                    label="Text colour"
+                    value={active.textColor || ''}
+                    onChange={(textColor) => patchItem('titleCards', active.id, { textColor })}
+                    fallback="#111111"
+                  />
+                  <ColorField
+                    label="Background colour"
+                    value={active.bgColor || ''}
+                    onChange={(bgColor) => patchItem('titleCards', active.id, { bgColor })}
+                    fallback="#ffffff"
+                  />
+                </div>
                 <ValueEditor
                   label="Add Main Value"
                   value={active.mainValue}

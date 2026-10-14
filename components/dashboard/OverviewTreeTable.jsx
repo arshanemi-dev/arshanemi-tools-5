@@ -7,6 +7,7 @@ import CostCell from './CostCell';
 import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { PAGE_SIZES } from './TablePager';
+import useCostFill from './useCostFill';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
@@ -37,7 +38,7 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 // The pager renders in the footer, or wherever `pagerSlot` points.
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
-  editMode = false, arrange, skuCosts = {}, onCostChange,
+  editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null,
 }) {
   const [sort, setSort] = useState(null);
@@ -50,6 +51,7 @@ export default function OverviewTreeTable({
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
+  const startFill = useCostFill(onCostFill); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped
   // A header picked in the builder lights up its column — or the hierarchy
   // column when it's one of the levels.
   const hlHead = (col) => (col.key === TREE_COL
@@ -132,6 +134,7 @@ export default function OverviewTreeTable({
       onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
+      fill={onCostFill ? { col: field, sku, start: startFill } : null}
     />
   );
   const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers

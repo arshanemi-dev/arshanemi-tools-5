@@ -138,7 +138,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
   // has landed — signed out that never happens, so the highlight correctly
   // stays on. See lib/profitLoss/useSkuCosts.js.
   const {
-    skuCosts, onCostChange, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
+    skuCosts, onCostChange, onCostFill, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
   } = useSkuCosts({ addToast });
   const [busy, setBusy] = useState(false);
   const [restorePaging, setRestorePaging] = useState(null);
@@ -1052,6 +1052,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onSetTabSection={setTabSection}
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
+                onCostFill={onCostFill}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
@@ -1073,6 +1074,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
                 onSetTabSection={setTabSection}
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
+                onCostFill={onCostFill}
                 selectedKeys={selectedKeys}
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
