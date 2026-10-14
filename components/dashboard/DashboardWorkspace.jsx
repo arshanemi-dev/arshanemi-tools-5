@@ -926,7 +926,7 @@ export default function DashboardWorkspace({ canManageTemplates = false, onMenuC
         onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-2">
         {(!uploadTab || activeTabId === uploadTab.id || editMode) && (
         <DashboardToolbar
           templates={templates}
