@@ -27,8 +27,8 @@ import ListSearchSort from './ListSearchSort';
 //     spreadsheet-style filter (the funnel in its header).
 // Marketplace columns are never added to Our Headers automatically; headers
 // imported that way before (source 'extracted') get a one-click cleanup.
-// Headers are global (this draft — saved with the footer's Update / Save New
-// Version, see GlobalVersion.jsx); mappings are
+// Headers are global (this draft — saved with the footer's Save New Version,
+// see GlobalVersion.jsx); mappings are
 // per-marketplace and save straight onto that marketplace (`mappingSaver`).
 export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null }) {
   const { addToast } = useToast();
@@ -109,7 +109,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     const { config: next, removed, kept } = withoutAutoImported(config, mappedIds);
     setConfig(next);
     if (activeId && !next.headers.some((h) => h.id === activeId)) setActiveId(null);
-    addToast(`${removed} auto-imported header${removed === 1 ? '' : 's'} removed${kept ? ` · ${kept} in use kept as your headers` : ''} — Save Draft to keep this`);
+    addToast(`${removed} auto-imported header${removed === 1 ? '' : 's'} removed${kept ? ` · ${kept} in use kept as your headers` : ''} — Save New Version to keep this`);
   };
 
   const mpCount = marketplaces?.length ?? 0;

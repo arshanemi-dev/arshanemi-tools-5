@@ -5,7 +5,7 @@ import { makeEmptyGlobalConfig, validateGlobalConfig } from '@/data/templateSche
 import { withFixedHeaders } from '@/data/fixedHeaders';
 import {
   getGlobalTemplateMeta, getTemplate, getVersion,
-  saveDraftVersion, updateDraftVersion, publishVersion, deleteVersion,
+  saveDraftVersion, publishVersion, deleteVersion,
 } from '@/lib/profitLoss/templatesApi';
 
 // Owns the singleton Global Settings draft — Headers, Title Cards, Graphs,
@@ -17,14 +17,12 @@ import {
 // marketplace counterpart, which dropped all of this in favor of a direct
 // save ("always show, no hide").
 //
-// What is in the editor always belongs to one of two things, picked from
-// the version dropdown at the top of Global Settings (GlobalVersion.jsx):
-//  - a saved version (`activeVersionId`) — saving UPDATES that version in
-//    place, whatever its status. When it is the live one, that is what the
-//    dashboard shows from then on: there is no publish step.
-//  - "New draft" (`activeVersionId` null) — saving creates a NEW version, a
-//    draft the dashboard doesn't show until it is switched Live on the
-//    Version Page (`publish`, the only place a version goes live or off).
+// The version dropdown at the top of Global Settings (GlobalVersion.jsx)
+// picks which saved version is loaded into the editor (`activeVersionId`;
+// null = nothing saved open). Saving ALWAYS creates a NEW version from what
+// is in the editor — a draft the dashboard doesn't show until it is switched
+// Live on the Version Page (`publish`, the only place a version goes live or
+// off). A saved version is never overwritten, the live one included.
 const LS_KEY = 'mp-tpl-draft:global';
 
 export const versionName = (v) => (v ? `v${v.versionNumber}.${v.subVersionNumber}` : '');
@@ -176,32 +174,6 @@ export default function useGlobalTemplateDraft() {
     }
   }, [templateId, config, reloadMeta]);
 
-  // What is in the editor over the selected version itself. A version that
-  // was deleted elsewhere since it was loaded (404) has nothing left to
-  // update — the work is saved as a new version instead of being refused,
-  // and the result says so (`replaced` = the version that is gone).
-  // → { ok, version, live } — `live`: it is the dashboard's version.
-  const updateVersion = useCallback(async () => {
-    if (!templateId) return { ok: false, error: 'Global Settings not loaded yet' };
-    if (!activeVersionId) return saveNewVersion();
-    const gone = versions.find((v) => v.id === activeVersionId) || null;
-    setSaving(true);
-    try {
-      const res = await updateDraftVersion(templateId, activeVersionId, { config });
-      if (res.status === 404) {
-        const saved = await saveNewVersion();
-        return saved.ok ? { ...saved, replaced: gone } : saved;
-      }
-      if (!res.ok) return failed(res);
-      setSavedJson(JSON.stringify(config));
-      const data = await reloadMeta();
-      const v = res.data.version;
-      return { ok: true, version: v, live: v.status === 'live' || data?.template?.liveVersionId === v.id };
-    } finally {
-      setSaving(false);
-    }
-  }, [templateId, config, activeVersionId, versions, saveNewVersion, reloadMeta]);
-
   // The Version Page's Live switch — the one place a version goes onto the
   // dashboard (`live`) or off it.
   const publish = useCallback(async (versionId, live = true) => {
@@ -259,6 +231,6 @@ export default function useGlobalTemplateDraft() {
     headerIds,
     setConfig, patchConfig, addItem, patchItem, removeItem,
     liveVersion, activeVersion, baseVersion,
-    selectVersion, saveNewVersion, updateVersion, publish, removeVersion, reloadMeta,
+    selectVersion, saveNewVersion, publish, removeVersion, reloadMeta,
   };
 }

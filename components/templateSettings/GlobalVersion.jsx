@@ -8,40 +8,37 @@ import SearchSelect from '@/components/dashboard/SearchSelect';
 import { failureMessage, validationMessage } from '@/lib/profitLoss/templatesApi';
 import { versionName } from './useGlobalTemplateDraft';
 
-// Which version of Global Settings is in the editor, and what saving does to
-// it — the bar at the top of Global Settings plus the save buttons in the
-// builder's footer. There is no Publish anywhere:
-//  - the dropdown picks a saved version, or "New draft";
-//  - with a saved version picked, the button is "Update v2.3" and saves over
-//    that version. The live one is what the dashboard shows, so updating it
-//    changes every seller's dashboard straight away;
-//  - with "New draft" picked, the button is "Save New Version": a new draft,
-//    which the dashboard doesn't show until it is switched Live on the
-//    Version Page — the one place a version goes live or off.
+// Which version of Global Settings is in the editor, and what saving does —
+// the bar at the top of Global Settings plus the save button in the
+// builder's footer. There is no Publish and no Save Draft:
+//  - the dropdown picks which saved version is loaded into the editor;
+//  - "Save New Version" ALWAYS saves what is in the editor as a NEW version
+//    (a draft) — a saved version, the live one included, is never
+//    overwritten. The dashboard doesn't show the new version until it is
+//    switched Live on the Version Page — the one place a version goes live
+//    or off.
 
-const NEW_DRAFT = 'new'; // the dropdown's value for "New draft" (a saved version's is its id)
+const NEW_DRAFT = 'new'; // the dropdown's value while nothing saved is open (a saved version's is its id)
 
 const isLive = (v, liveVersion) => !!v && (v.id === liveVersion?.id || v.status === 'live');
 
-// The names the hub will give the next saved version — the next sub-version
-// of the newest version number, or (major) the next version number. Only for
-// what the buttons say on hover: the hub does the real numbering.
-function nextNames(versions) {
+// The name the hub will give the next saved version — the next sub-version
+// of the newest version number. Only for what the button says on hover: the
+// hub does the real numbering.
+function nextName(versions) {
   const top = versions.reduce((m, v) => Math.max(m, v.versionNumber), 0) || 1;
   const sub = versions.filter((v) => v.versionNumber === top).reduce((m, v) => Math.max(m, v.subVersionNumber), 0);
-  return { next: `v${top}.${sub + 1}`, major: `v${top + 1}.1` };
+  return `v${top}.${sub + 1}`;
 }
 
-// Saving, with every outcome said out loud. `save()` does what the footer's
-// main button says: updates the picked version, or saves a new one for a New
-// draft; `save({ major: true })` always starts a new version number.
+// Saving, with every outcome said out loud. Every save is a new version.
 export function useGlobalSave(draft) {
   const { addToast } = useToast();
-  const save = async ({ major = false } = {}) => {
+  const save = async () => {
     if (!draft.valid) { addToast(validationMessage(draft.errors), 'error'); return; }
     let res;
     try {
-      res = draft.activeVersionId && !major ? await draft.updateVersion() : await draft.saveNewVersion({ major });
+      res = await draft.saveNewVersion();
     } catch (err) {
       addToast(failureMessage(err, 'Save failed'), 'error');
       return;
@@ -51,61 +48,28 @@ export function useGlobalSave(draft) {
       if (res.details?.length) console.error('global config validation:', res.details);
       return;
     }
-    const name = versionName(res.version);
-    if (res.replaced) addToast(`${versionName(res.replaced)} no longer exists — saved as new version ${name} (a draft)`);
-    else if (res.created) addToast(`Saved new version ${name} — a draft, switch it Live on the Version Page to show it on the dashboard`);
-    else addToast(res.live ? `Updated ${name} — it is live, the dashboard shows it now` : `Updated ${name}`);
+    addToast(`Saved new version ${versionName(res.version)} — a draft, switch it Live on the Version Page to show it on the dashboard`);
   };
   return { save, saving: draft.saving };
 }
 
-// The footer's save buttons for Global Settings.
+// The footer's save button for Global Settings. With a saved version open
+// and nothing changed it is disabled — it would only store a duplicate.
 export function GlobalSaveButtons({ draft, save }) {
-  const { activeVersion, activeVersionId, liveVersion, versions = [], dirty, saving } = draft;
-  const spinner = saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />;
-  const primary = 'inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50';
-
-  if (activeVersionId) {
-    const name = versionName(activeVersion);
-    return (
-      <button
-        type="button"
-        onClick={() => save.save()}
-        disabled={saving || !dirty}
-        title={!dirty
-          ? `No changes to save to ${name}`
-          : isLive(activeVersion, liveVersion)
-            ? `Saves over ${name} — it is live, so the dashboard shows the change straight away`
-            : `Saves over ${name}`}
-        className={primary}
-      >
-        {spinner} Update {name}
-      </button>
-    );
-  }
-
-  const names = nextNames(versions);
+  const { activeVersion, activeVersionId, versions = [], dirty, saving } = draft;
+  const unchanged = !!activeVersionId && !dirty;
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => save.save({ major: true })}
-        disabled={saving}
-        title={`Saves a new draft that starts the next version number — ${names.major}`}
-        className="rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-card-hover disabled:opacity-50"
-      >
-        Save Drafts
-      </button>
-      <button
-        type="button"
-        onClick={() => save.save()}
-        disabled={saving}
-        title={`Saves what is in the editor as a new draft version — ${names.next}`}
-        className={primary}
-      >
-        {spinner} Save New Version
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={() => save.save()}
+      disabled={saving || unchanged}
+      title={unchanged
+        ? `No changes since ${versionName(activeVersion)} — nothing new to save`
+        : `Saves what is in the editor as a new draft version — ${nextName(versions)}`}
+      className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50"
+    >
+      {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save New Version
+    </button>
   );
 }
 
@@ -120,8 +84,10 @@ export function GlobalVersionBar({ draft, onOpenVersionPage }) {
   if (loading) return null;
 
   const statusOf = (v) => (isLive(v, liveVersion) ? 'live' : v.status);
+  // "New draft" is only the label for nothing-saved-yet — saving already
+  // makes a new version from whatever is open, so it isn't a choice.
   const options = [
-    { value: NEW_DRAFT, label: 'New draft' },
+    ...(!activeVersionId ? [{ value: NEW_DRAFT, label: 'New draft' }] : []),
     ...versions.map((v) => ({ value: v.id, label: `${versionName(v)} · ${statusOf(v)}` })),
   ];
 
@@ -153,7 +119,7 @@ export function GlobalVersionBar({ draft, onOpenVersionPage }) {
   );
 
   return (
-    <div className={`rounded-xl border px-3.5 py-2.5 ${live ? 'border-accent/30 bg-accent/5' : 'border-divider bg-background'}`}>
+    <div className={`hidden rounded-xl border px-3.5 py-2.5 ${live ? 'border-accent/30 bg-accent/5' : 'border-divider bg-background'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="text-[12.5px] font-semibold text-foreground">Version</span>
         <SearchSelect
@@ -186,15 +152,13 @@ export function GlobalVersionBar({ draft, onOpenVersionPage }) {
             A new version{baseVersion ? `, started from ${versionName(baseVersion)}` : ''}. <span className="font-semibold text-foreground">Save New Version</span> stores
             it as a draft — the dashboard doesn&rsquo;t show a draft until it is switched Live on the {versionPage}.
           </>
-        ) : live ? (
-          <>
-            <span className="font-semibold text-foreground">{name} is what the dashboard shows</span> — Update changes it for every seller straight away.
-            To try something first, pick New draft.
-          </>
         ) : (
           <>
-            {name} is {activeVersion?.status === 'archived' ? 'archived' : 'a draft'} — the dashboard doesn&rsquo;t show it. Update saves over it; switch it Live on
-            the {versionPage} to show it.
+            {live
+              ? <span className="font-semibold text-foreground">{name} is what the dashboard shows.</span>
+              : <>{name} is {activeVersion?.status === 'archived' ? 'archived' : 'a draft'} — the dashboard doesn&rsquo;t show it.</>}{' '}
+            <span className="font-semibold text-foreground">Save New Version</span> keeps {name} as it is and stores your changes as a new draft — switch
+            that Live on the {versionPage} to show it.
           </>
         )}
       </p>

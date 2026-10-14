@@ -45,7 +45,7 @@ export default function TemplateBuilder() {
   const activeArea = isGlobal ? 'global' : marketplaceId ? 'marketplace' : null;
 
   const globalDraft = useGlobalTemplateDraft();
-  const globalSave = useGlobalSave(globalDraft); // "Update v2.3" / "Save New Version" — see GlobalVersion.jsx
+  const globalSave = useGlobalSave(globalDraft); // "Save New Version" — every save is a new version, see GlobalVersion.jsx
   const draft = useTemplateDraft(marketplaceId, { globalHeaderIds: globalDraft.headerIds });
 
   const [templates, setTemplates] = useState(null);

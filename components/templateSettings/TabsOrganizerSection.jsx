@@ -19,8 +19,7 @@ const KINDS = {
 // Moving one works the way every ordered list here does — drag, "Position N",
 // ↑ / ↓ / ⇈ / ⇊ (PositionList). Every move renumbers `order` 0..n-1 in the
 // Global Settings draft. Save Position saves that draft the same way the
-// footer's button does — over the version picked at the top, or as a new
-// version for a New draft (GlobalVersion.jsx).
+// footer's button does — always as a new version (GlobalVersion.jsx).
 export default function TabsOrganizerSection({ draft, kind = 'tab', onSave, saving = false }) {
   const k = KINDS[kind];
   const items = [...(draft.config[k.listKey] || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -42,7 +41,7 @@ export default function TabsOrganizerSection({ draft, kind = 'tab', onSave, savi
             type="button"
             onClick={onSave}
             disabled={saving || !items.length}
-            title="Saves this order into the version picked at the top of Global Settings (or as a new version, for a New draft)"
+            title="Saves Global Settings with this order as a new draft version — switch it Live on the Version Page to show it on the dashboard"
             className="inline-flex items-center gap-1.5 rounded-full bg-action px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-action-hover disabled:opacity-50"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save Position
