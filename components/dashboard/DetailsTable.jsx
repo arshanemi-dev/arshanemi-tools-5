@@ -166,20 +166,20 @@ export default function DetailsTable({
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-[#3781EA] px-1 py-1">
+              <th className="sticky top-0 z-10 w-10 bg-[#1565C0] px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
               {displayCols.map((col) => {
                 if (col.kind === 'cost') {
                   return (
-                    <th key="__cost__" className="sticky top-0 z-10 bg-[#3781EA] px-1 py-1 text-left font-medium text-white whitespace-nowrap">
+                    <th key="__cost__" className="sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">
                       Cost
                     </th>
                   );
                 }
                 const hlCol = isHighlighted(hl, 'header', col.id);
                 return (
-                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`sticky top-0 z-10 bg-[#3781EA] px-1 py-1 text-left font-medium whitespace-nowrap ${hlCol ? HL_HEAD : 'text-white'}`}>
+                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium ${hlCol ? HL_HEAD : 'text-white'}`}>
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}

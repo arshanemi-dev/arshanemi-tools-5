@@ -1,6 +1,9 @@
+/* Never narrower than the scroll area (the header band spans its full
+   width), never squeezed below its content either — it scrolls instead. */
 .table {
   table-layout: auto;
   width: max-content;
+  min-width: 100%;
   /* Separate borders stay attached to sticky cells while scrolling.
      Draw each shared edge once so the grid stays one pixel wide. */
   border-collapse: separate;
@@ -23,6 +26,12 @@
 .table > thead > tr > th {
   border-right-color: rgb(255 255 255 / 0.12);
   border-bottom-color: rgb(255 255 255 / 0.12);
+}
+
+/* Values sit centered under their centered headers. The Overview tree
+   column stays left — its flex row + text-left keep the level indents. */
+.table > tbody > tr > td {
+  text-align: center;
 }
 
 .table > tbody > tr:nth-child(odd) {

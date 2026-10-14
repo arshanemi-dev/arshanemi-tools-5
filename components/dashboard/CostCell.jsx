@@ -64,7 +64,7 @@ export default function CostCell({ value, total = null, onCommit, label, dirty =
   const showTotal = typeof sum === 'number' && Number.isFinite(sum) && sum !== 0 && sum !== value;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center justify-center gap-2">
       <input
         type="text"
         inputMode="decimal"

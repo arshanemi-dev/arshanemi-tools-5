@@ -146,7 +146,7 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-[#3781EA] px-1 py-1 text-left font-medium whitespace-nowrap ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
       <ColumnHeaderCell
         col={col}
         sort={sort}
@@ -183,11 +183,11 @@ export default function OverviewTreeTable({
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-[#3781EA] px-1 py-1">
+              <th className="sticky top-0 z-10 w-10 bg-[#1565C0] px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
               {headCell(treeCol, 'left-0 z-20')}
-              {showCost && <th className="sticky top-0 z-10 bg-[#3781EA] px-1 py-1 text-left font-medium text-white whitespace-nowrap">Cost</th>}
+              {showCost && <th className="sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
           </thead>
