@@ -219,6 +219,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               dirtyCostCells={dirtyCostCells}
               pagerSlot={pagerSlot}
               fillHeight={fillHeight}
+              headers={config.headers}
             />
           </div>
         </div>

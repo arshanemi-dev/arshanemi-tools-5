@@ -14,6 +14,10 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
+import { tableTotals } from '@/lib/profitLoss/tableTotals';
+
+// The Total row's cells — the navy band right under the blue header row, pinned with it.
+const TOTAL_CELL = 'bg-footer px-3 py-2 font-semibold text-white whitespace-nowrap';
 
 const CHILD_PAGE = 100; // children rendered per open node before "Show more"
 
@@ -41,6 +45,9 @@ export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
   editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null, fillHeight = false,
+  // Every header of the template — what a ratio formula's Total reads
+  // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
+  headers = null,
 }) {
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
@@ -68,6 +75,9 @@ export default function OverviewTreeTable({
     const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, f]) => cellPasses(f, nodeCell(n, k)))) : tree;
     return sortTree(kept, sort);
   }, [tree, applied, sort]);
+  // The Total row, over the top level only — each node already adds up its
+  // children, so counting them too would count everything twice.
+  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
   // One column's checklist: its value on every row of every level that the
   // OTHER columns' filters leave — and its Min / Max range: the numbers
   // those same rows span (a parent's subtotal is a row like any other).
@@ -151,7 +161,7 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`bg-[#1565C0] px-1 py-1 text-center font-medium ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
       <ColumnHeaderCell
         col={col}
         sort={sort}
@@ -172,12 +182,13 @@ export default function OverviewTreeTable({
   );
 
   return (
-    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-80 grow flex-col overflow-clip data-[fill-full]:min-h-[var(--page-h)]' : 'overflow-hidden'}`}>
-      {/* fillHeight (the dashboard): a fixed height — whatever the page has
-          left below the cards / graphs, or the page's full visible height
-          when that's too little (useFillHeight) — however many rows there
-          are, pager on the bottom edge. Only the rows scroll, inside it,
-          under the pinned (sticky) header row. */}
+    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-[var(--page-h,20rem)] grow flex-col overflow-clip' : 'overflow-hidden'}`}>
+      {/* fillHeight (the dashboard): always the page's full visible height
+          (--page-h, useFillHeight) however many rows there are — once the
+          page has scrolled the cards / graphs away it fills the screen,
+          pager on the bottom edge. Only the rows scroll, inside it, under
+          the pinned (sticky) header and Total rows; the sideways scrollbar
+          sits under the last row. */}
       {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
@@ -190,17 +201,36 @@ export default function OverviewTreeTable({
         </div>
       )}
       {/* h-0 + grow (fillHeight): the rows never make the table taller — it takes the room it's given and scrolls them */}
-      <div ref={scrollRef} data-table-scroll className={`scroll-pt-12 overflow-auto ${fillHeight ? 'h-0 grow' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
+      <div ref={scrollRef} data-table-scroll className={`scroll-pt-20 overflow-auto ${fillHeight ? 'h-0 grow' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
         <table className={`${styles.table} text-sm`}>
-          <thead>
+          {/* The whole head is what's pinned (sticky) — the header row and, right
+              under it, the Total row — so the two stay together at the top
+              whatever height the header labels wrap to. */}
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-[#1565C0] px-1 py-1">
+              <th className="w-10 bg-[#1565C0] px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
               </th>
-              {headCell(treeCol, 'left-0 z-20')}
-              {showCost && <th className="sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">Cost</th>}
+              {headCell(treeCol, 'sticky left-0 z-20')}
+              {showCost && <th className="bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
+            {view.length > 0 && (
+              <tr>
+                <td className={TOTAL_CELL} />
+                <td className={`${TOTAL_CELL} sticky left-0 z-20 text-left uppercase tracking-wide`}>Total</td>
+                {showCost && <td className={TOTAL_CELL} />}
+                {cols.map((c) => {
+                  const t = totals[c.key];
+                  const neg = c.signed && Number(t?.raw) < 0;
+                  return (
+                    <td key={c.key} className={`${TOTAL_CELL} text-center tabular-nums ${neg ? 'text-[#fca5a5]' : ''}`}>
+                      <TableText>{t?.display ?? ''}</TableText>
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
           </thead>
           <tbody>
             {view.length === 0 && (

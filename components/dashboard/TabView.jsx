@@ -145,6 +145,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
             totalCount={totalCount}
             pagerSlot={pagerSlot}
             fillHeight={fillHeight}
+            headers={config.headers}
           />
         </>
       )}

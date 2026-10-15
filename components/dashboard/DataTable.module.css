@@ -21,9 +21,9 @@
   border-bottom: 1px solid var(--color-divider-light);
 }
 
-/* The header row is the dark navy band (bg-footer) — a light grid line
-   would glare on it, so its cells get a faint white edge instead. */
-.table > thead > tr > th {
+/* The header row and the Total row are dark bands — a light grid line
+   would glare on them, so their cells get a faint white edge instead. */
+.table > thead > tr > :is(th, td) {
   border-right-color: rgb(255 255 255 / 0.12);
   border-bottom-color: rgb(255 255 255 / 0.12);
 }

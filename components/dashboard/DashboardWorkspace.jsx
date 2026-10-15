@@ -951,10 +951,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
      
         {/* A flex column so the active tab's table can stretch into whatever
             height is left (fillHeight) — its pager sits on the bottom edge, no
-            padding under it. That height is fixed: the rows scroll inside the
-            table under its pinned header row and never make the page longer;
-            the page itself only scrolls when the cards / graphs leave the
-            table less than its minimum. Nothing else on the page scrolls
+            padding under it. That height is the page's full visible height
+            (useFillHeight): the page scrolls the cards / graphs out of view,
+            then the table fills the screen and only its rows scroll, under
+            its pinned header and Total rows. Nothing else on the page scrolls
             sideways (overflow-x-hidden) — except while arranging, when a
             Title Card line wider than the screen scrolls the page sideways
             (see KpiCardRow). */}

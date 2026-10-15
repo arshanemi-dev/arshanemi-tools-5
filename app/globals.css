@@ -254,11 +254,19 @@ svg.lucide {
 }
 .dropdown-panel-in { animation: dropdown-panel-in 120ms cubic-bezier(0.16, 1, 0.3, 1); }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: var(--color-surface); }
-::-webkit-scrollbar-thumb { background: var(--color-divider-light); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+/* Custom scrollbar — app-wide: a 10px fully rounded thumb with 2px of
+   padding on every side (a transparent border its colour stops inside —
+   background-clip), inside a rounded track that stops 3px short of each end.
+   (Chrome drops every ::-webkit-scrollbar rule on an element that sets
+   scrollbar-width / scrollbar-color, so those two are left to Firefox only.) */
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: var(--color-surface); border-radius: 9999px; margin: 3px; }
+::-webkit-scrollbar-thumb { background-color: var(--color-divider-light); background-clip: padding-box; border: 2px solid transparent; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--color-accent); }
+::-webkit-scrollbar-corner { background: transparent; }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--color-divider-light) transparent; }
+}
 
 /* ── WordPress article content renderer ─────────────────────────────────── */
 .wp-content {

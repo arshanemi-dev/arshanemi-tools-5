@@ -11,6 +11,10 @@ import useFillHeight from './useFillHeight';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
+import { tableTotals } from '@/lib/profitLoss/tableTotals';
+
+// The Total row's cells — the navy band right under the blue header row, pinned with it.
+const TOTAL_CELL = 'bg-footer px-3 py-2 font-semibold text-white whitespace-nowrap';
 
 // Template-driven details table. `columns` = resolved header defs
 // ({ id, name, type, format, signed, primitive }) in display order; `rows` =
@@ -59,6 +63,9 @@ export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
   pagerSlot = null, fillHeight = false,
+  // Every header of the template — what a ratio formula's Total reads
+  // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
+  headers = null,
 }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
@@ -130,6 +137,9 @@ export default function DetailsTable({
     return out;
   }, [rows, applied, sort]);
 
+  // The Total row: every filtered row, every page — not just this one.
+  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
+
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
   // out-of-range page.
@@ -156,12 +166,13 @@ export default function DetailsTable({
   }
 
   return (
-    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-80 grow flex-col overflow-clip data-[fill-full]:min-h-[var(--page-h)]' : 'overflow-hidden'}`}>
-      {/* fillHeight (the dashboard): a fixed height — whatever the page has
-          left below the cards / graphs, or the page's full visible height
-          when that's too little (useFillHeight) — however many rows there
-          are, pager on the bottom edge. Only the rows scroll, inside it,
-          under the pinned (sticky) header row. */}
+    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-[var(--page-h,20rem)] grow flex-col overflow-clip' : 'overflow-hidden'}`}>
+      {/* fillHeight (the dashboard): always the page's full visible height
+          (--page-h, useFillHeight) however many rows there are — once the
+          page has scrolled the cards / graphs away it fills the screen,
+          pager on the bottom edge. Only the rows scroll, inside it, under
+          the pinned (sticky) header and Total rows; the sideways scrollbar
+          sits under the last row. */}
       {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
@@ -177,22 +188,25 @@ export default function DetailsTable({
       {/* h-0 + grow (fillHeight): the rows never make the table taller — it takes the room it's given and scrolls them */}
       <div data-table-scroll className={`overflow-auto ${fillHeight ? 'h-0 grow' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
         <table className={`${styles.table} text-sm`}>
-          <thead>
+          {/* The whole head is what's pinned (sticky) — the header row and, right
+              under it, the Total row — so the two stay together at the top
+              whatever height the header labels wrap to. */}
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-divider">
-              <th className="sticky top-0 z-10 w-10 bg-[#1565C0] px-1 py-1">
+              <th className="w-10 bg-[#1565C0] px-1 py-1">
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
               </th>
               {displayCols.map((col) => {
                 if (col.kind === 'cost') {
                   return (
-                    <th key="__cost__" className="sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">
+                    <th key="__cost__" className="bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">
                       Cost
                     </th>
                   );
                 }
                 const hlCol = isHighlighted(hl, 'header', col.id);
                 return (
-                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`sticky top-0 z-10 bg-[#1565C0] px-1 py-1 text-center font-medium ${hlCol ? HL_HEAD : 'text-white'}`}>
+                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`bg-[#1565C0] px-1 py-1 text-center font-medium ${hlCol ? HL_HEAD : 'text-white'}`}>
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}
@@ -213,6 +227,22 @@ export default function DetailsTable({
                 );
               })}
             </tr>
+            {view.length > 0 && (
+              <tr>
+                <td className={TOTAL_CELL} />
+                {displayCols.map((col, i) => {
+                  if (col.kind === 'cost') return <td key="__cost__" className={TOTAL_CELL} />;
+                  if (i === 0) return <td key={col.key} className={`${TOTAL_CELL} text-center uppercase tracking-wide`}>Total</td>;
+                  const t = totals[col.key];
+                  const neg = col.signed && Number(t?.raw) < 0;
+                  return (
+                    <td key={col.key} className={`${TOTAL_CELL} text-center tabular-nums ${neg ? 'text-[#fca5a5]' : ''}`}>
+                      <TableText>{t?.display ?? ''}</TableText>
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
           </thead>
           <tbody>
             {view.length === 0 && (
