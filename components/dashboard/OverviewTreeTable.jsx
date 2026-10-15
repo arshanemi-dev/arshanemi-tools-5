@@ -8,6 +8,7 @@ import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
 import useCostFill from './useCostFill';
+import useFillHeight from './useFillHeight';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
@@ -48,6 +49,7 @@ export default function OverviewTreeTable({
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [childLimits, setChildLimits] = useState({});
   const scrollRef = useRef(null);
+  const fillRef = useFillHeight(fillHeight);
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
@@ -170,12 +172,12 @@ export default function OverviewTreeTable({
   );
 
   return (
-    <div className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex shrink-0 grow flex-col overflow-clip' : 'overflow-hidden'}`}>
-      {/* fillHeight (the dashboard): as tall as its rows — the page scrolls
-          down, this only scrolls sideways — and stretched to the bottom of
-          the page when the rows are fewer, pager on the bottom edge. Not a
-          scroll container itself (overflow-clip), so it never shrinks below
-          its rows. */}
+    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-80 grow flex-col overflow-clip data-[fill-full]:min-h-[var(--page-h)]' : 'overflow-hidden'}`}>
+      {/* fillHeight (the dashboard): a fixed height — whatever the page has
+          left below the cards / graphs, or the page's full visible height
+          when that's too little (useFillHeight) — however many rows there
+          are, pager on the bottom edge. Only the rows scroll, inside it,
+          under the pinned (sticky) header row. */}
       {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
@@ -187,7 +189,8 @@ export default function OverviewTreeTable({
           </button>
         </div>
       )}
-      <div ref={scrollRef} data-table-scroll className={`${fillHeight ? 'shrink-0 grow overflow-x-auto' : 'max-h-[65vh] overflow-auto'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
+      {/* h-0 + grow (fillHeight): the rows never make the table taller — it takes the room it's given and scrolls them */}
+      <div ref={scrollRef} data-table-scroll className={`scroll-pt-12 overflow-auto ${fillHeight ? 'h-0 grow' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">

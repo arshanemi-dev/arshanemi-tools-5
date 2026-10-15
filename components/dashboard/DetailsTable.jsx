@@ -7,6 +7,7 @@ import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
 import useCostFill from './useCostFill';
+import useFillHeight from './useFillHeight';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
@@ -98,6 +99,7 @@ export default function DetailsTable({
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false); // a filter menu is open — the table makes room for it
   const [page, setPage] = useState(1);
+  const fillRef = useFillHeight(fillHeight);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
@@ -154,12 +156,12 @@ export default function DetailsTable({
   }
 
   return (
-    <div className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex shrink-0 grow flex-col overflow-clip' : 'overflow-hidden'}`}>
-      {/* fillHeight (the dashboard): as tall as its rows — the page scrolls
-          down, this only scrolls sideways — and stretched to the bottom of
-          the page when the rows are fewer, pager on the bottom edge. Not a
-          scroll container itself (overflow-clip), so it never shrinks below
-          its rows. */}
+    <div ref={fillRef} className={`rounded-xl border border-divider bg-background ${fillHeight ? 'flex min-h-80 grow flex-col overflow-clip data-[fill-full]:min-h-[var(--page-h)]' : 'overflow-hidden'}`}>
+      {/* fillHeight (the dashboard): a fixed height — whatever the page has
+          left below the cards / graphs, or the page's full visible height
+          when that's too little (useFillHeight) — however many rows there
+          are, pager on the bottom edge. Only the rows scroll, inside it,
+          under the pinned (sticky) header row. */}
       {/* Filters on: say so on the table itself, with a one-click way out. */}
       {applied.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-action-soft px-3 py-1.5 text-xs text-foreground">
@@ -172,7 +174,8 @@ export default function DetailsTable({
         </div>
       )}
       {/* min-h while a filter menu is open: with only a few rows the menu (taller on a number column — its Min / Max range) would otherwise be cut off by this scroll area */}
-      <div data-table-scroll className={`${fillHeight ? 'shrink-0 grow overflow-x-auto' : 'max-h-[65vh] overflow-auto'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
+      {/* h-0 + grow (fillHeight): the rows never make the table taller — it takes the room it's given and scrolls them */}
+      <div data-table-scroll className={`overflow-auto ${fillHeight ? 'h-0 grow' : 'max-h-[65vh]'} ${filterOpen ? 'min-h-[30rem]' : ''}`}>
         <table className={`${styles.table} text-sm`}>
           <thead>
             <tr className="border-b border-divider">

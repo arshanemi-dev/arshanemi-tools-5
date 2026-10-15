@@ -951,11 +951,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
      
         {/* A flex column so the active tab's table can stretch into whatever
             height is left (fillHeight) — its pager sits on the bottom edge, no
-            padding under it. The page is what scrolls down: a table never
-            scrolls up/down inside itself here, only sideways, and nothing else
-            on the page scrolls sideways (overflow-x-hidden) — except while
-            arranging, when a Title Card line wider than the screen scrolls
-            the page sideways (see KpiCardRow). */}
+            padding under it. That height is fixed: the rows scroll inside the
+            table under its pinned header row and never make the page longer;
+            the page itself only scrolls when the cards / graphs leave the
+            table less than its minimum. Nothing else on the page scrolls
+            sideways (overflow-x-hidden) — except while arranging, when a
+            Title Card line wider than the screen scrolls the page sideways
+            (see KpiCardRow). */}
         <main className={`flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-6 ${editMode ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
           <DashboardHeaderBar
             title={activePageName}

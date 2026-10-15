@@ -6,8 +6,8 @@ const EDGE = 36; // px from the scroll area's top / bottom where a drag scrolls 
 const STEP = 14; // px it scrolls per frame there
 
 // The nearest box above `el` that actually scrolls up/down — the table's own
-// scroll area where it has one (Template Settings' preview), else the page
-// around it (the dashboard, where a table only scrolls sideways).
+// scroll area once its rows outgrow it (a fixed height on the dashboard, up
+// to 65vh in Template Settings' preview), else the page around it.
 function scrollerOf(el) {
   for (let node = el.parentElement; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node);
