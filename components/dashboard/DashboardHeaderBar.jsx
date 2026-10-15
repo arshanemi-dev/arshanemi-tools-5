@@ -43,8 +43,8 @@ export default function DashboardHeaderBar({
   onExportPdf,
 }) {
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
+      {/* <h1 className="text-2xl font-bold tracking-tight text-foreground">.</h1> */}
 
       <div className="flex flex-wrap items-center gap-2">
         <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />

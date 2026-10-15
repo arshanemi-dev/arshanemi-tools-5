@@ -961,7 +961,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
             sideways (overflow-x-hidden) — except while arranging, when a
             Title Card line wider than the screen scrolls the page sideways
             (see KpiCardRow). */}
-        <main className={`flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-6 ${editMode ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+        <main className={`flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-2 ${editMode ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
          
 
           {/* Rows were uploaded and mapped fine, but every one of them falls
@@ -1031,7 +1031,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           {/* The save of an upload whose window was hidden, or of rows written back outside one. */}
           {(!uploadStage || uploadStage.hidden) && <SavingRowsLine saving={rowSave} onRetry={retryRowSave} />}
 
-          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-6 flex flex-1 flex-col ${calculating ? 'opacity-60' : ''}`}>
+          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-2 flex flex-1 flex-col ${calculating ? 'opacity-60' : ''}`}>
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
                 their zero/empty state — only the rows are empty. */}

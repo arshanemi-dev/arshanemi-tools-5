@@ -49,7 +49,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -116,20 +116,25 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
     />
   );
 
+  // The Title Cards. On the dashboard they portal up into `cardsSlot` —
+  // above the header bar (DashboardWorkspace) — so the header bar sits
+  // between them and the graphs / table; the preview keeps them here.
+  const cards = allCards.length > 0 && (
+    <div className="space-y-2">
+      {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
+      {cardsArrange.visible.length > 0 && (
+        <KpiCardRow cards={cardsArrange.visible} values={resolved.titleCardValues} editMode={editMode} arrange={cardsArrange} columns={tab?.layout?.titleCards?.columns} />
+      )}
+    </div>
+  );
+
   // fillHeight (the dashboard, not Template Settings' preview): stretch to
   // the height the page leaves and let the table take what's left over —
   // the Hierarchy nav keeps its own height beside it.
   return (
     <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}`}>
       {pills && viewPillsSlot && createPortal(pills, viewPillsSlot)}
-      {allCards.length > 0 && (
-        <div className="space-y-2">
-          {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
-          {cardsArrange.visible.length > 0 && (
-            <KpiCardRow cards={cardsArrange.visible} values={resolved.titleCardValues} editMode={editMode} arrange={cardsArrange} columns={tab?.layout?.titleCards?.columns} />
-          )}
-        </div>
-      )}
+      {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
       {allGraphs.length > 0 && (
         <div className="space-y-2">

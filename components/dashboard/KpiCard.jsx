@@ -4,6 +4,8 @@ import ArrangeControl from './ArrangeControl';
 import { isHexColor } from '@/data/templateSchema';
 
 // One title card: name + sub value on the top row, big main value below.
+// Always the full height of its slot (h-full — the cards of a line all as
+// tall as its tallest), the main value on the bottom edge.
 // Matches the reference — rounded-2xl, hairline border, ₹ prefix for money.
 // `textColor` / `bgColor` = the card's own colours from Template Settings
 // ('#rrggbb', or nothing for the theme's). They are admin-picked data, so
@@ -19,7 +21,7 @@ export default function KpiCard({
   const ownText = isHexColor(textColor);
   const colors = { color: ownText ? textColor : undefined, backgroundColor: isHexColor(bgColor) ? bgColor : undefined };
   return (
-    <div className="relative flex flex-col rounded-2xl border border-divider bg-background p-5 text-left" style={colors}>
+    <div className="relative flex h-full flex-col justify-between rounded-2xl border border-divider bg-background p-5 text-left" style={colors}>
       {editMode && (
         <ArrangeControl
           currentId={currentId}
