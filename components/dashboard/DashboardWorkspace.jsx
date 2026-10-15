@@ -22,7 +22,7 @@ import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/expo
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
-import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, overviewShownHeaders, tabColumnDefs, tabsHeaderPool } from '@/lib/profitLoss/tabColumns';
 import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
@@ -404,9 +404,12 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // tree for exactly these, so this is an input of `resolved` — held as a
   // string, so ticking a column on some OTHER tab (a new myColumnsFor, the
   // same ids here) doesn't recompute the whole dashboard.
-  const overviewHeaderKey = useMemo(() => JSON.stringify(Object.fromEntries(
-    (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false)).map((h) => h.id)]),
-  )), [config, myColumnsFor]);
+  const overviewHeaderKey = useMemo(() => {
+    const pool = tabsHeaderPool(config);
+    return JSON.stringify(Object.fromEntries(
+      (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false), pool).map((h) => h.id)]),
+    ));
+  }, [config, myColumnsFor]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
   const viewOptions = useMemo(() => ({
@@ -776,7 +779,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     if (isOverview) {
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
     } else {
-      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
+      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId, pool: tabsHeaderPool(config) });
       if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id, tabDef?.headerIds || []), tabDef?.headerIds)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
@@ -959,29 +962,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
             Title Card line wider than the screen scrolls the page sideways
             (see KpiCardRow). */}
         <main className={`flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-6 ${editMode ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
-          <DashboardHeaderBar
-            title={activePageName}
-            viewPillsSlotRef={setViewPillsSlot}
-            onReset={resetFilters}
-            showSetting={canManageTemplates}
-            onOpenSetting={openTemplateSettings}
-            companyOptions={companyOptions}
-            company={pending.company}
-            onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
-            dateRange={pending.dateRange}
-            onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
-            ads={pending.ads}
-            onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
-            updating={dirty || calculating || exporting}
-            actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
-            hasData={hasData}
-            selectedCount={selectedKeys.size}
-            onDeleteClick={() => setConfirmDeleteOpen(true)}
-            onExportExcel={() => doExport('xlsx')}
-            onExportPdf={() => doExport('pdf')}
-            onOpenHistory={() => setHistoryOpen(true)}
-            saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
-          />
+         
 
           {/* Rows were uploaded and mapped fine, but every one of them falls
               outside the selected date range — the table would otherwise
@@ -1006,6 +987,30 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
               </button>
             </div>
           )}
+
+           <DashboardHeaderBar
+            title={activePageName}
+            viewPillsSlotRef={setViewPillsSlot}
+            onReset={resetFilters}
+            showSetting={canManageTemplates}
+            onOpenSetting={openTemplateSettings}
+            companyOptions={companyOptions}
+            company={pending.company}
+            onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
+            dateRange={pending.dateRange}
+            onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
+            ads={pending.ads}
+            onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
+            updating={dirty || calculating || exporting}
+            actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
+            hasData={hasData}
+            selectedCount={selectedKeys.size}
+            onDeleteClick={() => setConfirmDeleteOpen(true)}
+            onExportExcel={() => doExport('xlsx')}
+            onExportPdf={() => doExport('pdf')}
+            onOpenHistory={() => setHistoryOpen(true)}
+            saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
+          />
 
           {restoring && (
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">

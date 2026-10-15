@@ -13,8 +13,9 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 
-// The Total row's cells — the navy band right under the blue header row, pinned with it.
-const TOTAL_CELL = 'bg-footer px-3 py-2 font-semibold text-white whitespace-nowrap';
+// The Total row's cells — black on light green, right under the blue header row, pinned with it.
+const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
+const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; // its colour set per value — black, or red when negative
 
 // Template-driven details table. `columns` = resolved header defs
 // ({ id, name, type, format, signed, primitive }) in display order; `rows` =
@@ -236,7 +237,7 @@ export default function DetailsTable({
                   const t = totals[col.key];
                   const neg = col.signed && Number(t?.raw) < 0;
                   return (
-                    <td key={col.key} className={`${TOTAL_CELL} text-center tabular-nums ${neg ? 'text-[#fca5a5]' : ''}`}>
+                    <td key={col.key} className={`${TOTAL_VALUE} text-center tabular-nums ${neg ? 'text-[#b91c1c]' : 'text-black'}`}>
                       <TableText>{t?.display ?? ''}</TableText>
                     </td>
                   );

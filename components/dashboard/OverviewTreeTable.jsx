@@ -16,8 +16,9 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 
-// The Total row's cells — the navy band right under the blue header row, pinned with it.
-const TOTAL_CELL = 'bg-footer px-3 py-2 font-semibold text-white whitespace-nowrap';
+// The Total row's cells — black on light green, right under the blue header row, pinned with it.
+const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
+const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; // its colour set per value — black, or red when negative
 
 const CHILD_PAGE = 100; // children rendered per open node before "Show more"
 
@@ -224,7 +225,7 @@ export default function OverviewTreeTable({
                   const t = totals[c.key];
                   const neg = c.signed && Number(t?.raw) < 0;
                   return (
-                    <td key={c.key} className={`${TOTAL_CELL} text-center tabular-nums ${neg ? 'text-[#fca5a5]' : ''}`}>
+                    <td key={c.key} className={`${TOTAL_VALUE} text-center tabular-nums ${neg ? 'text-[#b91c1c]' : 'text-black'}`}>
                       <TableText>{t?.display ?? ''}</TableText>
                     </td>
                   );

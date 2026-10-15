@@ -7,7 +7,7 @@ import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
 import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
-import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, tabColumnDefs, tabsHeaderPool } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 
 function SectionLabel({ text, hidden, onShow }) {
@@ -62,6 +62,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   const { key: firstHeaderDef, rest: restHeaderDefs } = tabColumnDefs(tab, resolved.headers || [], {
     allHeaders,
     groupByHeaderId: config.marketplace?.groupByHeaderId,
+    pool: allHeaders ? tabsHeaderPool(config) : null,
   });
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));

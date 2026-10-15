@@ -21,11 +21,17 @@
   border-bottom: 1px solid var(--color-divider-light);
 }
 
-/* The header row and the Total row are dark bands — a light grid line
-   would glare on them, so their cells get a faint white edge instead. */
-.table > thead > tr > :is(th, td) {
+/* The header row is a dark band — a light grid line would glare on it, so
+   its cells get a faint white edge instead; the light green Total row under
+   it gets a faint dark one. */
+.table > thead > tr > th {
   border-right-color: rgb(255 255 255 / 0.12);
   border-bottom-color: rgb(255 255 255 / 0.12);
+}
+
+.table > thead > tr > td {
+  border-right-color: rgb(0 0 0 / 0.08);
+  border-bottom-color: rgb(0 0 0 / 0.12);
 }
 
 /* Values sit centered under their centered headers. The Overview tree

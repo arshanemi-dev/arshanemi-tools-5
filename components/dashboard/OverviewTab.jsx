@@ -13,7 +13,7 @@ import { levelStyle } from './overviewLevelStyles';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 import { TREE_COL, ancestorKeys, keysToDepth } from '@/lib/profitLoss/overviewTree';
-import { overviewColumnDefs } from '@/lib/profitLoss/tabColumns';
+import { overviewColumnDefs, tabsHeaderPool } from '@/lib/profitLoss/tabColumns';
 
 function SectionLabel({ text, hidden, onShow }) {
   return (
@@ -104,7 +104,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
 
   if (!tab) return null;
 
-  const pickable = overviewColumnDefs(tab, config.headers || []);
+  const pickable = overviewColumnDefs(tab, config.headers || [], tabsHeaderPool(config));
   const pills = onMyColumnsChange && levels.length > 0 && (
     <DetailsViewPills
       tabHeaders={[{ id: TREE_COL, name: levels.map((h) => h.name).join(' › ') }, ...pickable.rest]}

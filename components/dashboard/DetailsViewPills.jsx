@@ -8,7 +8,8 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 
 // "My Details ▾" — the column set the table shows. Its dropdown is a
 // checklist of every header the table can show (`tabHeaders` — on the
-// dashboard that's every header of the active version, see tabColumnDefs),
+// dashboard that's every header the template's tabs pick, merged once each
+// in the browser — tabsHeaderPool — not every header of the version),
 // in table order; the ticked ones are the user's own ticks for this tab
 // (`myColumns` — persisted to /api/profit-loss/settings when signed in).
 // Until they tick something, it's the tab's default (`defaultIds` — the
