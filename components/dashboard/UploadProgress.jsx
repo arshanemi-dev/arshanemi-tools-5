@@ -29,18 +29,22 @@ function Step({ state, title, detail, children }) {
 }
 
 // What an upload is doing, step by step, while it does it — reading the
-// file(s), adding the rows to the dashboard, then (signed in) saving them to
-// the account in parts. `stage` = DashboardWorkspace's upload stage
-// ({ step: 'reading' | 'adding' | 'saving' | 'done', fileIndex, fileCount,
-// fileName, rows }); `saving` = useRowSaver's status ({ phase, saved, total,
-// error }) once the save has started. The rows are already on the dashboard
+// file(s), (when uploads cost coins) charging for it, adding the rows to the
+// dashboard, then (signed in) saving them to the account in parts. `stage` =
+// DashboardWorkspace's upload stage ({ step: 'reading' | 'charging' |
+// 'adding' | 'saving' | 'done', fileIndex, fileCount, fileName, rows,
+// charged }); `billed` = this upload is charged (lib/profitLoss/
+// useUploadBilling.js) and `stage.charged` says what it cost; `saving` =
+// useRowSaver's status ({ phase, saved, total, error }) once the save has
+// started. The rows are already on the dashboard
 // by the time the save runs, so `onHide` lets it carry on in the background
 // (SavingRowsLine then shows where it is); `onRetry` tries a failed save
 // again.
-export default function UploadProgress({ stage, saving, signedIn, onHide, onRetry }) {
+export default function UploadProgress({ stage, saving, signedIn, billed = false, onHide, onRetry }) {
   if (!stage || stage.hidden) return null;
   const { step, fileIndex = 0, fileCount = 1, fileName = '', rows = 0 } = stage;
   const reading = step === 'reading';
+  const charging = step === 'charging';
   const adding = step === 'adding';
   const failed = step === 'saving' && saving?.phase === 'failed';
   const saved = step === 'done' || (step === 'saving' && saving?.phase === 'saved');
@@ -62,14 +66,21 @@ export default function UploadProgress({ stage, saving, signedIn, onHide, onRetr
             title={fileCount > 1 ? `Reading the files (${Math.min(fileIndex + 1, fileCount)} of ${fileCount})` : 'Reading the file'}
             detail={reading ? fileName : null}
           />
+          {billed && (
+            <Step
+              state={reading ? 'todo' : charging ? 'active' : 'done'}
+              title="Checking your coins"
+              detail={charging ? 'Working out what this upload costs…' : stage.charged || null}
+            />
+          )}
           <Step
-            state={reading ? 'todo' : adding ? 'active' : 'done'}
+            state={reading || charging ? 'todo' : adding ? 'active' : 'done'}
             title="Adding the rows to your dashboard"
-            detail={reading ? null : `${count(rows)} row${rows === 1 ? '' : 's'}${adding ? ' — working out the totals…' : ''}`}
+            detail={reading || charging ? null : `${count(rows)} row${rows === 1 ? '' : 's'}${adding ? ' — working out the totals…' : ''}`}
           />
           {signedIn && (
             <Step
-              state={reading || adding ? 'todo' : failed ? 'failed' : saved ? 'done' : 'active'}
+              state={reading || charging || adding ? 'todo' : failed ? 'failed' : saved ? 'done' : 'active'}
               title="Saving to your account"
               detail={failed ? saving.error
                 : saved ? (saving?.total ? `${count(saving.total)} row${saving.total === 1 ? '' : 's'} saved` : 'Already up to date')

@@ -17,6 +17,8 @@ import { useCalculation } from '@/lib/profitLoss/useCalculation';
 import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
 import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
+import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
+import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
 import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
@@ -29,6 +31,8 @@ import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import BillingGateModal from '@/components/billing/BillingGateModal';
+import FreeTierLimitModal from '@/components/billing/FreeTierLimitModal';
 
 import DashboardTabBar from './DashboardTabBar';
 import DashboardToolbar from './DashboardToolbar';
@@ -280,6 +284,15 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     orderIdHeader,
     transactionIdHeader,
   });
+
+  // Coins per new order and per extra Marketplace + Brand account — every
+  // upload is counted here and charged by the admin panel (signed in), or
+  // held to the free tier (signed out), before any of its rows go onto the
+  // dashboard. See lib/profitLoss/useUploadBilling.js.
+  const {
+    checkUpload, billed: uploadBilled, gate: billingGate, closeGate: closeBillingGate,
+    freeLimit, closeFreeLimit,
+  } = useUploadBilling({ loggedIn, orderIdHeader, addToast });
 
   // Every Marketplace x Brand combo ("company") this user has actually used,
   // from the dedicated market_place_companies table — reloaded on every
@@ -585,6 +598,19 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
         }
       }
       if (added.length) {
+        // Refused (not enough coins, past the free tier) → its alert says
+        // why and nothing from this upload is added.
+        const newRows = added.flatMap((a) => a.rows);
+        if (uploadBilled) {
+          setUploadStage((s) => s && { ...s, step: 'charging', rows: newRows.length });
+          await nextPaint();
+        }
+        const billing = await checkUpload({
+          rows: newRows, existingRows: canonicalRows, savedCompanies: savedCompanies.map((c) => c.company), company: tag.company,
+        });
+        if (!billing.ok) return;
+        const coinsUsed = billing.charge?.coins || 0;
+        if (billing.charge) setUploadStage((s) => s && { ...s, charged: chargeSummary(billing.charge) });
         // The price an order is uploaded at: its SKU's default costs as they
         // stand right now are written onto the new rows — and onto the older
         // rows of those same SKUs that had no price yet — and stay there
@@ -604,7 +630,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           ...priced,
         ]);
         const sheets = added.length > files.length ? ` from ${added.length} sheets` : '';
-        addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
+        const coins = coinsUsed ? ` · ${coinsUsed} coin${coinsUsed === 1 ? '' : 's'} used` : '';
+        addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}${coins}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
         fitDateRangeTo(fresh);
         landed = fresh.length > 0;
       }
@@ -614,7 +641,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // went in (every file was turned down — the toasts say why): no window.
       setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error]);
+  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies]);
 
   // The window closes by itself a moment after its last step is done — a
   // failed save keeps it open (it offers Try again), and so does one still
@@ -1135,9 +1162,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
         stage={uploadStage}
         saving={rowSave}
         signedIn={loggedIn}
+        billed={uploadBilled}
         onHide={() => setUploadStage((s) => (rowSave?.phase === 'failed' ? null : s && { ...s, hidden: true }))}
         onRetry={retryRowSave}
       />
+
+      <BillingGateModal gate={billingGate} onClose={closeBillingGate} />
+      <FreeTierLimitModal limit={freeLimit} onClose={closeFreeLimit} />
 
       <ConfirmDialog
         open={confirmDeleteOpen}
