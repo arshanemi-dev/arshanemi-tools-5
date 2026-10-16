@@ -404,12 +404,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // tree for exactly these, so this is an input of `resolved` — held as a
   // string, so ticking a column on some OTHER tab (a new myColumnsFor, the
   // same ids here) doesn't recompute the whole dashboard.
-  const overviewHeaderKey = useMemo(() => {
-    const pool = tabsHeaderPool(config);
-    return JSON.stringify(Object.fromEntries(
-      (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false), pool).map((h) => h.id)]),
-    ));
-  }, [config, myColumnsFor]);
+  const overviewHeaderKey = useMemo(() => JSON.stringify(Object.fromEntries(
+    (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false)).map((h) => h.id)]),
+  )), [config, myColumnsFor]);
+  // What "My Details" offers on the dashboard: the headers the template's
+  // tabs pick, merged (tabsHeaderPool) — only its list; Position Settings
+  // still offers every header.
+  const headerPool = useMemo(() => tabsHeaderPool(config), [config]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
   const viewOptions = useMemo(() => ({
@@ -779,7 +780,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     if (isOverview) {
       if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
     } else {
-      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId, pool: tabsHeaderPool(config) });
+      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
       if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id, tabDef?.headerIds || []), tabDef?.headerIds)];
     }
     const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
@@ -1072,6 +1073,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
                 viewPillsSlot={viewPillsSlot}
+                headerPool={headerPool}
                 fillHeight
               />
             ) : (
@@ -1094,6 +1096,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
+                headerPool={headerPool}
                 allHeaders
                 fillHeight
               />

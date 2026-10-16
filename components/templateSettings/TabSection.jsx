@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { MAX_CARDS_PER_ROW, makeTab } from '@/data/templateSchema';
-import { ourHeaderOptions } from '@/lib/profitLoss/headerUsage';
+import { headerPickerOptions } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_TAB_ICON } from '@/components/dashboard/tabIcons';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
@@ -26,7 +26,7 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
 
   const cardOpts = (config.titleCards || []).map((c) => ({ id: c.id, name: c.name }));
   const graphOpts = (config.graphs || []).map((g) => ({ id: g.id, name: g.name }));
-  const headerOpts = ourHeaderOptions(config.headers, active?.headerIds); // Our Headers only, never sheet columns
+  const headerOpts = headerPickerOptions(config.headers); // every header, sheet columns flagged
 
   const patchLayout = (patch) => patchItem('tabs', active.id, { layout: { ...active.layout, ...patch } });
 

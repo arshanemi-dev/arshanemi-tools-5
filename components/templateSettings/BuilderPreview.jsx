@@ -238,6 +238,10 @@ export default function BuilderPreview({ config, highlight = null }) {
                     resolved={resolved}
                     myColumns={myColumns}
                     onMyColumnsChange={setMyColumns}
+                    // "My Details" offers every header of the template here
+                    // (the table still opens on the tab's own picks); a tab
+                    // with none picked keeps showing no table.
+                    allHeaders={!!tabs.find((t) => t.id === active?.id)?.headerIds?.length}
                   />
                 )}
               </div>

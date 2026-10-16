@@ -7,7 +7,7 @@ import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
 import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
-import { myDetailColumns, tabColumnDefs, tabsHeaderPool } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 
 function SectionLabel({ text, hidden, onShow }) {
@@ -40,7 +40,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // My Details pill portals into DashboardHeaderBar instead of sitting above
 // the table. The pager stays in the table's footer (no page passes
 // `pagerSlot` now), as does Template Settings' preview.
-export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null }) {
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null, headerPool = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -62,7 +62,6 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   const { key: firstHeaderDef, rest: restHeaderDefs } = tabColumnDefs(tab, resolved.headers || [], {
     allHeaders,
     groupByHeaderId: config.marketplace?.groupByHeaderId,
-    pool: allHeaders ? tabsHeaderPool(config) : null,
   });
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
@@ -89,6 +88,9 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
       defaultIds={tab.headerIds}
       onMyColumnsChange={onMyColumnsChange}
       size={viewPillsSlot ? 'md' : 'sm'}
+      // The dashboard's merged tabs list (tabsHeaderPool), except while
+      // arranging (Position Settings) — then, and in the preview, every header.
+      pool={editMode ? null : headerPool}
     />
   );
 
