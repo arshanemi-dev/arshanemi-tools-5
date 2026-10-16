@@ -20,7 +20,7 @@ import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
 import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
 import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
-import { downloadTabsSeparately } from '@/lib/profitLoss/exportTemplate';
+import { downloadDashboard } from '@/lib/profitLoss/exportTemplate';
 import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportView';
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
@@ -816,8 +816,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Excel/PDF always pull "all data" — every uploaded row, no date bound
   // (resolveEverything, worked out here, when asked for) — and every visible
   // Tab + Overview Tab, PLUS Transactions (when Order Id is mapped), not
-  // just the active one, each downloaded as its OWN file (an Overview tab's
-  // Excel file has a sheet per hierarchy level).
+  // just the active one — all in ONE file: an Excel workbook with a sheet per
+  // Tab and, for an Overview tab, a sheet per hierarchy level named after the
+  // level; or one PDF with each page on its own pages.
   const doExport = async (kind) => {
     if (restoring || restoreError || calculating || calculationError || exporting || busy) { addToast('Wait for complete data and calculations before exporting', 'error'); return; }
     setExporting(true);
@@ -830,9 +831,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       ].filter((v) => v.table.columns.length);
       if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
       const label = config.marketplace?.name || 'Dashboard';
-      const what = kind === 'pdf' ? 'PDF' : 'Excel';
-      if (tabs.length > 1) addToast(`Downloading ${tabs.length} ${what} files, one per tab — if your browser asks, allow multiple downloads`);
-      await downloadTabsSeparately(kind, { label, tabs });
+      await downloadDashboard(kind, { label, tabs });
     } catch (err) {
       console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');

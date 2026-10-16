@@ -51,9 +51,9 @@ export default function DashboardHeaderBar({
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
         {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
         <div ref={viewPillsSlotRef} className="contents" />
-        <IconButton icon={FileSpreadsheet} label="Excel" title="Download every tab as its own Excel file (only the columns shown)" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
+        <IconButton icon={FileSpreadsheet} label="Excel" title="Download all tabs in one Excel file — a sheet per tab and per Overview level (only the columns shown)" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
         <AdsCostControl value={ads} onChange={onAdsChange} />
-        <IconButton icon={FileText} label="PDF" title="Download every tab as its own PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
+        <IconButton icon={FileText} label="PDF" title="Download all tabs in one PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
         {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
 
         <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
