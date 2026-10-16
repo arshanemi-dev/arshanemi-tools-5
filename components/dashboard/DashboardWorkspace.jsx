@@ -20,7 +20,8 @@ import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
 import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
 import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
-import { downloadMultiTabXlsx, downloadMultiTabPdf } from '@/lib/profitLoss/exportTemplate';
+import { downloadTabsSeparately } from '@/lib/profitLoss/exportTemplate';
+import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportView';
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
@@ -787,70 +788,25 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Takes which resolved snapshot to read from — `resolved` (the live,
   // date-filtered view) by default, or every uploaded row with no date
   // bound (resolveEverything) when Download PDF/Excel calls it.
-  // One tab's export view — the table respects "My Details" (that tab's own
-  // ticks, the same ones the screen itself uses): only the fields currently
-  // ticked there, or the tab's default headers while nothing is (the same
-  // tabColumnDefs order TabView shows, narrowed by the same
-  // myDetailColumns). Shared by the
-  // single-tab Save-to-History payload (buildView, below) and the multi-tab
-  // PDF/Excel export (doExport) — "what you're looking at is what gets
-  // saved/exported".
-  const buildTabView = useCallback((tabDef, isOverview, source) => {
-    const ov = isOverview ? (source.overviews?.[tabDef?.id] || null) : null;
-    const overview = ov || { name: tabDef?.name, levels: [], headers: [], flatRows: [] };
-    // An Overview exports as a pivot with subtotal rows: one column per
-    // hierarchy level, then the summed headers (overview.headers — already
-    // just its My Details columns, see overviewHeaderIds); every node in
-    // depth-first order (a Company row, then its Sku rows, then each Sku's
-    // Order Ids).
-    let defs = [];
-    if (isOverview) {
-      if ((overview.levels || []).length) defs = [...overview.levels, ...overview.headers];
-    } else {
-      const { key, rest } = tabColumnDefs(tabDef, source.headers, { allHeaders: true, groupByHeaderId: config.marketplace?.groupByHeaderId });
-      if (key) defs = [key, ...myDetailColumns(rest, myColumnsFor(tabDef?.id, tabDef?.headerIds || []), tabDef?.headerIds)];
-    }
-    const rows = isOverview ? overview.flatRows || overview.rows || [] : source.tableRows;
-    const cards = (tabDef?.titleCardIds || []).map((id) => {
-      const c = (config.titleCards || []).find((x) => x.id === id);
-      const v = source.titleCardValues[id] || {};
-      return { name: c?.name || id, mainDisplay: v.main?.display, subDisplay: v.sub?.display };
-    });
-    const graphs = (tabDef?.graphIds || []).map((id) => {
-      const gDef = (config.graphs || []).find((x) => x.id === id);
-      const gData = source.graphSeries?.[id] || null;
-      return {
-        id,
-        name: gDef?.name || id,
-        chartType: gData?.chartType || gDef?.chartType || 'line',
-        series: gData?.series || [],
-      };
-    }).filter((g) => g.series && g.series.length > 0);
-
-    return {
-      tabName: isOverview ? (overview.name || tabDef?.name || 'Overview') : (tabDef?.name || ''),
-      cards,
-      graphs,
-      table: {
-        columns: defs.map((d) => d.name),
-        rows: rows.map((r) => defs.map((d) => r.cells[d.id]?.display ?? '')),
-      },
-    };
-  }, [config, myColumnsFor]);
+  // One tab's export view — exactly what that page shows: its Position
+  // Settings arrangement (hidden / reordered cards, graphs and columns),
+  // then its "My Details" ticks (lib/profitLoss/exportView.js). Shared by the
+  // Save-to-History label (buildView, below) and the PDF/Excel downloads
+  // (doExport) — "what you're looking at is what gets downloaded".
+  const buildTabView = useCallback((tabDef, isOverview, source) => tabExportView({
+    tab: tabDef,
+    isOverview,
+    source,
+    config,
+    layout,
+    myColumns: myColumnsFor(tabDef?.id, tabDef?.headerIds || [], !isOverview),
+  }), [config, layout, myColumnsFor]);
 
   // Transactions has no Template Settings config of its own (no title
   // cards, no My Details subset) — always every header, one row per Order
   // Id + Transaction Id, straight off whichever resolved-transactions
   // source is passed in.
-  const buildTransactionsView = useCallback((source) => ({
-    tabName: 'Transactions',
-    cards: [],
-    graphs: [],
-    table: {
-      columns: source.headers.map((h) => h.name),
-      rows: source.rows.map((r) => source.headers.map((h) => r.cells[h.id]?.display ?? '')),
-    },
-  }), []);
+  const buildTransactionsView = useCallback((source) => transactionsExportView(source), []);
 
   const buildView = useCallback((source = resolved) => ({
     label: config.marketplace?.name || 'Dashboard',
@@ -860,7 +816,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Excel/PDF always pull "all data" — every uploaded row, no date bound
   // (resolveEverything, worked out here, when asked for) — and every visible
   // Tab + Overview Tab, PLUS Transactions (when Order Id is mapped), not
-  // just the active one, each its own sheet/section.
+  // just the active one, each downloaded as its OWN file (an Overview tab's
+  // Excel file has a sheet per hierarchy level).
   const doExport = async (kind) => {
     if (restoring || restoreError || calculating || calculationError || exporting || busy) { addToast('Wait for complete data and calculations before exporting', 'error'); return; }
     setExporting(true);
@@ -873,9 +830,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       ].filter((v) => v.table.columns.length);
       if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
       const label = config.marketplace?.name || 'Dashboard';
-      await (kind === 'pdf'
-        ? downloadMultiTabPdf({ label, activeTabName: activePageName, tabs })
-        : downloadMultiTabXlsx({ label, activeTabName: activePageName, tabs }));
+      const what = kind === 'pdf' ? 'PDF' : 'Excel';
+      if (tabs.length > 1) addToast(`Downloading ${tabs.length} ${what} files, one per tab — if your browser asks, allow multiple downloads`);
+      await downloadTabsSeparately(kind, { label, tabs });
     } catch (err) {
       console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');
