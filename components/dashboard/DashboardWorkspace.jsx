@@ -20,7 +20,7 @@ import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
 import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
 import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
-import { downloadDashboard } from '@/lib/profitLoss/exportTemplate';
+import { downloadTab } from '@/lib/profitLoss/exportTemplate';
 import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportView';
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
@@ -813,25 +813,20 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     ...(showTransactions ? buildTransactionsView(transactionResolved) : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source)),
   }), [showTransactions, buildTransactionsView, transactionResolved, buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
 
-  // Excel/PDF always pull "all data" — every uploaded row, no date bound
-  // (resolveEverything, worked out here, when asked for) — and every visible
-  // Tab + Overview Tab, PLUS Transactions (when Order Id is mapped), not
-  // just the active one — all in ONE file: an Excel workbook with a sheet per
-  // Tab and, for an Overview tab, a sheet per hierarchy level named after the
-  // level; or one PDF with each page on its own pages.
+  // Excel/PDF download the page that is open — that Tab, that Overview Tab
+  // (in Excel a sheet per hierarchy level) or Transactions — with only the
+  // columns shown on it. They always pull "all data": every uploaded row, no
+  // date bound (resolveEverything, worked out here, when asked for).
   const doExport = async (kind) => {
     if (restoring || restoreError || calculating || calculationError || exporting || busy) { addToast('Wait for complete data and calculations before exporting', 'error'); return; }
     setExporting(true);
     try {
       const { full, fullTransactions } = await resolveEverything();
-      const tabs = [
-        ...visibleTabs.map((t) => buildTabView(t, false, full)),
-        ...visibleOverviewTabs.map((t) => buildTabView(t, true, full)),
-        ...(orderIdHeader ? [buildTransactionsView(fullTransactions)] : []),
-      ].filter((v) => v.table.columns.length);
-      if (!tabs.length) { addToast('Nothing to export', 'error'); return; }
-      const label = config.marketplace?.name || 'Dashboard';
-      await downloadDashboard(kind, { label, tabs });
+      const tab = showTransactions
+        ? buildTransactionsView(fullTransactions)
+        : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, full);
+      if (!tab.table.columns.length) { addToast('Nothing to export on this tab', 'error'); return; }
+      await downloadTab(kind, { label: config.marketplace?.name || 'Dashboard', tab });
     } catch (err) {
       console.error('Export error:', err);
       addToast(`${kind.toUpperCase()} export failed`, 'error');
