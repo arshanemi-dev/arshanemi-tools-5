@@ -23,19 +23,17 @@ const sameCost = (text, value) => (isBlank(text) ? !Number.isFinite(value) : Num
 // `value` = the SKU's default (a number, or nothing) — what its next upload
 // is priced at. `dirty` = handed over but not saved yet — the box stays
 // tinted from the first keystroke until its own save lands
-// (lib/profitLoss/useSkuCosts.js). `total` = the column's cell for this row
-// ({ raw, display }): the cost across all of the SKU's orders, each at the
-// price it was uploaded with — so after a default is changed it still adds
-// up the old price for the old orders. Shown beside the box whenever it
-// isn't the typed number itself; it is what the column's sort, filter and
-// formulas go by. Without `onCommit` (Template Settings' preview) the box is
+// (lib/profitLoss/useSkuCosts.js). Just the box, centred in its cell — the
+// column's own total across the SKU's orders (each at the price it was
+// uploaded with, what its sort, filter and formulas go by) isn't shown
+// beside it. Without `onCommit` (Template Settings' preview) the box is
 // read-only.
 //
 // `fill` = { col, sku, start } adds Excel's fill handle: a small square on
 // the box's corner (shown on hover / focus) to drag up or down and copy this
 // box's value into the boxes passed over — see useCostFill.js, which also
 // marks the range being dragged over (`data-fill-on`, tinted here).
-export default function CostCell({ value, total = null, onCommit, label, dirty = false, fill = null }) {
+export default function CostCell({ value, onCommit, label, dirty = false, fill = null }) {
   const [text, setText] = useState(null); // what's being typed; null = showing `value`
   const timer = useRef(null);
   const waiting = useRef(null); // typed text not handed over yet
@@ -65,8 +63,6 @@ export default function CostCell({ value, total = null, onCommit, label, dirty =
   const saved = Number.isFinite(value) ? String(value) : '';
   const bad = text != null && !isBlank(text) && !isNumber(text);
   const unsaved = !bad && (dirty || (text != null && !sameCost(text, value)));
-  const sum = total?.raw;
-  const showTotal = typeof sum === 'number' && Number.isFinite(sum) && sum !== 0 && sum !== value;
 
   const fillable = !!(fill && onCommit);
   // Hand over what's typed first, so the grabbed box is saved with the same
@@ -81,7 +77,7 @@ export default function CostCell({ value, total = null, onCommit, label, dirty =
     <div
       data-fill-col={fillable ? fill.col : undefined}
       data-fill-sku={fillable ? fill.sku : undefined}
-      className="group/fill flex flex-wrap items-center justify-center gap-2"
+      className="group/fill flex items-center justify-center"
     >
       <span className="relative inline-flex">
         <input
@@ -110,11 +106,6 @@ export default function CostCell({ value, total = null, onCommit, label, dirty =
           />
         )}
       </span>
-      {showTotal && (
-        <span className="text-[11px] tabular-nums text-subtle" title="Across this SKU’s orders, each at the price it was uploaded with — what this column’s sort, filter and formulas use">
-          Total {total.display}
-        </span>
-      )}
     </div>
   );
 }

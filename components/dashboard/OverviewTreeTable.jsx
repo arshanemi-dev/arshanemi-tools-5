@@ -140,10 +140,9 @@ export default function OverviewTreeTable({
   // header's own column is here to type into.
   const showCost = skuLevels.size > 0 && !cols.some((c) => c.costField === 'cogs');
   const dirtyCells = dirtyCostCells || new Set();
-  const costInput = (sku, field, name, total = null) => (
+  const costInput = (sku, field, name) => (
     <CostCell
       value={skuCosts[sku]?.[field]}
-      total={total}
       onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
@@ -329,7 +328,7 @@ export default function OverviewTreeTable({
                     if (c.costField && canType) {
                       return (
                         <td key={c.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
-                          {costInput(n.value, c.costField, c.label, cell)}
+                          {costInput(n.value, c.costField, c.label)}
                         </td>
                       );
                     }

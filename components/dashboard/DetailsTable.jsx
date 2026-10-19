@@ -87,10 +87,9 @@ export default function DetailsTable({
   const showCost = !disableCostColumn && cols.some((c) => c.isSku) && !cols.some((c) => c.costField === 'cogs');
   const dirtyCells = dirtyCostCells || new Set();
   const startFill = useCostFill(onCostFill); // Excel's fill handle on the cost boxes
-  const costInput = (sku, field, name, total = null) => (
+  const costInput = (sku, field, name) => (
     <CostCell
       value={skuCosts[sku]?.[field]}
-      total={total}
       onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
@@ -276,7 +275,7 @@ export default function DetailsTable({
                   if (col.costField && isRealSku(r.key)) {
                     return (
                       <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''}`}>
-                        {costInput(r.key, col.costField, col.label, cell)}
+                        {costInput(r.key, col.costField, col.label)}
                       </td>
                     );
                   }
