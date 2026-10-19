@@ -476,7 +476,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           options: { platform: applied.platform, company: applied.company },
         }, { signal: controller.signal });
         if (controller.signal.aborted || !Object.keys(snapshot).length) return;
-        const next = mergeExtractedData(extractedLatest.current, snapshot);
+        const next = mergeExtractedData(extractedLatest.current, snapshot, snapConfig.headers);
         if (JSON.stringify(next) !== JSON.stringify(extractedLatest.current)) onExtractedDataChange(next);
       } catch (error) {
         if (error.name !== 'AbortError') addToast('Could not update saved header values', 'error');

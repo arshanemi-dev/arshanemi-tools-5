@@ -22,13 +22,11 @@ const NEW_DRAFT = 'new'; // the dropdown's value while nothing saved is open (a 
 
 const isLive = (v, liveVersion) => !!v && (v.id === liveVersion?.id || v.status === 'live');
 
-// The name the hub will give the next saved version — the next sub-version
-// of the newest version number. Only for what the button says on hover: the
-// hub does the real numbering.
+// The name the hub will give the next saved version — one past the highest
+// version number. Only for what the button says on hover: the hub does the
+// real numbering.
 function nextName(versions) {
-  const top = versions.reduce((m, v) => Math.max(m, v.versionNumber), 0) || 1;
-  const sub = versions.filter((v) => v.versionNumber === top).reduce((m, v) => Math.max(m, v.subVersionNumber), 0);
-  return `v${top}.${sub + 1}`;
+  return `v${versions.reduce((m, v) => Math.max(m, v.versionNumber), 0) + 1}`;
 }
 
 // Saving, with every outcome said out loud. Every save is a new version.
@@ -119,7 +117,7 @@ export function GlobalVersionBar({ draft, onOpenVersionPage }) {
   );
 
   return (
-    <div className={`hidden rounded-xl border px-3.5 py-2.5 ${live ? 'border-accent/30 bg-accent/5' : 'border-divider bg-background'}`}>
+    <div className={`rounded-xl border px-3.5 py-2.5 hidden ${live ? 'border-accent/30 bg-accent/5' : 'border-divider bg-background'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="text-[12.5px] font-semibold text-foreground">Version</span>
         <SearchSelect

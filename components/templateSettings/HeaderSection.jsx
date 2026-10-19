@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
-import { headerUsages, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
+import { formulaUsages, headerNameProblem, headerUsages, withHeaderUpdate, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -15,9 +15,11 @@ import ListSearchSort from './ListSearchSort';
 // Header — Our Headers (the global config's own headers) and their mapping
 // onto every marketplace's saved sheet headers:
 //   - Toolbar: Add (always) → the Add popup; with an Our Header ticked, Edit
-//     (the same popup — name, type, format, formula; saved only on Save) and
+//     (the same popup — name, type, format, formula; saved only on Save; a
+//     new name is written into every formula that used the old one) and
 //     Delete (confirm lists where it's used; also drops it from every Tab /
-//     Overview Tab / Graph pick). Then Mapped.
+//     Overview Tab / Graph pick; refused while a formula still uses it).
+//     Then Mapped.
 //   - HeaderMappingTable: tick ONE Our Header + any marketplace headers,
 //     press Mapped, and they merge into it — one row with the mapped headers
 //     as boxes on the right; × on a box unmaps it. Every Our Header row also
@@ -32,7 +34,7 @@ import ListSearchSort from './ListSearchSort';
 // per-marketplace and save straight onto that marketplace (`mappingSaver`).
 export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null }) {
   const { addToast } = useToast();
-  const { config, setConfig, addItem, patchItem } = draft;
+  const { config, setConfig, addItem } = draft;
   const headers = config.headers || [];
   const [localId, setLocalId] = useState(null);
   const activeId = activeIdProp !== undefined ? activeIdProp : localId;
@@ -50,6 +52,9 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const autoImported = headers.filter((h) => h.source === 'extracted');
   const deleteTarget = headers.find((h) => h.id === deleteId) || null;
   const deleteUsages = deleteTarget ? headerUsages(config, deleteTarget) : [];
+  // A header a formula still names isn't deleted: the confirm says which
+  // formulas to change first (formulaUsages).
+  const deleteBlockedBy = deleteTarget ? formulaUsages(config, deleteTarget) : [];
   // Marketplaces that map a column to the header being deleted — their
   // mappings go with it (otherwise they'd linger, fail validation and block
   // saving that marketplace).
@@ -78,10 +83,16 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   };
   const unmap = (mid, headerId, sheetHeader) => mappingSaver?.update(mid, (cfg) => withoutMapping(cfg, headerId, sheetHeader));
 
+  // A rename (here or in the table) rewrites every formula that named the
+  // old name — withHeaderUpdate — so a name another header already has is
+  // refused: the two would read as one.
   const saveModal = (form) => {
+    const problem = headerNameProblem(config, modal?.mode === 'edit' ? modal.id : form.id, form.name);
+    if (problem) { addToast(problem, 'error'); return; }
     if (modal?.mode === 'edit') {
-      patchItem('headers', modal.id, form);
-      addToast(`Header “${form.name}” updated`);
+      const usages = renamedIn(modal.id, form.name);
+      setConfig((c) => withHeaderUpdate(c, modal.id, form));
+      addToast(`Header “${form.name}” updated${usages}`);
     } else {
       addItem('headers', form);
       setActiveId(form.id);
@@ -91,7 +102,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   };
 
   const confirmDeleteHeader = () => {
-    if (!deleteTarget || deleteTarget.reserved) { setDeleteId(null); return; }
+    if (!deleteTarget || deleteTarget.reserved || deleteBlockedBy.length) { setDeleteId(null); return; }
     setConfig((c) => withoutHeader(c, deleteTarget.id));
     for (const t of deleteMappedIn) mappingSaver?.update(t.id, (cfg) => withoutHeaderMappings(cfg, [deleteTarget.id]));
     addToast(`Header “${deleteTarget.name}” deleted${deleteMappedIn.length ? ` · its mappings removed from ${deleteMappedIn.map((t) => t.marketplaceName).join(', ')}` : ''}`);
@@ -99,10 +110,22 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     setDeleteId(null);
   };
 
+  // " · 3 formulas updated" for the toast, when renaming `id` to `name`
+  // rewrites any (read before the rename, while they still use the old name).
+  const renamedIn = (id, name) => {
+    const h = headers.find((x) => x.id === id);
+    if (!h || h.name === name.trim()) return '';
+    const n = formulaUsages(config, h).length;
+    return n ? ` · ${n} formula${n === 1 ? '' : 's'} updated to the new name` : '';
+  };
+
   // Row Edit → Save in the table: rename only (type / formula live in the Edit popup).
   const renameHeader = (id, name) => {
-    patchItem('headers', id, { name });
-    addToast(`Header renamed to “${name}”`);
+    const problem = headerNameProblem(config, id, name);
+    if (problem) { addToast(problem, 'error'); return; }
+    const usages = renamedIn(id, name);
+    setConfig((c) => withHeaderUpdate(c, id, { name }));
+    addToast(`Header renamed to “${name.trim()}”${usages}`);
   };
 
   const cleanupAutoImported = () => {
@@ -217,10 +240,13 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
 
       <ConfirmDialog
         open={!!deleteTarget}
-        title={`Delete header “${deleteTarget?.name || ''}”?`}
-        description={`${deleteUsages.length
-          ? `It's used in ${deleteUsages.join(', ')}. It will be removed from those Tab / Overview Tab / Graph picks; formulas that reference it by name need fixing by hand.`
-          : 'It isn’t used in any Tab, Overview Tab, Graph or formula.'}${deleteMappedIn.length ? ` Its mappings in ${deleteMappedIn.map((t) => t.marketplaceName).join(', ')} are removed too.` : ''}`}
+        title={deleteBlockedBy.length ? `“${deleteTarget?.name || ''}” can’t be deleted yet` : `Delete header “${deleteTarget?.name || ''}”?`}
+        description={deleteBlockedBy.length
+          ? `It's used in ${deleteBlockedBy.join(', ')}. Change ${deleteBlockedBy.length === 1 ? 'that formula' : 'those formulas'} so ${deleteBlockedBy.length === 1 ? 'it no longer uses' : 'they no longer use'} it, then delete it.`
+          : `${deleteUsages.length
+            ? `It's used in ${deleteUsages.join(', ')}. It will be removed from those Tab / Overview Tab / Graph picks.`
+            : 'It isn’t used in any Tab, Overview Tab, Graph or formula.'}${deleteMappedIn.length ? ` Its mappings in ${deleteMappedIn.map((t) => t.marketplaceName).join(', ')} are removed too.` : ''}`}
+        confirmLabel={deleteBlockedBy.length ? 'OK' : undefined}
         onConfirm={confirmDeleteHeader}
         onCancel={() => setDeleteId(null)}
       />

@@ -5,11 +5,11 @@ import { Loader2, Search, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import { failureMessage } from '@/lib/profitLoss/templatesApi';
-import { versionToOpen } from './useGlobalTemplateDraft';
+import { versionName, versionToOpen } from './useGlobalTemplateDraft';
 import SectionHead from './SectionHead';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
-const label = (v) => `v${v.versionNumber}.${v.subVersionNumber}`;
+const label = versionName; // v94, or v93.21 for one saved with a sub-version
 
 // image 2 · Version Page — every saved version with a Live on/off switch:
 // the one place a version is put on the dashboard, or taken off it (there is
@@ -29,7 +29,7 @@ export default function VersionSection({ draft }) {
 
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return versions.filter((v) => !s || `v${v.versionNumber}.${v.subVersionNumber}`.includes(s) || (v.note || '').toLowerCase().includes(s));
+    return versions.filter((v) => !s || label(v).includes(s) || (v.note || '').toLowerCase().includes(s));
   }, [versions, q]);
 
   // Live = its own status, or the template still pointing at it.
@@ -64,7 +64,7 @@ export default function VersionSection({ draft }) {
   function deleteDescription(v) {
     const parts = [`This permanently removes ${label(v)} (${v.status}, created ${fmtDate(v.createdAt)}). It can’t be undone.`];
     if (v.id === activeVersionId) {
-      const next = versionToOpen(versions.filter((x) => x.id !== v.id), template);
+      const next = versionToOpen(versions.filter((x) => x.id !== v.id));
       parts.push(`This is the version open in the editor — it will switch to ${next ? `${label(next)} (${next.status})` : 'an empty template'}${dirty ? ', and your unsaved changes will be lost' : ''}.`);
     }
     return parts.join(' ');
@@ -87,8 +87,7 @@ export default function VersionSection({ draft }) {
           <thead>
             <tr className="border-b border-divider bg-th text-left text-muted">
               <th className="px-3 py-2.5 font-medium">Live</th>
-              <th className="px-3 py-2.5 font-medium">Version Number</th>
-              <th className="px-3 py-2.5 font-medium">Sub Version Number</th>
+              <th className="px-3 py-2.5 font-medium">Version</th>
               <th className="px-3 py-2.5 font-medium">Create date</th>
               <th className="px-3 py-2.5 font-medium">Live date</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
@@ -97,7 +96,7 @@ export default function VersionSection({ draft }) {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">No versions yet.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">No versions yet.</td></tr>
             )}
             {rows.map((v) => (
               <tr key={v.id} className={`border-t border-divider ${v.id === activeVersionId ? 'bg-accent/5' : ''}`}>
@@ -115,8 +114,7 @@ export default function VersionSection({ draft }) {
                       : <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${v.status === 'live' ? 'translate-x-4' : ''}`} />}
                   </button>
                 </td>
-                <td className="px-3 py-2.5 text-foreground">{v.versionNumber}</td>
-                <td className="px-3 py-2.5 text-foreground">{v.subVersionNumber}</td>
+                <td className="px-3 py-2.5 text-foreground">{label(v)}</td>
                 <td className="px-3 py-2.5 text-muted">{fmtDate(v.createdAt)}</td>
                 <td className="px-3 py-2.5 text-muted">{fmtDate(v.publishedAt)}</td>
                 <td className="px-3 py-2.5">

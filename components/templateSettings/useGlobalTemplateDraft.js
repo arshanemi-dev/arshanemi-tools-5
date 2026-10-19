@@ -25,14 +25,21 @@ import {
 // off). A saved version is never overwritten, the live one included.
 const LS_KEY = 'mp-tpl-draft:global';
 
-export const versionName = (v) => (v ? `v${v.versionNumber}.${v.subVersionNumber}` : '');
+// "v94" — every save is the next whole number — or "v93.21" for a version
+// saved back when versions had a sub-version too (the hub's
+// marketplaceVersionLabel is the same rule).
+export const versionName = (v) => (v ? `v${v.versionNumber}${v.subVersionNumber > 1 ? `.${v.subVersionNumber}` : ''}` : '');
 
-// Which version the editor opens: the newest draft, else the live one, else
-// the newest of what's there (`versions` comes newest-first from the hub).
-// Shared by the first load and by removeVersion, exported so the Version
-// Page can tell the user where the editor will land.
-export function versionToOpen(versions = [], template = null) {
-  return versions.find((v) => v.status === 'draft') || versions.find((v) => v.id === template?.liveVersionId) || versions[0] || null;
+// Which version the editor opens: the newest one saved, live or not
+// (`versions` comes newest-first from the hub). Every save is a new
+// version, so that is always the last thing anyone saved. It used to be
+// "the newest draft" — but a version switched Live stops being a draft, so
+// the editor kept reopening an older draft and the next save dropped
+// everything added since (v93.39 was v93.31 + one header; v93.38's three
+// headers were gone). Shared by the first load and by removeVersion,
+// exported so the Version Page can tell the user where the editor will land.
+export function versionToOpen(versions = []) {
+  return versions[0] || null;
 }
 
 // What a stored version's config looks like in the editor. withFixedHeaders:
@@ -67,8 +74,7 @@ export default function useGlobalTemplateDraft() {
   }, [templateId]);
 
   // Discover the singleton's id (lazily created hub-side on first touch),
-  // then load whichever version is relevant — same "newest draft, else the
-  // live one, else the newest" pick useTemplateDraft used to make.
+  // then load the newest saved version (versionToOpen).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -81,7 +87,7 @@ export default function useGlobalTemplateDraft() {
 
       const data = await reloadMeta(tid);
       if (!alive || !data) { setLoading(false); return; }
-      const target = versionToOpen(data.versions || [], data.template);
+      const target = versionToOpen(data.versions || []);
       if (target) {
         const res = await getVersion(tid, target.id);
         if (alive && res.ok) {
@@ -154,14 +160,14 @@ export default function useGlobalTemplateDraft() {
   }, []);
 
   // ── save ───────────────────────────────────────────────────────────────
-  // What is in the editor as a NEW version — a draft, which becomes the
-  // selected version. `major` starts the next version number (v3.1) instead
-  // of the next sub-version (v2.5). → { ok, created: true, version }
-  const saveNewVersion = useCallback(async ({ major = false, note = '' } = {}) => {
+  // What is in the editor as a NEW version — a draft, numbered by the hub
+  // as the next whole number (v94, v95, …), which becomes the selected
+  // version. → { ok, created: true, version }
+  const saveNewVersion = useCallback(async ({ note = '' } = {}) => {
     if (!templateId) return { ok: false, error: 'Global Settings not loaded yet' };
     setSaving(true);
     try {
-      const res = await saveDraftVersion(templateId, { config, note, major });
+      const res = await saveDraftVersion(templateId, { config, note });
       if (!res.ok) return failed(res);
       const v = res.data.version;
       setActiveVersionId(v.id);
@@ -200,7 +206,7 @@ export default function useGlobalTemplateDraft() {
     const data = await reloadMeta();
     if (versionId !== activeVersionId) return res;
 
-    const target = versionToOpen(data?.versions || [], data?.template);
+    const target = versionToOpen(data?.versions || []);
     let cfg = makeEmptyGlobalConfig();
     if (target) {
       const loaded = await getVersion(templateId, target.id);
