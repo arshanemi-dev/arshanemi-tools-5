@@ -6,17 +6,17 @@ import { redirectToLogin } from '@/lib/authGate'
 
 const count = (n) => Number(n || 0).toLocaleString('en-IN')
 
-// Signed out, the dashboard works on the free tier only — nothing is charged
-// and nothing is saved, but it takes at most the free orders a month and the
-// free accounts (one account = one Marketplace + Brand). Shown instead of
-// adding an upload that would go past that (lib/profitLoss/
-// useUploadBilling.js). `limit` = { billableOrders, paidAccount, freeOrders,
-// freeAccounts }.
+// Signed out, the dashboard is a free try-out — nothing is charged and
+// nothing is saved, but it holds at most the guest orders on the guest
+// accounts (one account = one Marketplace + Brand). Shown instead of adding
+// an upload that would go past that (lib/profitLoss/useUploadBilling.js).
+// Signed in there is no free tier: a new user starts with the joining-bonus
+// coins. `limit` = { overOrders, overAccount, guestOrders, guestAccounts }.
 export default function FreeTierLimitModal({ limit, onClose }) {
   if (!limit) return null
   const over = [
-    limit.billableOrders > 0 && `${count(limit.billableOrders)} order${limit.billableOrders === 1 ? '' : 's'} past the free ${count(limit.freeOrders)} a month`,
-    limit.paidAccount && `an account past the free ${count(limit.freeAccounts)}`,
+    limit.overOrders > 0 && `${count(limit.overOrders)} order${limit.overOrders === 1 ? '' : 's'} too many`,
+    limit.overAccount && `a new account`,
   ].filter(Boolean).join(' and ')
 
   return (
@@ -26,11 +26,11 @@ export default function FreeTierLimitModal({ limit, onClose }) {
           <LogIn size={20} className="text-accent" />
         </div>
         <p className="text-sm text-muted">
-          Without logging in you can use up to <span className="font-semibold text-foreground">{count(limit.freeOrders)} orders a month</span> and{' '}
-          <span className="font-semibold text-foreground">{count(limit.freeAccounts)} account{limit.freeAccounts === 1 ? '' : 's'}</span> (Marketplace + Brand).
-          This upload has {over}, so it wasn&apos;t added.
+          Without logging in you can try up to <span className="font-semibold text-foreground">{count(limit.guestOrders)} orders</span> on{' '}
+          <span className="font-semibold text-foreground">{count(limit.guestAccounts)} account{limit.guestAccounts === 1 ? '' : 's'}</span> (Marketplace + Brand),
+          and nothing is saved. This upload has {over}, so it wasn&apos;t added.
         </p>
-        <p className="text-xs text-subtle">Log in to continue and keep your data saved.</p>
+        <p className="text-xs text-subtle">Log in to upload more and keep your data saved — new accounts start with free coins.</p>
         <div className="flex gap-2 mt-2">
           <button
             onClick={onClose}

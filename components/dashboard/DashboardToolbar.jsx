@@ -66,7 +66,7 @@ export default function DashboardToolbar({
 
         <FileIconButton
           icon={FileUp}
-          label="Upload SKU Cost"
+          label="SKU Cost"
           title={hasData ? 'Upload your filled-in SKU Cost sheet — COGS (Product Cost), Cost GST in, Final Product Cost, Other Expense (per order)' : 'Upload a settlement sheet first'}
           accept=".csv,.tsv,.txt,.xlsx,.xls"
           multiple={false}
@@ -82,7 +82,7 @@ export default function DashboardToolbar({
           title={hasData ? 'Download the SKU Cost sheet — your SKUs with the costs saved so far; fill it in and upload it back' : 'Upload a settlement sheet first'}
         >
           <FileDown size={15} className="shrink-0" />
-          <span className="hidden sm:inline">Download SKU Cost</span>
+          <span className="hidden sm:inline">SKU Cost</span>
         </button>
 
         {loggedIn && (
@@ -99,7 +99,7 @@ export default function DashboardToolbar({
             )}
             <IconButton
               icon={editMode ? Save : Settings}
-              label={editMode ? 'Save Position' : 'Position Settings'}
+              label={editMode ? 'Save Position' : 'Position'}
               title={editMode ? 'Save your dashboard layout' : 'Customize your dashboard layout'}
               tone={editMode ? 'action' : 'outline'}
               onClick={editMode ? onSaveLayout : onEnterEditMode}

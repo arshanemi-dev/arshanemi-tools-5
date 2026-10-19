@@ -43,7 +43,7 @@ export default function NoTemplateTabBar({ showTemplateSettings = false, onOpenT
             className={`${PILL} ml-auto text-foreground/75 hover:bg-foreground/5 hover:text-foreground`}
           >
             <Settings size={16} className="shrink-0" />
-            Template Settings
+            Template
           </button>
         )}
       </nav>

@@ -146,7 +146,7 @@ export default function DashboardTabBar({
 
         {showTemplateSettings && (
           <span className="ml-auto flex shrink-0 items-center pl-2">
-            <TabPill icon={Settings} label="Template Settings" onClick={onOpenTemplateSettings} />
+            <TabPill icon={Settings} label="Template" onClick={onOpenTemplateSettings} />
           </span>
         )}
       </nav>

@@ -286,10 +286,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     transactionIdHeader,
   });
 
-  // Coins per new order and per extra Marketplace + Brand account — every
-  // upload is counted here and charged by the admin panel (signed in), or
-  // held to the free tier (signed out), before any of its rows go onto the
-  // dashboard. See lib/profitLoss/useUploadBilling.js.
+  // Coins per new order and per Marketplace + Brand account a month — every
+  // upload is counted here and charged by the admin panel (signed in,
+  // nothing free), or held to the guest limit (signed out), before any of
+  // its rows go onto the dashboard. See lib/profitLoss/useUploadBilling.js.
   const {
     checkUpload, billed: uploadBilled, gate: billingGate, closeGate: closeBillingGate,
     freeLimit, closeFreeLimit,
@@ -599,7 +599,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
         }
       }
       if (added.length) {
-        // Refused (not enough coins, past the free tier) → its alert says
+        // Refused (not enough coins, past the guest limit) → its alert says
         // why and nothing from this upload is added.
         const newRows = added.flatMap((a) => a.rows);
         if (uploadBilled) {
