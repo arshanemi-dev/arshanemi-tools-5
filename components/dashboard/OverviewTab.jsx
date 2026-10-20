@@ -49,7 +49,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null, headerPool = null }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -113,9 +113,6 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       emptyShowsAll={false}
       onMyColumnsChange={onMyColumnsChange}
       size={viewPillsSlot ? 'md' : 'sm'}
-      // The dashboard's merged tabs list (tabsHeaderPool), except while
-      // arranging (Position Settings) — then every header.
-      pool={editMode ? null : headerPool}
       groups={config.headerGroups}
     />
   );

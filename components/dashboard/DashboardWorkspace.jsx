@@ -26,7 +26,7 @@ import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportVi
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
-import { myDetailColumns, overviewShownHeaders, tabColumnDefs, tabsHeaderPool } from '@/lib/profitLoss/tabColumns';
+import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
@@ -424,10 +424,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const overviewHeaderKey = useMemo(() => JSON.stringify(Object.fromEntries(
     (config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, config.headers || [], myColumnsFor(ov.id, ov.headerIds || [], false)).map((h) => h.id)]),
   )), [config, myColumnsFor]);
-  // What "My Details" offers on the dashboard: the headers the template's
-  // tabs pick, merged (tabsHeaderPool) — only its list; Position Settings
-  // still offers every header.
-  const headerPool = useMemo(() => tabsHeaderPool(config), [config]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
   const viewOptions = useMemo(() => ({
@@ -1056,7 +1052,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
                 viewPillsSlot={viewPillsSlot}
-                headerPool={headerPool}
                 fillHeight
               />
             ) : (
@@ -1079,7 +1074,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
-                headerPool={headerPool}
                 allHeaders
                 fillHeight
               />

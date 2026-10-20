@@ -20,12 +20,9 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // nothing is ticked, instead of everything. A search box on top narrows the
 // list (a template can have dozens of headers) and its toggle orders it
 // A → Z / Z → A; ticks apply as they're made.
-// `pool` (the dashboard, outside Position Settings — tabsHeaderPool: the
-// headers the template's tabs pick, merged once each in the browser) narrows
-// what the list offers to those, plus whatever is showing, so a ticked
-// column never drops off it; without one (Template Settings' preview,
-// Position Settings) it offers every header. It changes only the list —
-// what's ticked and what the table shows are worked out over every header.
+// The list offers every header the table can show — every one NOT switched
+// to Hidden (Template Settings › Header's Show / Hide switch; tabColumns.js
+// leaves hidden ones out of `tabHeaders`), picked by a tab or not.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows this; the default stays compact for the builder preview.
 // `groups` (the config's headerGroups — Template Settings › Header › Our
@@ -57,15 +54,14 @@ function bySection(listed, groups) {
   return filled.length > 1 ? filled : null;
 }
 
-export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm', pool = null, groups = null }) {
+export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm', groups = null }) {
   const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
   const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds, emptyShowsAll ? toggleable : []).map((h) => h.id));
   const ownTicks = toggleable.some((h) => myColumns.includes(h.id));
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null); // the checklist's own order — the table's column order is untouched
-  const offered = pool ? new Set([...pool, ...shown]) : null;
-  const listable = offered ? toggleable.filter((h) => offered.has(h.id)) : toggleable;
+  const listable = toggleable;
   const listed = sortByLabel(listable.filter((h) => matchesSearch(h.name, q)), (h) => h.name, sort);
   const sections = bySection(listed, groups);
 

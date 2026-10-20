@@ -177,16 +177,17 @@ export default function TemplateBuilder() {
   const headerGroups = useHeaderGroups(addToast);
 
   // The dashboard's own merge (see DashboardWorkspace.jsx): global config +
-  // the active marketplace's own bits, and — like the dashboard — headers
-  // switched to Hidden marked `isHidden` (never a column) and My Details grouped
-  // by header group (withHeaderGroups). resolveTemplate never
-  // reads fileSlots, so the preview only needs `marketplace` merged in for a
-  // marketplace view.
+  // the active marketplace's own bits, with My Details grouped by header
+  // group (withHeaderGroups). The Show / Hide switch is NOT applied here:
+  // it hides a header on the dashboard only — everywhere in Template
+  // Settings, this preview included, every header stays in view.
+  // resolveTemplate never reads fileSlots, so the preview only needs
+  // `marketplace` merged in for a marketplace view.
   const draftMarketplace = draft.config?.marketplace;
   const groupsLive = headerGroups.loading || headerGroups.error ? null : headerGroups.headerGroups;
   const previewConfig = useMemo(() => {
     const base = isGlobal || !marketplaceId ? globalDraft.config : { ...globalDraft.config, marketplace: draftMarketplace };
-    return groupsLive ? withHeaderGroups(base, groupsLive) : base;
+    return groupsLive ? withHeaderGroups(base, { ...groupsLive, hiddenHeaderIds: [] }) : base;
   }, [isGlobal, marketplaceId, globalDraft.config, draftMarketplace, groupsLive]);
 
   // A marketplace view also waits for Global Settings: its mappings are
