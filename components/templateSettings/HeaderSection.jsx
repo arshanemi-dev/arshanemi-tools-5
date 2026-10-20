@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
+import { marketplaceColumns, withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
 import { formulaUsages, headerNameProblem, headerUsages, withHeaderUpdate, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
 import { useToast } from '@/components/admin/Toast';
@@ -10,6 +10,8 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SectionHead from './SectionHead';
 import HeaderMappingTable from './HeaderMappingTable';
 import HeaderEditModal from './HeaderEditModal';
+import HeaderGroupsRow from './HeaderGroupsRow';
+import { groupIdOf } from '@/lib/profitLoss/headerGroups';
 import ListSearchSort from './ListSearchSort';
 
 // Header — Our Headers (the global config's own headers) and their mapping
@@ -32,7 +34,12 @@ import ListSearchSort from './ListSearchSort';
 // Headers are global (this draft — saved with the footer's Save New Version,
 // see GlobalVersion.jsx); mappings are
 // per-marketplace and save straight onto that marketplace (`mappingSaver`).
-export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null }) {
+// `headerGroups` = useHeaderGroups() (TemplateBuilder) — the "Our Groups"
+// row above the table (HeaderGroupsRow; picking a group narrows the table
+// to its headers, a header in one of the admin's own groups is tagged with
+// it) and every Our Header's Show / Hide switch (hidden = never a dashboard
+// column). Both save at once, outside Save New Version.
+export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null, headerGroups = null }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem } = draft;
   const headers = config.headers || [];
@@ -40,11 +47,29 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const activeId = activeIdProp !== undefined ? activeIdProp : localId;
   const setActiveId = onActiveId || setLocalId;
   const active = headers.find((h) => h.id === activeId) || null;
-  const [checked, setChecked] = useState(() => new Set()); // colKey(marketplaceId, sheetHeader)
+  const [checked, setChecked] = useState(() => new Set()); // colKey(marketplaceId, column.key) — a File › Sheet › Header
   const [modal, setModal] = useState(null); // { mode: 'add' } | { mode: 'edit', id }
   const [deleteId, setDeleteId] = useState(null); // header awaiting the delete confirm (row or toolbar)
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState(DEFAULT_LIST_SORT);
+  const [groupId, setGroupId] = useState(null); // the Our Groups filter — null = All
+  const groupsReady = !!headerGroups && !headerGroups.loading && !headerGroups.error;
+  const pickedGroup = groupsReady ? headerGroups.groups.find((g) => g.id === groupId) || null : null;
+  const groupFilter = pickedGroup
+    ? new Set(headers.filter((h) => groupIdOf(headerGroups.headerGroups, h.id) === pickedGroup.id).map((h) => h.id))
+    : null;
+  // The group a header is in, shown beside its name — unless it's General.
+  const groupTag = (id) => {
+    if (!groupsReady) return '';
+    const g = headerGroups.groupOf(id);
+    return g && g.kind !== 'general' ? g.name : '';
+  };
+  // Each Our Header's Show / Hide switch — saved at once, live on the dashboard.
+  const toggleHidden = async (id) => {
+    const h = headers.find((x) => x.id === id);
+    const hide = !headerGroups.isHidden(id);
+    if (await headerGroups.setHidden([id], hide)) addToast(`“${h?.name || 'Header'}” ${hide ? 'hidden on' : 'shown on'} the dashboard`);
+  };
 
   const mappedIds = useMemo(() => new Set((marketplaces || []).flatMap(
     (t) => (t.config?.fileSlots || []).flatMap((s) => (s.mappings || []).map((m) => m.headerId)),
@@ -67,21 +92,25 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     return next;
   });
 
-  // Mapped — every ticked marketplace header merges into the ticked Our
-  // Header; one save per marketplace touched.
+  // Mapped — every ticked marketplace column (a File › Sheet › Header)
+  // merges into the ticked Our Header, read from that sheet only; one save
+  // per marketplace touched.
   const mapChecked = async () => {
     if (!active || !checked.size || !mappingSaver) return;
     const byMarketplace = new Map();
     for (const key of checked) {
-      const [mid, sheetHeader] = JSON.parse(key);
-      byMarketplace.set(mid, [...(byMarketplace.get(mid) || []), sheetHeader]);
+      const [mid, columnKey] = JSON.parse(key);
+      const t = (marketplaces || []).find((x) => x.id === mid);
+      const column = t ? marketplaceColumns(t.config).find((c) => c.key === columnKey) : null;
+      if (column) byMarketplace.set(mid, [...(byMarketplace.get(mid) || []), column]);
     }
     setChecked(new Set());
     const results = await Promise.all([...byMarketplace].map(([mid, cols]) => mappingSaver.update(mid, (cfg) => withAddedMappings(cfg, active.id, cols))));
     const done = [...byMarketplace.values()].filter((_, i) => results[i]).flat().length;
     if (done) addToast(`${done} header${done === 1 ? '' : 's'} mapped to “${active.name}”`);
   };
-  const unmap = (mid, headerId, sheetHeader) => mappingSaver?.update(mid, (cfg) => withoutMapping(cfg, headerId, sheetHeader));
+  // × on a mapped box — that one file › sheet › column (`target`).
+  const unmap = (mid, headerId, target) => mappingSaver?.update(mid, (cfg) => withoutMapping(cfg, headerId, target));
 
   // A rename (here or in the table) rewrites every formula that named the
   // old name — withHeaderUpdate — so a name another header already has is
@@ -199,6 +228,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           </div>
         )}
 
+        {headerGroups && <HeaderGroupsRow g={headerGroups} headers={headers} activeId={pickedGroup?.id ?? null} onActive={setGroupId} />}
+
         <ListSearchSort
           className="px-4"
           query={query}
@@ -206,13 +237,17 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           sort={sort}
           onSort={setSort}
           placeholder="Search headers…"
-          shown={headers.filter((h) => matchesQuery(h.name, query)).length}
+          shown={headers.filter((h) => matchesQuery(h.name, query) && (!groupFilter || groupFilter.has(h.id))).length}
           total={headers.length}
         />
 
         <HeaderMappingTable
           headers={headers}
           ourQuery={query}
+          groupFilter={groupFilter}
+          groupTag={groupTag}
+          isHiddenOf={groupsReady ? headerGroups.isHidden : null}
+          onToggleHidden={groupsReady ? toggleHidden : null}
           ourSort={sort}
           onOurSort={setSort}
           marketplaces={marketplaces || []}

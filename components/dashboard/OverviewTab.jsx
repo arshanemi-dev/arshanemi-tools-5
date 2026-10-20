@@ -116,6 +116,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       // The dashboard's merged tabs list (tabsHeaderPool), except while
       // arranging (Position Settings) — then every header.
       pool={editMode ? null : headerPool}
+      groups={config.headerGroups}
     />
   );
 

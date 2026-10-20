@@ -3,13 +3,15 @@
 import { useMemo, useState } from 'react';
 import { Check as CheckIcon, Lock, Pencil, Trash2, X } from 'lucide-react';
 import ColumnFilterButton from '@/components/dashboard/ColumnFilterButton';
-import { mappedColumnsByHeader, marketplaceUniqueHeaders } from '@/lib/profitLoss/marketplaceHeaders';
+import { isColumnMapped, mappedColumnsByHeader, marketplaceColumns } from '@/lib/profitLoss/marketplaceHeaders';
 import { DEFAULT_LIST_SORT, sortItems } from '@/lib/profitLoss/listSort';
 import { isFixedHeader } from '@/data/fixedHeaders';
 
 const OUR_COL = '__our__';
 const norm = (s) => String(s ?? '').trim().toLowerCase();
-export const colKey = (marketplaceId, sheetHeader) => JSON.stringify([marketplaceId, sheetHeader]);
+// A marketplace column's tick key — the marketplace + the column's own key
+// (its file, sheet and header — marketplaceHeaders.js marketplaceColumns).
+export const colKey = (marketplaceId, columnKey) => JSON.stringify([marketplaceId, columnKey]);
 const matches = (text, q) => !q || norm(text).includes(norm(q));
 
 function ColumnHead({ label, sub, filter, onFilter, getOptions, onOpenChange, sortDir, onSort }) {
@@ -26,6 +28,23 @@ function RowBtn({ title, onClick, disabled, tone, children }) {
   return (
     <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled} className={`shrink-0 rounded p-1 disabled:opacity-30 ${tone}`}>
       {children}
+    </button>
+  );
+}
+
+// A header's Show / Hide switch — on = a column on the dashboard.
+function ShowSwitch({ hidden, onToggle, name }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!hidden}
+      aria-label={`${hidden ? 'Show' : 'Hide'} ${name} on the dashboard`}
+      title={hidden ? 'Hidden on the dashboard — click to show it' : 'Shown on the dashboard — click to hide it'}
+      onClick={onToggle}
+      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${hidden ? 'bg-divider-light' : 'bg-action'}`}
+    >
+      <span className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${hidden ? '' : 'translate-x-3'}`} />
     </button>
   );
 }
@@ -67,7 +86,14 @@ function Check({ checked, onChange, label, disabled }) {
 // headers — its Unmapped list, and the Mapped rows by the header mapped
 // there (rows with nothing mapped in that column go last). One marketplace
 // column at a time, and it steps aside when Our Header is sorted.
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {} }) {
+//
+// `groupFilter` (a Set of header ids, or null) is the Our Groups row's pick
+// (HeaderGroupsRow) — the Our Header column shows only that group's headers;
+// `groupTag(id)` names the group of a header in one of the admin's own
+// groups, shown beside it. `isHiddenOf(id)` / `onToggleHidden(id)` drive
+// each Our Header's Show / Hide switch (left out while they're null — the
+// groups not loaded yet).
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
   const [colSort, setColSort] = useState(null); // { id, dir } — the marketplace column the table is sorted on
   const [filters, setFilters] = useState({}); // { [column]: { values: [header name, ...] } | null }
   const [menuOpen, setMenuOpen] = useState(false); // a filter menu is open — the table makes room for it
@@ -84,22 +110,21 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .map((t) => {
       const mapped = mappedColumnsByHeader(t.config, knownIds);
-      const mappedKeys = new Set([...mapped.values()].flat().map(norm));
-      const all = marketplaceUniqueHeaders(t.config);
-      return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, all: all.map((o) => o.name), unmapped: all.filter((o) => !mappedKeys.has(norm(o.name))) };
+      const all = marketplaceColumns(t.config); // File › Sheet › Header, every sheet's own
+      return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, all: all.map((o) => o.label), unmapped: all.filter((o) => !isColumnMapped(t.config, o, knownIds)) };
     }), [marketplaces, knownIds]);
 
   const isMerged = (h) => columns.some((c) => (c.mapped.get(h.id) || []).length);
   const ourAllowed = allowed(OUR_COL);
-  const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name));
+  const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name)) && (!groupFilter || groupFilter.has(h.id));
   const colAllowed = columns.map((c) => allowed(c.id));
   const sortCol = colSort ? columns.find((c) => c.id === colSort.id) : null;
   const sign = colSort?.dir === 'desc' ? -1 : 1;
   const byText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-  const mappedIn = (h) => (sortCol.mapped.get(h.id) || [])[0];
+  const mappedIn = (h) => (sortCol.mapped.get(h.id) || [])[0]?.label;
   const mergedMatches = ordered.filter((h) => isMerged(h)
     && ourShown(h)
-    && columns.every((c, ci) => !colAllowed[ci] || (c.mapped.get(h.id) || []).some((s) => colAllowed[ci].has(s))));
+    && columns.every((c, ci) => !colAllowed[ci] || (c.mapped.get(h.id) || []).some((s) => colAllowed[ci].has(s.label))));
   const mergedRows = sortCol
     ? [...mergedMatches].sort((a, b) => {
       const x = mappedIn(a);
@@ -110,8 +135,8 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     : mergedMatches;
   const ourUnmapped = ordered.filter((h) => !isMerged(h) && ourShown(h));
   const colUnmapped = columns.map((c, ci) => {
-    const list = c.unmapped.filter((o) => !colAllowed[ci] || colAllowed[ci].has(o.name));
-    return sortCol?.id === c.id ? [...list].sort((a, b) => sign * byText(a.name, b.name)) : list;
+    const list = c.unmapped.filter((o) => !colAllowed[ci] || colAllowed[ci].has(o.label));
+    return sortCol?.id === c.id ? [...list].sort((a, b) => sign * byText(a.label, b.label)) : list;
   });
   const ourSortDir = ourSort === 'name-asc' ? 'asc' : ourSort === 'name-desc' ? 'desc' : null;
   const sortOur = (dir) => { setColSort(null); onOurSort(dir ? `name-${dir}` : DEFAULT_LIST_SORT); };
@@ -155,11 +180,18 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           <div className="flex items-center gap-1">
             <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
               <Check checked={selected} onChange={() => onSelect(selected ? null : h.id)} label={`Select ${h.name}`} />
-              <span className={`min-w-0 truncate ${selected ? 'font-semibold text-foreground' : 'text-muted'}`} title={h.name}>
+              <span className={`min-w-0 truncate ${selected ? 'font-semibold text-foreground' : 'text-muted'} ${isHiddenOf?.(h.id) ? 'opacity-60' : ''}`} title={h.name}>
                 {h.name || 'Untitled'}
                 {badge(h) && <span className="ml-1.5 text-[9.5px] font-medium uppercase tracking-wide text-subtle">{badge(h)}</span>}
+                {groupTag(h.id) && (
+                  <span title="Its group" className="ml-1.5 rounded-full bg-card px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-muted">
+                    {groupTag(h.id)}
+                  </span>
+                )}
+                {isHiddenOf?.(h.id) && <span className="ml-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-subtle">hidden</span>}
               </span>
             </label>
+            {isHiddenOf && onToggleHidden && <ShowSwitch hidden={isHiddenOf(h.id)} onToggle={() => onToggleHidden(h.id)} name={h.name} />}
             {h.reserved ? (
               <span title={`${isFixedHeader(h) ? 'Built-in' : 'Required'} header — can’t be renamed or deleted`} className="shrink-0 p-1 text-subtle"><Lock size={12} /></span>
             ) : (
@@ -197,7 +229,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
             </th>
             {columns.map((c) => (
               <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">
-                <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((name) => ({ text: name }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
+                <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
               </th>
             ))}
           </tr>
@@ -214,13 +246,15 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                     {cols.length ? (
                       <div className="flex flex-wrap gap-1">
                         {cols.map((s) => (
-                          <span key={s} className="inline-flex max-w-full items-center gap-1 rounded-md border border-action/40 bg-action-soft px-1.5 py-0.5 text-[12px] text-foreground">
-                            <span className="truncate" title={s}>{s}</span>
+                          <span key={s.label} className="inline-flex max-w-full items-center gap-1 rounded-md border border-action/40 bg-action-soft px-1.5 py-0.5 text-[12px] text-foreground">
+                            <span className="min-w-0 truncate" title={s.label}>
+                              <span className="text-[10.5px] text-subtle">{s.path} › </span>{s.name}
+                            </span>
                             <button
                               type="button"
                               disabled={busy}
                               onClick={() => onUnmap(c.id, h.id, s)}
-                              aria-label={`Unmap ${s} from ${h.name}`}
+                              aria-label={`Unmap ${s.label} from ${h.name}`}
                               className="shrink-0 rounded p-0.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:opacity-40"
                             >
                               <X size={11} />
@@ -250,13 +284,16 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                     </td>
                   );
                 }
-                const key = colKey(c.id, o.name);
+                const key = colKey(c.id, o.key);
                 const on = checked.has(key);
                 return (
                   <td key={c.id} className={`border border-divider px-2 py-1.5 ${on ? 'bg-action-soft/60' : ''}`}>
-                    <label className="flex cursor-pointer items-center gap-2" title={o.sources.join(', ')}>
-                      <Check checked={on} onChange={() => onToggleCheck(key)} label={`Select ${o.name} (${c.name})`} />
-                      <span className={`min-w-0 truncate ${on ? 'text-foreground' : 'text-muted'}`}>{o.name}</span>
+                    <label className="flex cursor-pointer items-center gap-2" title={o.label}>
+                      <Check checked={on} onChange={() => onToggleCheck(key)} label={`Select ${o.label} (${c.name})`} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[10.5px] leading-tight text-subtle">{o.path}</span>
+                        <span className={`block truncate ${on ? 'text-foreground' : 'text-muted'}`}>{o.name}</span>
+                      </span>
                     </label>
                   </td>
                 );
@@ -267,7 +304,9 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {!mergedRows.length && !raggedCount && (
             <tr>
               <td colSpan={1 + columns.length} className="px-3 py-6 text-center text-[12px] text-subtle">
-                {headers.length ? 'Nothing matches the filters.' : 'No headers yet — press Add to create one.'}
+                {!headers.length ? 'No headers yet — press Add to create one.'
+                  : groupFilter && !groupFilter.size ? 'No headers in this group yet — Assign headers adds them.'
+                    : 'Nothing matches the filters.'}
               </td>
             </tr>
           )}

@@ -91,6 +91,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
       // The dashboard's merged tabs list (tabsHeaderPool), except while
       // arranging (Position Settings) — then, and in the preview, every header.
       pool={editMode ? null : headerPool}
+      groups={config.headerGroups}
     />
   );
 

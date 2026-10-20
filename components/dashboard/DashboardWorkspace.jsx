@@ -8,6 +8,7 @@ import { readAnyFile } from '@/lib/sheet/readAnyFile';
 import { downloadSkuCostTemplate } from '@/lib/sheet/skuCostTemplate';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { effectiveConfig } from '@/lib/profitLoss/effectiveConfig';
+import { isShown } from '@/lib/profitLoss/headerGroups';
 import { rangeForPreset, todayISO } from '@/lib/profitLoss/dateRanges';
 import { readHeaderFromRow, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
 import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
@@ -99,7 +100,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // marketplaces" — so the page can say why and offer Try again
   // (TemplatesLoadError) instead of "No marketplaces yet".
   const {
-    templates, globalConfig, templatesReady, templatesChecked, templatesError, retryTemplates,
+    templates, globalConfig, headerGroups, templatesReady, templatesChecked, templatesError, retryTemplates,
   } = useLiveTemplates({ addToast });
   // The marketplace picked in the toolbar; until one is (or once it's gone
   // from `templates`) the first one is the active one.
@@ -111,10 +112,12 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   );
 
   // Global Settings + the active marketplace's files and mappings — see
-  // lib/profitLoss/effectiveConfig.js.
+  // lib/profitLoss/effectiveConfig.js. Every header carries its Show / Hide
+  // switch as `isHidden`: a hidden one is worked out, never a column
+  // (headerGroups.js).
   const config = useMemo(
-    () => effectiveConfig(globalConfig, activeMarketplace?.config || (activeMarketplace ? {} : null)),
-    [globalConfig, activeMarketplace],
+    () => effectiveConfig(globalConfig, activeMarketplace?.config || (activeMarketplace ? {} : null), headerGroups),
+    [globalConfig, activeMarketplace, headerGroups],
   );
 
   // Every tab the template defines, in template order — the full list the
@@ -441,6 +444,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   }), [config, canonicalRows, skuCosts, viewOptions, activeTabId, showTransactions]);
   const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
   const { resolved, transactionResolved } = computed.value;
+  // The Transactions table's columns — every header not switched to Hidden.
+  const transactionHeaders = useMemo(() => (transactionResolved.headers || []).filter(isShown), [transactionResolved]);
   const calculating = merged.pending || computed.pending;
   const calculationError = merged.error || computed.error;
   const [exporting, setExporting] = useState(false);
@@ -1021,7 +1026,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                   One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
                 </p>
                 <DetailsTable
-                  columns={transactionResolved.headers}
+                  columns={transactionHeaders}
                   rows={transactionResolved.rows}
                   disableCostColumn
                   selectedKeys={selectedKeys}

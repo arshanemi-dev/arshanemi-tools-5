@@ -73,7 +73,11 @@ export function ListSearchBox({ value, onChange, onEnter, placeholder = 'Search�
 // they hold a field of their own that Enter should OK from; `footer` = an
 // extra control on the left of the buttons (e.g. "Clear filter").
 // `canSubmit={false}` holds OK back while something in `header` is wrong.
-export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true, canSubmit = true }) {
+// For a list that says who belongs to something (Template Settings' header
+// groups) rather than what to keep: `allowEmpty` lets OK go with nothing
+// ticked, and `narrowOnSearch={false}` makes OK report every ticked option,
+// searched for or not.
+export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true, canSubmit = true, allowEmpty = false, narrowOnSearch = true }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
   const [ticked, setTicked] = useState(() => new Set(initial));
@@ -84,7 +88,8 @@ export default function SearchChecklist({ label = 'options', options = [], initi
   );
   const searching = q.trim() !== '';
   const allTicked = visible.length > 0 && visible.every((o) => ticked.has(o.value));
-  const chosen = (searching ? visible : options).filter((o) => ticked.has(o.value)).map((o) => o.value);
+  const chosen = (searching && narrowOnSearch ? visible : options).filter((o) => ticked.has(o.value)).map((o) => o.value);
+  const canOk = (allowEmpty || chosen.length > 0) && canSubmit;
 
   const toggle = (value) => setTicked((prev) => {
     const next = new Set(prev);
@@ -97,7 +102,7 @@ export default function SearchChecklist({ label = 'options', options = [], initi
     return next;
   });
   const submit = () => {
-    if (!chosen.length || !canSubmit) return;
+    if (!canOk) return;
     onSubmit(chosen, { all: chosen.length >= options.length });
     onClose();
   };
@@ -139,7 +144,7 @@ export default function SearchChecklist({ label = 'options', options = [], initi
         <button type="button" onClick={onClose} className="rounded-lg border border-divider-light px-2.5 py-1 text-[12px] font-medium text-muted hover:bg-card-hover">
           Cancel
         </button>
-        <button type="button" onClick={submit} disabled={!chosen.length || !canSubmit} className="rounded-lg bg-action px-3 py-1 text-[12px] font-semibold text-white hover:bg-action-hover disabled:opacity-40">
+        <button type="button" onClick={submit} disabled={!canOk} className="rounded-lg bg-action px-3 py-1 text-[12px] font-semibold text-white hover:bg-action-hover disabled:opacity-40">
           {typeof okLabel === 'function' ? okLabel(chosen.length) : okLabel}
         </button>
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Check, Eye, Globe, History, Loader2, PanelLeft, Store, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
@@ -22,6 +22,8 @@ import MarketPlaceSection from './MarketPlaceSection';
 import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
 import { GlobalSaveButtons, GlobalVersionBar, useGlobalSave } from './GlobalVersion';
+import useHeaderGroups from './useHeaderGroups';
+import { withHeaderGroups } from '@/lib/profitLoss/headerGroups';
 
 function scrollToAnchor(anchor) {
   if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -170,12 +172,22 @@ export default function TemplateBuilder() {
   // The Header section's mapping edits — each one saves that marketplace.
   const mappingSaver = useMarketplaceMappingSaver(templates, setTemplates, addToast);
 
+  // Header › Our Groups and each header's Show / Hide switch
+  // (useHeaderGroups; saved straight to the hub, live on the dashboard at once).
+  const headerGroups = useHeaderGroups(addToast);
+
   // The dashboard's own merge (see DashboardWorkspace.jsx): global config +
-  // the active marketplace's own bits. resolveTemplate never reads fileSlots,
-  // so the preview only needs `marketplace` merged in for a marketplace view.
-  const previewConfig = isGlobal || !marketplaceId
-    ? globalDraft.config
-    : { ...globalDraft.config, marketplace: draft.config?.marketplace };
+  // the active marketplace's own bits, and — like the dashboard — headers
+  // switched to Hidden marked `isHidden` (never a column) and My Details grouped
+  // by header group (withHeaderGroups). resolveTemplate never
+  // reads fileSlots, so the preview only needs `marketplace` merged in for a
+  // marketplace view.
+  const draftMarketplace = draft.config?.marketplace;
+  const groupsLive = headerGroups.loading || headerGroups.error ? null : headerGroups.headerGroups;
+  const previewConfig = useMemo(() => {
+    const base = isGlobal || !marketplaceId ? globalDraft.config : { ...globalDraft.config, marketplace: draftMarketplace };
+    return groupsLive ? withHeaderGroups(base, groupsLive) : base;
+  }, [isGlobal, marketplaceId, globalDraft.config, draftMarketplace, groupsLive]);
 
   // A marketplace view also waits for Global Settings: its mappings are
   // checked against the global headers, and until those load the header list
@@ -265,6 +277,7 @@ export default function TemplateBuilder() {
                           {...sectionProps('header')}
                           marketplaces={templates}
                           mappingSaver={mappingSaver}
+                          headerGroups={headerGroups}
                         />
                       )}
                       {openSection === 'graph' && <GraphSection {...sectionProps('graph')} />}

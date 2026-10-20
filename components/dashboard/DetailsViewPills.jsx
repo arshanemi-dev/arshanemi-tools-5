@@ -28,6 +28,12 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // what's ticked and what the table shows are worked out over every header.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows this; the default stays compact for the builder preview.
+// `groups` (the config's headerGroups — Template Settings › Header › Our
+// Groups, in order) lists the headers group by group, each under its own
+// title, whenever what's listed spans more than one group (every header
+// carries its `groupId` — effectiveConfig.js); search and the A → Z order
+// apply within each group. A header switched to Hidden is never here at all
+// (tabColumns.js leaves it out of `tabHeaders`).
 const SIZES = {
   sm: 'px-3 py-1.5 text-xs',
   md: 'h-9 px-3 text-sm',
@@ -39,7 +45,19 @@ function ListTitle({ children }) {
   return <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">{children}</div>;
 }
 
-export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm', pool = null }) {
+// `listed` split by header group, in `groups` order — null when it's all one
+// group (or there are no groups): the list then stays flat.
+function bySection(listed, groups) {
+  if (!Array.isArray(groups) || groups.length < 2) return null;
+  const known = new Set(groups.map((g) => g.id));
+  const sections = groups.map((g) => ({ id: g.id, name: g.name, items: listed.filter((h) => h.groupId === g.id) }));
+  const rest = listed.filter((h) => !known.has(h.groupId));
+  if (rest.length) sections.push({ id: '__other', name: 'Other', items: rest });
+  const filled = sections.filter((s) => s.items.length);
+  return filled.length > 1 ? filled : null;
+}
+
+export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm', pool = null, groups = null }) {
   const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
   const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds, emptyShowsAll ? toggleable : []).map((h) => h.id));
@@ -49,6 +67,7 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
   const offered = pool ? new Set([...pool, ...shown]) : null;
   const listable = offered ? toggleable.filter((h) => offered.has(h.id)) : toggleable;
   const listed = sortByLabel(listable.filter((h) => matchesSearch(h.name, q)), (h) => h.name, sort);
+  const sections = bySection(listed, groups);
 
   // Until the user has ticks of their own here, the default is what's
   // showing — so the first tick / untick starts from that, not from nothing.
@@ -90,11 +109,16 @@ export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defa
         )}
         {listable.length === 0 && <div className="px-2 py-2 text-sm text-muted">Only one column on this tab.</div>}
         {listable.length > 0 && listed.length === 0 && <div className="px-2 py-2 text-sm text-muted">No column matches.</div>}
-        {listed.map((h) => (
-          <label key={h.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-card-hover">
-            <input type="checkbox" checked={shown.has(h.id)} onChange={() => toggle(h.id)} className="accent-[var(--color-action)]" />
-            {h.name}
-          </label>
+        {(sections || [{ id: '__all', items: listed }]).map((s) => (
+          <div key={s.id} role={sections ? 'group' : undefined} aria-label={sections ? s.name : undefined}>
+            {sections && <div className="mt-1 border-t border-divider px-2 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-accent first:mt-0 first:border-t-0">{s.name}</div>}
+            {s.items.map((h) => (
+              <label key={h.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-card-hover">
+                <input type="checkbox" checked={shown.has(h.id)} onChange={() => toggle(h.id)} className="accent-[var(--color-action)]" />
+                {h.name}
+              </label>
+            ))}
+          </div>
         ))}
       </Popover>
     </div>

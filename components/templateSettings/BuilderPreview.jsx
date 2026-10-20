@@ -11,6 +11,7 @@ import OverviewTab from '@/components/dashboard/OverviewTab';
 import { HL_BOX, PreviewHighlightContext } from '@/components/dashboard/previewHighlight';
 import { DEFAULT_OVERVIEW_ICON, DEFAULT_TAB_ICON, tabIconFor } from '@/components/dashboard/tabIcons';
 import { overviewLevelIds } from '@/lib/profitLoss/overviewTree';
+import { overviewShownHeaders } from '@/lib/profitLoss/tabColumns';
 
 // A small, deterministic set of fake orders — 3 SKUs × 14 days, a mix of
 // delivered/return/rto/cancelled, under two demo brands — run through the
@@ -139,13 +140,19 @@ export default function BuilderPreview({ config, highlight = null }) {
   const headers = config.headers;
   const seeds = useMemo(() => countFilterSeeds(headers, config.titleCards), [headers, config.titleCards]);
   const canonicalRows = useMemo(() => demoCanonicalRows(headers || [], seeds), [headers, seeds]);
+  // Each Overview tab's columns as the dashboard works them out — its own
+  // picks, never a header switched to Hidden (tabColumns.js).
+  const overviewHeaderIds = useMemo(
+    () => Object.fromEntries((config.overviewTabs || []).map((ov) => [ov.id, overviewShownHeaders(ov, headers || [], []).map((h) => h.id)])),
+    [config.overviewTabs, headers],
+  );
   const resolved = useMemo(() => {
     try {
-      return resolveTemplate(config, { canonicalRows, ads: { mode: 'percent', value: 5 } });
+      return resolveTemplate(config, { canonicalRows, ads: { mode: 'percent', value: 5 }, overviewHeaderIds });
     } catch {
       return null;
     }
-  }, [config, canonicalRows]);
+  }, [config, canonicalRows, overviewHeaderIds]);
 
   const tabs = useMemo(() => [...(config.tabs || [])].sort(byOrder), [config.tabs]);
   const overviewTabs = useMemo(() => [...(config.overviewTabs || [])].sort(byOrder), [config.overviewTabs]);
