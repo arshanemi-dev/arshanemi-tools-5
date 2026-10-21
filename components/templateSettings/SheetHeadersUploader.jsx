@@ -5,7 +5,7 @@ import { Check, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { ACCEPT } from '@/lib/sheet/readAnyFile';
 import {
   extractSheetHeaders, headerBoxText, lineLabel, parseHeaderBox, readSheetsForHeaders,
-  uniqueNames, valueBoxText, valueSpecFromBox, withOrientation,
+  valueBoxText, valueSpecFromBox, withOrientation,
 } from '@/lib/sheet/sheetHeaders';
 import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { slotExtractedHeaders } from '@/lib/profitLoss/marketplaceHeaders';
@@ -33,8 +33,10 @@ function settingsOf(c = {}) {
 // line each, like the listing tool's sheet pickers but for as many sheets as
 // the file has — tick the ones to read, and per sheet its direction (Row /
 // Column) and its Header Row and Value Row (empty = auto-detect; see
-// SheetListRow). "Save All Sheets" hands the result to `onSave` — per-sheet
-// settings + the file's unique header list, which MarketPlaceSection stores
+// SheetListRow). Below the sheets, every ticked sheet's headers are listed
+// sheet by sheet (HeaderColumns — a header in two sheets shows under both).
+// "Save All Sheets" hands the result to `onSave` — per-sheet settings, each
+// with its own headers, which MarketPlaceSection stores
 // on the slot (in the Global Settings draft — Save New Version keeps it, and
 // the version switched Live is what the dashboard uses); it reads every ticked
 // sheet of an upload with exactly these settings (rowOverrideFor →
@@ -84,10 +86,14 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
   }, [pending, cfg, defaults]);
 
   const includedNames = pending ? pending.sheets.filter((s) => cfg[s.name]?.include !== false).map((s) => s.name) : [];
-  // The file's total headers across every ticked sheet — the one list shown below the sheets.
-  const totalHeaders = uniqueNames(includedNames.flatMap((n) => results[n]?.headers || []));
-  const uniqueCount = totalHeaders.length;
-  const totalFilled = new Set(includedNames.flatMap((n) => [...(results[n]?.filled || [])].map((h) => h.toLowerCase())));
+  // Every ticked sheet's own headers, listed sheet by sheet below the sheets
+  // — never de-duplicated across sheets (an "Amount" in two sheets is two).
+  const sheetLists = includedNames.map((n) => ({
+    name: n,
+    headers: results[n]?.headers || [],
+    filled: new Set([...(results[n]?.filled || [])].map((h) => h.toLowerCase())),
+  }));
+  const headerCount = sheetLists.reduce((sum, s) => sum + s.headers.length, 0);
   const badLines = includedNames.some((n) => !settingsOf(cfg[n]).headerOk || (results[n] && !results[n].valueSpecOk));
   const allTicked = !!pending && includedNames.length === pending.sheets.length;
 
@@ -119,7 +125,11 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
       };
     });
     const included = sheets.filter((s) => s.include);
-    const extractedHeaders = uniqueNames(included.flatMap((s) => s.headers));
+    // What the slot is read and mapped by is each sheet's own `headers`
+    // (above). extractedHeaders is every included sheet's headers one sheet
+    // after another — not de-duplicated either; only older readers of a slot
+    // with no sheets fall back on it (through slotExtractedHeaders).
+    const extractedHeaders = included.flatMap((s) => s.headers);
     const sampleValues = {};
     for (const s of included) {
       const r = results[s.name];
@@ -138,7 +148,12 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
   }
 
   const saved = Array.isArray(slot.sheets) ? slot.sheets : [];
-  const th = 'px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted';
+  // What was saved, sheet by sheet (a slot saved before sheets existed: its one list).
+  const savedLists = saved.length
+    ? saved.filter((s) => s.include !== false).map((s) => ({ name: s.name, headers: s.headers || [] }))
+    : [{ name: null, headers: slotExtractedHeaders(slot) }];
+  const savedCount = savedLists.reduce((sum, s) => sum + s.headers.length, 0);
+  const th ='px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted';
 
   return (
     <div className="mt-3 space-y-3">
@@ -151,7 +166,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
           <span className="text-[11.5px] text-subtle">
             {slot.sourceFileName ? `${slot.sourceFileName} · ` : ''}
             {saved.length ? `${saved.filter((s) => s.include !== false).length} of ${saved.length} sheets · ` : `sheet “${slot.sheetNameHint || '—'}” · `}
-            {slotExtractedHeaders(slot).length} unique headers
+            {savedCount} header{savedCount === 1 ? '' : 's'}
           </span>
         )}
       </div>
@@ -208,16 +223,16 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
             </p>
           )}
 
-          <HeaderColumns headers={totalHeaders} filled={totalFilled} />
+          <HeaderColumns sheets={sheetLists} file={slot.label || 'File'} />
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-divider bg-card px-3 py-2">
             <span className="text-[12px] text-muted">
-              {includedNames.length} of {pending.sheets.length} sheets · <span className="font-semibold text-foreground">{uniqueCount} unique headers</span>
+              {includedNames.length} of {pending.sheets.length} sheets · <span className="font-semibold text-foreground">{headerCount} header{headerCount === 1 ? '' : 's'}</span>
             </span>
             <button
               type="button"
               onClick={saveAll}
-              disabled={saving || !uniqueCount || badLines}
+              disabled={saving || !headerCount || badLines}
               title={badLines ? 'Fix the red Header Row / Value Row box first' : undefined}
               className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[12.5px] font-semibold text-white hover:bg-action-hover disabled:opacity-50"
             >
@@ -239,7 +254,7 @@ export default function SheetHeadersUploader({ slot, onSave, saving = false }) {
               ))}
             </ul>
           )}
-          <HeaderColumns headers={slotExtractedHeaders(slot)} />
+          <HeaderColumns sheets={savedLists} file={slot.label || 'File'} />
         </div>
       ) : null}
     </div>

@@ -128,9 +128,12 @@ export function makeFileSlot(label = 'File', kind = 'aux') {
     sheetNameHint: '',
     // "Save All Sheets" (Template Settings): one entry per sheet of the
     // uploaded file — { name, include, orientation: 'row'|'column',
-    // headerIndex (1-based), headerIndexAuto, headers[], dataCount }.
-    // extractedHeaders is then the file's unique headers across every
-    // included sheet. Empty for a slot sampled before sheets existed.
+    // headerIndex (1-based), headerIndexAuto, headers[], dataCount } — each
+    // sheet's OWN headers, the ones the file is listed, mapped and read by
+    // (sheet by sheet, not de-duplicated across sheets). extractedHeaders is
+    // then every included sheet's headers one sheet after another (not
+    // de-duplicated either), for older readers of a slot sampled before
+    // sheets existed.
     sheets: [],
     sourceFileName: '',
     extractedHeaders: [],

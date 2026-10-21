@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { marketplaceUniqueHeaders, slotExtractedHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
+import { marketplaceColumns, slotExtractedHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
 import SectionHead from './SectionHead';
@@ -22,10 +22,10 @@ import SheetHeadersUploader from './SheetHeadersUploader';
 //
 // A file's upload goes through SheetHeadersUploader: every sheet in the
 // workbook is listed with Headers Row / Column buttons, and "Save All Sheets"
-// stores each sheet's settings + the file's unique headers on the slot —
-// its unique header list (every file, every included sheet) is what the
-// global Header section offers in this marketplace's column. Nothing is
-// mapped automatically.
+// stores each sheet's settings + that sheet's own headers on the slot —
+// sheet by sheet, never de-duplicated across sheets; that is what the
+// global Header section offers in this marketplace's column (File › Sheet ›
+// Header). Nothing is mapped automatically.
 //
 // `draft` = useVersionMarketplace: this marketplace is part of the Global
 // Settings version, so every change here (Save All Sheets included) is an
@@ -36,7 +36,9 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], activeSl
   const { addToast } = useToast();
   const { config, setConfig, addItem, patchItem, updateMarketplace } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
-  const uniqueHeaders = useMemo(() => marketplaceUniqueHeaders(config), [config]);
+  // Every file › sheet › header — what "Files · N headers" counts.
+  const columns = useMemo(() => marketplaceColumns(config), [config]);
+  const sheetCount = new Set(columns.map((c) => `${c.slotId}::${c.sheet ?? ''}`)).size;
   const [pick, setPick] = useState({}); // { [sheetHeader]: headerId }
   const [localSlotId, setLocalSlotId] = useState(null);
   const setActiveSlotId = onActiveSlotId || setLocalSlotId;
@@ -94,12 +96,15 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], activeSl
     addToast(`Removed ${staleCount} mapping${staleCount === 1 ? '' : 's'} to deleted headers${LATER}`);
   }
 
-  // "Save All Sheets": the slot takes the per-sheet settings + unique
-  // headers. Its columns stay this marketplace's own — never added to Our
-  // Headers, never auto-mapped; map them in Global Settings › Header.
+  // "Save All Sheets": the slot takes the per-sheet settings, each sheet
+  // with its own headers. Its columns stay this marketplace's own — never
+  // added to Our Headers, never auto-mapped; map them in Global Settings ›
+  // Header.
   async function saveSheets(slotId, slotPatch) {
     setConfig((c) => ({ ...c, fileSlots: (c.fileSlots || []).map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) }));
-    addToast(`${slotPatch.extractedHeaders.length} unique headers kept — map them in Global Settings › Header, then Save New Version`);
+    const read = (slotPatch.sheets || []).filter((s) => s.include);
+    const n = read.reduce((sum, s) => sum + (s.headers || []).length, 0);
+    addToast(`${n} headers from ${read.length} sheet${read.length === 1 ? '' : 's'} kept — map them in Global Settings › Header, then Save New Version`);
     return true;
   }
 
@@ -163,7 +168,7 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], activeSl
         {/* File slots — compact list (left) + the selected one's full editor (right) */}
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold text-foreground">
-            Files <span className="font-normal text-subtle">· {uniqueHeaders.length} unique headers across {slots.length} file{slots.length === 1 ? '' : 's'}</span>
+            Files <span className="font-normal text-subtle">· {columns.length} headers in {sheetCount} sheet{sheetCount === 1 ? '' : 's'} across {slots.length} file{slots.length === 1 ? '' : 's'}</span>
           </span>
           <button
             type="button"

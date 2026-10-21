@@ -9,6 +9,7 @@ import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
 import useCostFill from './useCostFill';
 import useFillHeight from './useFillHeight';
+import useHeldOrder from './useHeldOrder';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
@@ -41,6 +42,8 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 // to a deeper match opened automatically. Pagination is over Level-1 rows.
 // Checking a parent row selects its whole branch (its children show as
 // included) — DashboardWorkspace's delete matches raw rows by path prefix.
+// Typing a cost keeps every row where it is, as in DetailsTable
+// (useHeldOrder), until a sort, a filter or "Sort rows again".
 // The pager renders in the footer, or wherever `pagerSlot` points.
 export default function OverviewTreeTable({
   levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
@@ -61,7 +64,6 @@ export default function OverviewTreeTable({
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
-  const startFill = useCostFill(onCostFill); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped
   // A header picked in the builder lights up its column — or the hierarchy
   // column when it's one of the levels.
   const hlHead = (col) => (col.key === TREE_COL
@@ -72,10 +74,13 @@ export default function OverviewTreeTable({
   const colKeys = [TREE_COL, ...columns.map((h) => h.id)].join('\u0000');
   const applied = useMemo(() => activeFilters(filters, colKeys.split('\u0000')), [filters, colKeys]);
   const filtering = applied.length > 0;
-  const view = useMemo(() => {
+  const fresh = useMemo(() => {
     const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, f]) => cellPasses(f, nodeCell(n, k)))) : tree;
     return sortTree(kept, sort);
   }, [tree, applied, sort]);
+  const order = useHeldOrder(tree, fresh, true);
+  const view = order.view;
+  const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped
   // The Total row, over the top level only — each node already adds up its
   // children, so counting them too would count everything twice.
   const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
@@ -143,7 +148,7 @@ export default function OverviewTreeTable({
   const costInput = (sku, field, name) => (
     <CostCell
       value={skuCosts[sku]?.[field]}
-      onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
+      onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
       fill={onCostFill ? { col: field, sku, start: startFill } : null}
@@ -151,7 +156,8 @@ export default function OverviewTreeTable({
   );
   const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers
 
-  const resetPaging = () => setPage(1);
+  // A sort or filter the user picks is a new order — the held one goes.
+  const resetPaging = () => { order.release(); setPage(1); };
   const allChecked = pageNodes.length > 0 && pageNodes.every((n) => selected.has(n.key));
   const nodeTotal = useMemo(() => {
     let c = 0;
@@ -197,6 +203,14 @@ export default function OverviewTreeTable({
           </span>
           <button type="button" onClick={() => { setFilters({}); resetPaging(); }} className="font-semibold text-link hover:underline">
             Clear all filters
+          </button>
+        </div>
+      )}
+      {order.moved && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-link/10 px-3 py-1.5 text-xs text-foreground">
+          <span>Rows stay where they are while you type costs{sort?.key || applied.length ? ' — the sort and filters catch up when you ask' : ''}.</span>
+          <button type="button" onClick={resetPaging} className="font-semibold text-link hover:underline">
+            Sort rows again
           </button>
         </div>
       )}
@@ -356,7 +370,7 @@ export default function OverviewTreeTable({
           </>
         )}
         pageSize={pageSize}
-        onPageSizeChange={(n) => { setPageSize(n); resetPaging(); }}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
         currentPage={currentPage}
         pageCount={pageCount}
         onPageChange={setPage}

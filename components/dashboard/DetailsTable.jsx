@@ -8,6 +8,7 @@ import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
 import useCostFill from './useCostFill';
 import useFillHeight from './useFillHeight';
+import useHeldOrder from './useHeldOrder';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
@@ -58,7 +59,15 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // Paginated client-side — `pageSize` rows at a time, with Prev/Next + a
 // page-size picker (TablePager) in the footer, or wherever `pagerSlot`
 // points. The page resets whenever the underlying row set, a filter, or the
-// sort changes, so it never gets stuck showing an out-of-range empty page.
+// sort changes, so it never gets stuck showing an out-of-range empty page —
+// not when only values change (a cost typed), which would throw the user
+// back to page 1 mid-edit.
+//
+// Typing a cost keeps every row where it is (useHeldOrder): the default
+// order (biggest P&L first — engine.js), a column's sort and a filter would
+// otherwise move the edited row away, or drop it. The rows stay in that
+// order until the user sorts, filters, or presses "Sort rows again" — which
+// shows once the order is out of date.
 
 export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
@@ -86,16 +95,6 @@ export default function DetailsTable({
   // aside when the COGS header's own column is here to type into.
   const showCost = !disableCostColumn && cols.some((c) => c.isSku) && !cols.some((c) => c.costField === 'cogs');
   const dirtyCells = dirtyCostCells || new Set();
-  const startFill = useCostFill(onCostFill); // Excel's fill handle on the cost boxes
-  const costInput = (sku, field, name) => (
-    <CostCell
-      value={skuCosts[sku]?.[field]}
-      onCommit={onCostChange && ((text) => onCostChange(sku, field, text))}
-      dirty={dirtyCells.has(costCellKey(sku, field))}
-      label={`${name} for ${sku}`}
-      fill={onCostFill ? { col: field, sku, start: startFill } : null}
-    />
-  );
   const displayCols = [];
   for (const c of cols) {
     displayCols.push({ ...c, kind: 'header' });
@@ -121,7 +120,7 @@ export default function DetailsTable({
   const optionsFor = (key) => columnOptions(rows.filter((r) => passes(r, key)), (r) => cellText(r.cells[key]), (r) => r.cells[key]?.raw);
   const rangeFor = (key) => columnRange(rows.filter((r) => passes(r, key)), (r) => cellNumber(r.cells[key]));
 
-  const view = useMemo(() => {
+  const fresh = useMemo(() => {
     let out = applied.length
       ? rows.filter((r) => applied.every(([key, f]) => cellPasses(f, r.cells[key])))
       : rows;
@@ -136,6 +135,22 @@ export default function DetailsTable({
     }
     return out;
   }, [rows, applied, sort]);
+  const order = useHeldOrder(rows, fresh);
+  const view = order.view;
+  // A sort or filter the user picks is a new order — the held one goes.
+  const changeSort = (next) => { order.release(); setSort(next); };
+  const changeFilters = (update) => { order.release(); setFilters(update); };
+
+  const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the cost boxes
+  const costInput = (sku, field, name) => (
+    <CostCell
+      value={skuCosts[sku]?.[field]}
+      onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
+      dirty={dirtyCells.has(costCellKey(sku, field))}
+      label={`${name} for ${sku}`}
+      fill={onCostFill ? { col: field, sku, start: startFill } : null}
+    />
+  );
 
   // The Total row: every filtered row, every page — not just this one.
   const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
@@ -143,7 +158,7 @@ export default function DetailsTable({
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
   // out-of-range page.
-  useEffect(() => { (() => setPage(1))(); }, [rows, filters, sort, pageSize]);
+  useEffect(() => { (() => setPage(1))(); }, [order.rowSet, filters, sort, pageSize]);
 
   const pageCount = Math.max(1, Math.ceil(view.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -179,8 +194,16 @@ export default function DetailsTable({
           <span>
             {applied.length} filter{applied.length === 1 ? '' : 's'} on — showing <span className="font-semibold">{view.length}</span> of {rows.length} row{rows.length === 1 ? '' : 's'}
           </span>
-          <button type="button" onClick={() => setFilters({})} className="font-semibold text-link hover:underline">
+          <button type="button" onClick={() => changeFilters({})} className="font-semibold text-link hover:underline">
             Clear all filters
+          </button>
+        </div>
+      )}
+      {order.moved && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-divider bg-link/10 px-3 py-1.5 text-xs text-foreground">
+          <span>Rows stay where they are while you type costs{sort?.key || applied.length ? ' — the sort and filters catch up when you ask' : ''}.</span>
+          <button type="button" onClick={() => { order.release(); setPage(1); }} className="font-semibold text-link hover:underline">
+            Sort rows again
           </button>
         </div>
       )}
@@ -210,9 +233,9 @@ export default function DetailsTable({
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}
-                      onSortChange={setSort}
+                      onSortChange={changeSort}
                       filter={filters[col.key]}
-                      onFilterChange={(f) => setFilters((prev) => ({ ...prev, [col.key]: f }))}
+                      onFilterChange={(f) => changeFilters((prev) => ({ ...prev, [col.key]: f }))}
                       getFilterOptions={() => optionsFor(col.key)}
                       getFilterRange={col.numeric ? () => rangeFor(col.key) : null}
                       onFilterOpenChange={setFilterOpen}
