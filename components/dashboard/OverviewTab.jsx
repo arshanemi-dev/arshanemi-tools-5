@@ -70,7 +70,9 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
   const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));
-  const headersArrange = useArrangeableList(ov.headers || [], headersSection, (next) => onSetTabSection(tabId, 'headers', next));
+  // Saved with the overview's own headers then (`picks`) — see TabView.
+  const setHeadersSection = (next) => onSetTabSection(tabId, 'headers', { ...next, picks: [...(tab?.headerIds || [])] });
+  const headersArrange = useArrangeableList(ov.headers || [], headersSection, setHeadersSection);
 
   const [expanded, setExpanded] = useState(() => new Set());
   // `tick` only moves on a sidebar focus — that's what makes the table
@@ -121,7 +123,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       defaultIds={pickable.defaultIds}
       emptyShowsAll={false}
       onMyColumnsChange={onMyColumnsChange}
-      onReorder={editMode ? (ids) => onSetTabSection(tabId, 'headers', reorderItems(headersSection, pickableIds, ids)) : null}
+      onReorder={editMode ? (ids) => setHeadersSection(reorderItems(headersSection, pickableIds, ids)) : null}
       orderIds={orderIds}
       size={viewPillsSlot ? 'md' : 'sm'}
       groups={config.headerGroups}

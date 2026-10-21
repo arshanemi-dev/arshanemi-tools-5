@@ -100,7 +100,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // marketplaces" — so the page can say why and offer Try again
   // (TemplatesLoadError) instead of "No marketplaces yet".
   const {
-    templates, globalConfig, headerGroups, templatesReady, templatesChecked, templatesError, retryTemplates,
+    templates, globalConfig, headerGroups, templatesReady, templatesChecked, templatesCurrent, templatesError, retryTemplates,
   } = useLiveTemplates({ addToast });
   // The marketplace picked in the toolbar; until one is (or once it's gone
   // from `templates`) the first one is the active one.
@@ -249,7 +249,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Save Position edit-mode layout (tabs/title-cards/graphs/columns show+order) — one
   // per-user settings row, see lib/profitLoss/useDashboardSettings.js.
   const {
-    loggedIn, myColumnsFor, onMyColumnsChange,
+    loggedIn, settingsLoaded, reconcile, myColumnsFor, onMyColumnsChange,
     layout, setTopSection, setTabSection, resetLayout,
     brands, addBrand,
     dropLegacySkuCosts,
@@ -271,6 +271,15 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   useEffect(() => {
     if (legacyMoved) dropLegacySkuCosts();
   }, [legacyMoved, dropLegacySkuCosts]);
+
+  // A version that went Live since this user last saved their arrangement:
+  // what it added (tabs, title cards, graphs, headers) joins their saved
+  // positions and My Details ticks, what it deleted leaves them, and the row
+  // is saved (reconcileLayout.js). Only against the version the server says
+  // is live — never the last visit's copy — and never mid-arrangement.
+  useEffect(() => {
+    if (settingsLoaded && templatesCurrent && !editMode && activeMarketplace) reconcile(config);
+  }, [settingsLoaded, templatesCurrent, editMode, activeMarketplace, config, reconcile]);
 
   // Automatic, unmetered per-ROW persistence (Task: "save all my headers
   // data user-wise... one row one json") — distinct from the per-SKU

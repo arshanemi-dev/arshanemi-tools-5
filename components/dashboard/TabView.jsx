@@ -67,7 +67,10 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
 
   const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
   const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));
-  const headersArrange = useArrangeableList(restHeaderDefs, headersSection, (next) => onSetTabSection(tabId, 'headers', next));
+  // The column arrangement keeps which headers were the tab's own then
+  // (`picks`) — so a later version adding / removing one isn't read as
+  // re-ordering the columns (lib/profitLoss/reconcileLayout.js).
+  const headersArrange = useArrangeableList(restHeaderDefs, headersSection, (next) => onSetTabSection(tabId, 'headers', { ...next, picks: [...(tab?.headerIds || [])] }));
 
   if (!tab) return null;
 
