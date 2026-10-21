@@ -10,7 +10,7 @@ import HiddenItemsChip from './HiddenItemsChip';
 import OverviewHierarchyNav from './OverviewHierarchyNav';
 import OverviewTreeTable from './OverviewTreeTable';
 import { levelStyle } from './overviewLevelStyles';
-import { emptySection } from '@/lib/profitLoss/layoutSections';
+import { emptySection, reorderItems, startingOrder } from '@/lib/profitLoss/layoutSections';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 import { TREE_COL, ancestorKeys, keysToDepth } from '@/lib/profitLoss/overviewTree';
 import { overviewColumnDefs } from '@/lib/profitLoss/tabColumns';
@@ -39,7 +39,8 @@ function SectionLabel({ text, hidden, onShow }) {
 // preview, and should go side-by-side whenever ITS OWN width allows.
 //
 // Edit mode works exactly like TabView's — layout.perTab[tab.id] — the
-// hierarchy column stays pinned, same rule as a regular Tab's first column.
+// hierarchy column stays pinned, same rule as a regular Tab's first column,
+// and My Details gets its Column order list the same way.
 // `pagerSlot` (optional) is handed straight to the tree table's pager.
 //
 // My Details (the /profit-loss dashboard — passed `onMyColumnsChange`): the
@@ -105,6 +106,14 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   if (!tab) return null;
 
   const pickable = overviewColumnDefs(tab, config.headers || []);
+  // Position Settings on: My Details' Column order arranges every pickable
+  // header (the table only has the ticked ones yet) — in the order the table
+  // would show it, leaving out any hidden in edit mode.
+  const pickableIds = pickable.rest.map((h) => h.id);
+  const pickableSet = new Set(pickableIds);
+  const orderIds = editMode
+    ? startingOrder(headersSection, pickableIds).filter((id) => pickableSet.has(id) && !headersSection.hidden.includes(id))
+    : null;
   const pills = onMyColumnsChange && levels.length > 0 && (
     <DetailsViewPills
       tabHeaders={[{ id: TREE_COL, name: levels.map((h) => h.name).join(' › ') }, ...pickable.rest]}
@@ -112,6 +121,8 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       defaultIds={pickable.defaultIds}
       emptyShowsAll={false}
       onMyColumnsChange={onMyColumnsChange}
+      onReorder={editMode ? (ids) => onSetTabSection(tabId, 'headers', reorderItems(headersSection, pickableIds, ids)) : null}
+      orderIds={orderIds}
       size={viewPillsSlot ? 'md' : 'sm'}
       groups={config.headerGroups}
     />

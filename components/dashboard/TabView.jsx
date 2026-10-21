@@ -34,7 +34,8 @@ function SectionLabel({ text, hidden, onShow }) {
 // layout.perTab[tab.id] is the signed-in user's own show/hide + reorder on
 // top of the template's own definition. The first table column is never
 // hideable/reorderable — it's the sticky row key, same rule "My Details"
-// already applies.
+// already applies. The My Details window gets a Column order list then too
+// (headersArrange.reorder) — the same arrangement, moved from one place.
 //
 // `viewPillsSlot` / `pagerSlot` (optional DOM nodes): on /profit-loss the
 // My Details pill portals into DashboardHeaderBar instead of sitting above
@@ -87,6 +88,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
       myColumns={myColumns}
       defaultIds={tab.headerIds}
       onMyColumnsChange={onMyColumnsChange}
+      onReorder={editMode ? headersArrange.reorder : null}
       size={viewPillsSlot ? 'md' : 'sm'}
       groups={config.headerGroups}
     />

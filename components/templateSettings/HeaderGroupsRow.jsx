@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ChevronDown, Lock, Loader2, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, Lock, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import Popover from '@/components/dashboard/Popover';
 import SearchChecklist from '@/components/dashboard/SearchChecklist';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -60,7 +60,7 @@ function NameBox({ initial = '', placeholder, onSave, onCancel }) {
 // General only by being put in another group). Whether a header shows on
 // the dashboard is NOT its group — that's its own Show / Hide switch in the
 // table. `g` = useHeaderGroups(); `headers` = the Our Headers in the editor.
-// Every change saves at once.
+// Every change is part of the Global Settings draft — Save New Version keeps it.
 export default function HeaderGroupsRow({ g, headers = [], activeId, onActive }) {
   const { addToast } = useToast();
   const [adding, setAdding] = useState(false);
@@ -114,21 +114,9 @@ export default function HeaderGroupsRow({ g, headers = [], activeId, onActive })
       addToast([
         added.length && `${plural(added.length, 'header')} moved to “${active.name}”`,
         removed.length && `${plural(removed.length, 'header')} moved to “${backName}”`,
-      ].filter(Boolean).join(' · '));
+      ].filter(Boolean).join(' · ') + ' — Save New Version to keep it');
     }
   };
-
-  if (g.loading) {
-    return <div className="mx-4 flex items-center gap-2 text-[12px] text-subtle"><Loader2 size={13} className="animate-spin" /> Loading groups…</div>;
-  }
-  if (g.error) {
-    return (
-      <div className="mx-4 flex flex-wrap items-center gap-2 rounded-lg border border-neg/30 bg-neg/5 px-3 py-2 text-[12px] text-neg">
-        <span className="min-w-0 flex-1">Our Groups: {g.error}</span>
-        <button type="button" onClick={g.reload} className="inline-flex items-center gap-1 rounded-full border border-neg/40 px-2.5 py-1 font-semibold hover:bg-neg/10"><RotateCcw size={12} /> Try again</button>
-      </div>
-    );
-  }
 
   return (
     <div className="mx-4 space-y-2 rounded-lg border border-divider bg-card px-3 py-2.5">
@@ -197,7 +185,7 @@ export default function HeaderGroupsRow({ g, headers = [], activeId, onActive })
 
       <p className="text-[11px] text-subtle">
         Groups sort your headers — a header is in one group at a time, and starts in General. Whether it shows on the dashboard is its own{' '}
-        <span className="font-semibold text-muted">Show / Hide</span> switch in the table. Changes here save at once — no Save New Version needed.
+        <span className="font-semibold text-muted">Show / Hide</span> switch in the table. Groups and switches are saved in the version, like the rest — Save New Version keeps them.
       </p>
 
       <ConfirmDialog

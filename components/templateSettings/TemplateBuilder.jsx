@@ -1,14 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, Check, Eye, Globe, History, Loader2, PanelLeft, Store, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
-import { makeEmptyMarketplaceConfig } from '@/data/templateSchema';
-import { listTemplates, createTemplate, patchTemplate, deleteTemplate, failureMessage, validationMessage } from '@/lib/profitLoss/templatesApi';
-import useTemplateDraft from './useTemplateDraft';
-import useMarketplaceMappingSaver from './useMarketplaceMappingSaver';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import {
+  makeMarketplace, marketplaceListOf, withMarketplaceAdded, withMarketplaceConfig, withMarketplaceRemoved, withMarketplaceRenamed,
+} from '@/lib/profitLoss/versionMarketplaces';
 import useGlobalTemplateDraft from './useGlobalTemplateDraft';
+import useVersionMarketplace from './useVersionMarketplace';
 import BuilderSidebar, { GLOBAL_SECTIONS } from './BuilderSidebar';
 import GlobalSectionPicker from './GlobalSectionPicker';
 import BuilderPreview from './BuilderPreview';
@@ -23,11 +24,13 @@ import VersionSection from './VersionSection';
 import TemplateLogPanel from './TemplateLogPanel';
 import { GlobalSaveButtons, GlobalVersionBar, useGlobalSave } from './GlobalVersion';
 import useHeaderGroups from './useHeaderGroups';
-import { withHeaderGroups } from '@/lib/profitLoss/headerGroups';
+import { headerGroupsOf, withHeaderGroups } from '@/lib/profitLoss/headerGroups';
 
 function scrollToAnchor(anchor) {
   if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
+
+const LATER = ' — Save New Version to keep it';
 
 // The single builder page. One left sidebar has two areas: Global Settings
 // (Header / Graph / Title Card / Tab / Overview Tab — one shared config
@@ -36,6 +39,13 @@ function scrollToAnchor(anchor) {
 // upload slots + column mapping against the global headers). `?t=` carries
 // either 'global' or a marketplace id. There is no separate list / new / [id]
 // route.
+//
+// Both areas edit ONE thing — the Global Settings draft (useGlobalTemplateDraft):
+// headers with their groups and Show / Hide flags, title cards, graphs, tabs,
+// overview tabs AND every marketplace with its files and mappings are all
+// part of a version. Nothing saves on its own; the footer's Save New Version
+// keeps it all, and switching a version Live on the Version Page puts
+// exactly that version's setup on the dashboard.
 export default function TemplateBuilder() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -48,22 +58,22 @@ export default function TemplateBuilder() {
 
   const globalDraft = useGlobalTemplateDraft();
   const globalSave = useGlobalSave(globalDraft); // "Save New Version" — every save is a new version, see GlobalVersion.jsx
-  const draft = useTemplateDraft(marketplaceId, { globalHeaderIds: globalDraft.headerIds });
+  const { setConfig: setGlobalConfig } = globalDraft;
+  // The active marketplace — one entry of the draft's `marketplaces`.
+  const draft = useVersionMarketplace(globalDraft, marketplaceId);
 
-  const [templates, setTemplates] = useState(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-  const refreshList = () => setReloadKey((k) => k + 1);
+  const [deletingId, setDeletingId] = useState(null); // marketplace awaiting the delete confirm
 
-  useEffect(() => {
-    let alive = true;
-    listTemplates({ scopeAll: true }).then(({ ok, data }) => {
-      if (alive) setTemplates(ok ? data.templates || [] : []);
-    });
-    return () => { alive = false; };
-  }, [reloadKey]);
+  // The draft's marketplaces in the list shape the sidebar and the Header
+  // matrix read (null while loading = the sidebar's spinner).
+  const draftMarketplaces = globalDraft.config.marketplaces;
+  const templates = useMemo(
+    () => (globalDraft.loading ? null : marketplaceListOf({ marketplaces: draftMarketplaces })),
+    [globalDraft.loading, draftMarketplaces],
+  );
 
   // Per-section selection, scoped to the active area (global, or one
   // marketplace) — a switch resets it without an effect, the selection just
@@ -82,28 +92,31 @@ export default function TemplateBuilder() {
     router.replace(id ? `/profit-loss/template-settings?t=${id}` : '/profit-loss/template-settings');
   const openGlobal = () => switchTo('global');
 
-  const addMarketplace = async () => {
-    const name = `Marketplace ${(templates?.length || 0) + 1}`;
-    const { ok, data } = await createTemplate({ marketplaceName: name, description: '', config: makeEmptyMarketplaceConfig(name) });
-    if (!ok) { addToast(data?.error || 'Could not create marketplace', 'error'); return; }
-    refreshList();
-    switchTo(data.template.id);
-    addToast('Marketplace created');
+  // Add / rename / delete a marketplace — edits of the draft, like the rest.
+  const addMarketplace = () => {
+    if (globalDraft.loading || globalDraft.loadError) return;
+    const taken = new Set((templates || []).map((t) => t.marketplaceName));
+    let n = (templates?.length || 0) + 1;
+    while (taken.has(`Marketplace ${n}`)) n += 1;
+    const entry = makeMarketplace(`Marketplace ${n}`);
+    setGlobalConfig((c) => withMarketplaceAdded(c, entry));
+    switchTo(entry.id);
+    addToast(`“${entry.name}” added${LATER}`);
   };
 
-  const renameMarketplace = async (id, name) => {
-    const { ok } = await patchTemplate(id, { marketplaceName: name });
-    if (!ok) { addToast('Rename failed', 'error'); return; }
-    refreshList();
+  const renameMarketplace = (id, name) => {
+    if ((templates || []).find((t) => t.id === id)?.marketplaceName === name) return;
+    setGlobalConfig((c) => withMarketplaceRenamed(c, id, name));
+    addToast(`Marketplace renamed to “${name}”${LATER}`);
   };
 
-  const deleteMarketplace = async (id) => {
-    if (!window.confirm('Delete this marketplace, all its versions and its change log? This cannot be undone.')) return;
-    const { ok } = await deleteTemplate(id);
-    if (!ok) { addToast('Delete failed', 'error'); return; }
-    refreshList();
-    if (id === marketplaceId) switchTo(null);
-    addToast('Marketplace deleted');
+  const deleting = (templates || []).find((t) => t.id === deletingId) || null;
+  const confirmDeleteMarketplace = () => {
+    if (!deleting) return;
+    setGlobalConfig((c) => withMarketplaceRemoved(c, deleting.id));
+    if (deleting.id === marketplaceId) switchTo(null);
+    addToast(`“${deleting.marketplaceName}” deleted${LATER}`);
+    setDeletingId(null);
   };
 
   // `__focus` remembers which group was picked LAST (sidebar or a section's
@@ -141,40 +154,19 @@ export default function TemplateBuilder() {
   const organizerOpen = ['tabsOrganizer', 'overviewOrganizer'].includes(selection.__focus); // preview shows the new tab order live
   const showPreview = isGlobal && (organizerOpen || !!focusList?.some((it) => it.id === selection[selection.__focus]));
 
-  // Every failure toast says why (failureMessage / validationMessage) — a
-  // thrown request (no response at all) used to fail with no toast whatsoever.
-  // (Global Settings' own save is useGlobalSave, above.)
-  async function saveMarketplace() {
-    if (!marketplaceId) return;
-    if (!draft.valid) { addToast(validationMessage(draft.errors), 'error'); return; }
-    let res;
-    try {
-      res = await draft.save();
-    } catch (err) {
-      addToast(failureMessage(err, 'Save failed'), 'error');
-      return;
-    }
-    if (!res.ok) {
-      addToast(failureMessage(res, 'Save failed'), 'error');
-      if (res.details?.length) console.error('template validation:', res.details);
-      return;
-    }
-    if (res.created) switchTo(res.templateId);
-    refreshList(); // the global Header matrix reads each marketplace's saved headers/mappings from this list
-    addToast('Marketplace saved');
-  }
-
   // Our Headers are only ever what's created in Global Settings › Header — a
   // marketplace's sheet columns are never imported into them, and nothing
   // is mapped automatically (the user maps with the Header section's
   // checkboxes + Mapped button).
 
-  // The Header section's mapping edits — each one saves that marketplace.
-  const mappingSaver = useMarketplaceMappingSaver(templates, setTemplates, addToast);
+  // The Header section's mapping edits — into that marketplace in the draft.
+  const mappingSaver = useMemo(() => ({
+    saving: false,
+    update: (mid, fn) => { setGlobalConfig((c) => withMarketplaceConfig(c, mid, fn)); return Promise.resolve(true); },
+  }), [setGlobalConfig]);
 
-  // Header › Our Groups and each header's Show / Hide switch
-  // (useHeaderGroups; saved straight to the hub, live on the dashboard at once).
-  const headerGroups = useHeaderGroups(addToast);
+  // Header › Our Groups and each header's Show / Hide switch — in the draft too.
+  const headerGroups = useHeaderGroups(globalDraft, addToast);
 
   // The dashboard's own merge (see DashboardWorkspace.jsx): global config +
   // the active marketplace's own bits, with My Details grouped by header
@@ -184,20 +176,19 @@ export default function TemplateBuilder() {
   // resolveTemplate never reads fileSlots, so the preview only needs
   // `marketplace` merged in for a marketplace view.
   const draftMarketplace = draft.config?.marketplace;
-  const groupsLive = headerGroups.loading || headerGroups.error ? null : headerGroups.headerGroups;
   const previewConfig = useMemo(() => {
-    const base = isGlobal || !marketplaceId ? globalDraft.config : { ...globalDraft.config, marketplace: draftMarketplace };
-    return groupsLive ? withHeaderGroups(base, { ...groupsLive, hiddenHeaderIds: [] }) : base;
-  }, [isGlobal, marketplaceId, globalDraft.config, draftMarketplace, groupsLive]);
+    const { marketplaces: _all, ...global } = globalDraft.config;
+    const base = isGlobal || !marketplaceId ? global : { ...global, marketplace: draftMarketplace };
+    const groups = headerGroupsOf(global);
+    return groups ? withHeaderGroups(base, { ...groups, hiddenHeaderIds: [] }) : base;
+  }, [isGlobal, marketplaceId, globalDraft.config, draftMarketplace]);
 
-  // A marketplace view also waits for Global Settings: its mappings are
-  // checked against the global headers, and until those load the header list
-  // is just the empty starter config (Order Id + Transaction Id). Rendering
-  // before then made every other mapping look "deleted" — Save was blocked
-  // ("maps … to an unknown header") and the stale-mapping banner offered to
-  // remove them all, which is how Meesho was left with only those two.
-  const loading = isGlobal ? globalDraft.loading : draft.loading || globalDraft.loading;
-  const loadError = isGlobal ? globalDraft.loadError : draft.loadError || globalDraft.loadError;
+  // A marketplace is part of the version in the editor, so a marketplace view
+  // waits for Global Settings like everything else. `missing`: no such
+  // marketplace in the version that's open (deleted, or another version picked).
+  const loading = globalDraft.loading;
+  const loadError = globalDraft.loadError;
+  const missing = !isGlobal && !!marketplaceId && !loading && !loadError && !draft.template;
 
   return (
     <div className="flex h-full min-h-0">
@@ -214,7 +205,7 @@ export default function TemplateBuilder() {
         onSwitchTemplate={switchTo}
         onAddMarketplace={addMarketplace}
         onRenameMarketplace={renameMarketplace}
-        onDeleteMarketplace={deleteMarketplace}
+        onDeleteMarketplace={setDeletingId}
         mobileOpen={navOpen}
         onCloseMobile={() => setNavOpen(false)}
       />
@@ -232,7 +223,7 @@ export default function TemplateBuilder() {
               {isGlobal
                 ? 'Header · Title Card · Graph · Tab · Overview Tab — shared by every marketplace.'
                 : marketplaceId
-                  ? `id ${draft.template?.id} · ${draft.template?.templateNumber} · updated ${draft.template?.updatedAt ? new Date(draft.template.updatedAt).toLocaleString() : '—'}`
+                  ? `id ${draft.template?.id || '—'}${draft.template?.templateNumber ? ` · ${draft.template.templateNumber}` : ''} · part of the Global Settings version`
                   : `${templates?.length ?? 0} marketplace${(templates?.length ?? 0) === 1 ? '' : 's'} — pick Global Settings, or a marketplace on the left.`}
             </p>
           </div>
@@ -259,10 +250,14 @@ export default function TemplateBuilder() {
           </div>
         ) : loadError ? (
           <div className="p-10 text-center text-sm text-neg">
-            {globalDraft.loadError ? 'Global Settings could not be loaded' : 'This marketplace could not be loaded'} — reload the page to try again.
+            Global Settings could not be loaded — reload the page to try again.
           </div>
         ) : loading ? (
           <div className="flex flex-1 items-center justify-center text-muted"><Loader2 className="animate-spin" size={26} /></div>
+        ) : missing ? (
+          <div className="p-10 text-center text-sm text-muted">
+            This marketplace isn&rsquo;t in the version open in the editor — pick one on the left.
+          </div>
         ) : (
           <>
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -298,7 +293,6 @@ export default function TemplateBuilder() {
                       <MarketPlaceSection
                         draft={draft}
                         globalHeaders={globalDraft.config.headers || []}
-                        onSheetsSaved={refreshList}
                         activeSlotId={selection.file ?? null}
                         onActiveSlotId={(id) => setSelection((s) => ({ ...s, file: id }))}
                       />
@@ -317,14 +311,14 @@ export default function TemplateBuilder() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider bg-card px-4 py-3 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3 text-[12px]">
-                {(isGlobal ? globalDraft.errors : draft.errors).length > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-neg" title={(isGlobal ? globalDraft.errors : draft.errors).join('\n')}>
-                    <AlertTriangle size={13} /> {(isGlobal ? globalDraft.errors : draft.errors).length} error{(isGlobal ? globalDraft.errors : draft.errors).length === 1 ? '' : 's'}
+                {globalDraft.errors.length > 0 ? (
+                  <span className="inline-flex items-center gap-1 text-neg" title={globalDraft.errors.join('\n')}>
+                    <AlertTriangle size={13} /> {globalDraft.errors.length} error{globalDraft.errors.length === 1 ? '' : 's'}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-action"><Check size={13} /> valid</span>
                 )}
-                {(isGlobal ? globalDraft.dirty : draft.dirty) && <span className="text-subtle">· unsaved changes</span>}
+                {globalDraft.dirty && <span className="text-subtle">· unsaved changes</span>}
               </div>
               <div className="flex items-center gap-2">
                 {showPreview && (
@@ -335,14 +329,7 @@ export default function TemplateBuilder() {
                 <button type="button" onClick={() => setLogsOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-divider px-3 py-1.5 text-[13px] font-medium text-muted hover:bg-card-hover">
                   <History size={14} /> Log
                 </button>
-                {isGlobal ? (
-                  <GlobalSaveButtons draft={globalDraft} save={globalSave} />
-                ) : (
-                  <button type="button" onClick={saveMarketplace} disabled={draft.saving || !draft.dirty} className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-50">
-                    {draft.saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    Save
-                  </button>
-                )}
+                <GlobalSaveButtons draft={globalDraft} save={globalSave} />
               </div>
             </div>
           </>
@@ -365,9 +352,17 @@ export default function TemplateBuilder() {
       )}
 
       <TemplateLogPanel
-        templateId={isGlobal ? globalDraft.template?.id : marketplaceId}
+        templateId={globalDraft.template?.id}
         open={logsOpen}
         onClose={() => setLogsOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        title={`Delete marketplace “${deleting?.marketplaceName || ''}”?`}
+        description="Its files, sheet settings and column mappings go with it. This is a change to the editor like any other: Save New Version keeps it, and versions saved before still have this marketplace."
+        onConfirm={confirmDeleteMarketplace}
+        onCancel={() => setDeletingId(null)}
       />
     </div>
   );

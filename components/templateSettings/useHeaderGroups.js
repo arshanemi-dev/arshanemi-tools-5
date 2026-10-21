@@ -1,106 +1,67 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { newId } from '@/data/templateSchema';
 import {
-  assignHeaderGroup, createHeaderGroup, deleteHeaderGroup, failureMessage, listHeaderGroups, renameHeaderGroup, setHeadersHidden,
-} from '@/lib/profitLoss/templatesApi';
-import { GENERAL_GROUP_ID, groupIdOf, hiddenHeaderIds } from '@/lib/profitLoss/headerGroups';
+  GENERAL_GROUP_ID, groupIdOf, headerGroupsOf, hiddenHeaderIds,
+  withGroupAdded, withGroupRemoved, withGroupRenamed, withHeadersHidden, withHeadersInGroup,
+} from '@/lib/profitLoss/headerGroups';
 
-// Template Settings' copy of the header groups and each header's Show /
-// Hide switch (lib/profitLoss/headerGroups.js). Every change saves straight
-// to the hub: neither is part of a Global Settings version, so it shows on
-// the dashboard at once, with no Save New Version. A move or a switch shows
-// at once; if the hub refuses it, what the hub really has is read back. Each
-// failure says so in a toast.
+// The header groups and each header's Show / Hide switch, as Template
+// Settings edits them — inside the Global Settings draft (`draft` =
+// useGlobalTemplateDraft), like everything else there: a change is an
+// unsaved edit until Save New Version keeps it in a version, and the
+// dashboard shows the live version's (lib/profitLoss/headerGroups.js).
 //
-// → { loading, error, groups, members, headerGroups, groupOf(headerId) →
-//     group, hiddenIds, isHidden(headerId), create(name), rename(id, name),
-//     remove(id), assign(headerIds, groupId), setHidden(headerIds, isHidden),
-//     reload }. The calls resolve true / false.
-export default function useHeaderGroups(addToast) {
-  const [state, setState] = useState({ loading: true, error: null, groups: [], members: {}, hiddenHeaderIds: [] });
+// → { loading, error, groups, headerGroups, groupOf(headerId) → group,
+//     hiddenIds, isHidden(headerId), create(name), rename(id, name),
+//     remove(id), assign(headerIds, groupId), setHidden(headerIds, isHidden) }.
+// The calls resolve true (nothing here can fail — it's the draft).
+const LATER = ' — Save New Version to keep it';
 
-  const loaded = useCallback((res) => {
-    if (!res.ok) setState((s) => ({ ...s, loading: false, error: failureMessage(res, 'Header groups could not be loaded') }));
-    else setState({ loading: false, error: null, groups: res.data?.groups || [], members: res.data?.members || {}, hiddenHeaderIds: res.data?.hiddenHeaderIds || [] });
-  }, []);
-  const reload = useCallback(() => listHeaderGroups().then(loaded), [loaded]);
-  useEffect(() => {
-    let alive = true;
-    listHeaderGroups().then((res) => { if (alive) loaded(res); });
-    return () => { alive = false; };
-  }, [loaded]);
-
-  const fail = useCallback((res, what) => { addToast?.(failureMessage(res, what), 'error'); return false; }, [addToast]);
+export default function useHeaderGroups(draft, addToast) {
+  const { config, setConfig } = draft;
+  const headerGroups = useMemo(() => headerGroupsOf(config) || { groups: [], members: {}, hiddenHeaderIds: [] }, [config]);
+  const hiddenIds = useMemo(() => hiddenHeaderIds(headerGroups), [headerGroups]);
 
   const create = useCallback(async (name) => {
-    const res = await createHeaderGroup(name);
-    if (!res.ok) return fail(res, 'Could not create the group');
-    setState((s) => ({ ...s, groups: [...s.groups, res.data.group] }));
-    addToast?.(`Group “${res.data.group.name}” created`);
+    setConfig((c) => withGroupAdded(c, { id: newId('grp'), name }));
+    addToast?.(`Group “${name}” created${LATER}`);
     return true;
-  }, [addToast, fail]);
+  }, [setConfig, addToast]);
 
   const rename = useCallback(async (id, name) => {
-    const res = await renameHeaderGroup(id, name);
-    if (!res.ok) return fail(res, 'Could not rename the group');
-    setState((s) => ({ ...s, groups: s.groups.map((g) => (g.id === id ? res.data.group : g)) }));
-    addToast?.(`Group renamed to “${res.data.group.name}”`);
+    setConfig((c) => withGroupRenamed(c, id, name));
+    addToast?.(`Group renamed to “${name}”${LATER}`);
     return true;
-  }, [addToast, fail]);
+  }, [setConfig, addToast]);
 
-  // Its headers go back to General (the hub does the same).
   const remove = useCallback(async (id) => {
-    const name = state.groups.find((g) => g.id === id)?.name || 'group';
-    const res = await deleteHeaderGroup(id);
-    if (!res.ok) return fail(res, 'Could not delete the group');
-    setState((s) => ({
-      ...s,
-      groups: s.groups.filter((g) => g.id !== id),
-      members: Object.fromEntries(Object.entries(s.members).map(([h, g]) => [h, g === id ? GENERAL_GROUP_ID : g])),
-    }));
-    const moved = res.data?.moved || 0;
-    addToast?.(`Group “${name}” deleted${moved ? ` — ${moved} header${moved === 1 ? '' : 's'} back to General` : ''}`);
+    const group = headerGroups.groups.find((g) => g.id === id);
+    const moved = (config.headers || []).filter((h) => h.groupId === id).length;
+    setConfig((c) => withGroupRemoved(c, id));
+    addToast?.(`Group “${group?.name || 'group'}” deleted${moved ? ` — ${moved} header${moved === 1 ? '' : 's'} back to General` : ''}${LATER}`);
     return true;
-  }, [state.groups, addToast, fail]);
+  }, [headerGroups.groups, config.headers, setConfig, addToast]);
 
   const assign = useCallback(async (headerIds, groupId) => {
-    const ids = [...new Set(headerIds || [])];
-    if (!ids.length) return true;
-    setState((s) => ({ ...s, members: { ...s.members, ...Object.fromEntries(ids.map((h) => [h, groupId])) } }));
-    const res = await assignHeaderGroup(ids, groupId);
-    if (res.ok) return true;
-    await reload();
-    return fail(res, 'Could not move the headers');
-  }, [fail, reload]);
+    if (headerIds?.length) setConfig((c) => withHeadersInGroup(c, headerIds, groupId));
+    return true;
+  }, [setConfig]);
 
   const setHidden = useCallback(async (headerIds, isHidden) => {
-    const ids = [...new Set(headerIds || [])];
-    if (!ids.length) return true;
-    setState((s) => {
-      const next = new Set(s.hiddenHeaderIds);
-      for (const id of ids) { if (isHidden) next.add(id); else next.delete(id); }
-      return { ...s, hiddenHeaderIds: [...next] };
-    });
-    const res = await setHeadersHidden(ids, isHidden);
-    if (res.ok) return true;
-    await reload();
-    return fail(res, isHidden ? 'Could not hide the header' : 'Could not show the header');
-  }, [fail, reload]);
+    if (headerIds?.length) setConfig((c) => withHeadersHidden(c, headerIds, isHidden));
+    return true;
+  }, [setConfig]);
 
-  const headerGroups = useMemo(
-    () => ({ groups: state.groups, members: state.members, hiddenHeaderIds: state.hiddenHeaderIds }),
-    [state.groups, state.members, state.hiddenHeaderIds],
-  );
-  const hiddenIds = useMemo(() => hiddenHeaderIds(state.error ? null : headerGroups), [headerGroups, state.error]);
   const groupOf = useCallback((headerId) => {
     const id = groupIdOf(headerGroups, headerId);
-    return headerGroups.groups.find((g) => g.id === id) || null;
+    return headerGroups.groups.find((g) => g.id === id) || headerGroups.groups.find((g) => g.id === GENERAL_GROUP_ID) || null;
   }, [headerGroups]);
   const isHidden = useCallback((headerId) => hiddenIds.has(headerId), [hiddenIds]);
 
   return {
-    loading: state.loading, error: state.error, groups: state.groups, members: state.members, headerGroups,
-    groupOf, hiddenIds, isHidden, create, rename, remove, assign, setHidden, reload,
+    loading: false, error: null, groups: headerGroups.groups, headerGroups,
+    groupOf, hiddenIds, isHidden, create, rename, remove, assign, setHidden,
   };
 }

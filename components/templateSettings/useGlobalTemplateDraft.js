@@ -6,16 +6,26 @@ import { withFixedHeaders } from '@/data/fixedHeaders';
 import {
   getGlobalTemplateMeta, getTemplate, getVersion,
   saveDraftVersion, publishVersion, deleteVersion,
+  listTemplates, listHeaderGroups,
 } from '@/lib/profitLoss/templatesApi';
+import { withVersionGroups } from '@/lib/profitLoss/headerGroups';
+import { withVersionMarketplaces } from '@/lib/profitLoss/versionMarketplaces';
 
-// Owns the singleton Global Settings draft — Headers, Title Cards, Graphs,
-// Tabs, Overview Tabs — every marketplace's dashboard renders identically.
-// This is the one thing in Template Settings that still versions — it's
-// literally a marketplace_templates row under the hood (is_global = true,
-// lazily created — see getGlobalTemplateMeta), so it reuses the exact same
-// version calls a marketplace draft used to. See useTemplateDraft.js for the
-// marketplace counterpart, which dropped all of this in favor of a direct
-// save ("always show, no hide").
+// Owns the singleton Global Settings draft — and with it EVERYTHING
+// Template Settings edits, all of it versioned together: Headers (each with
+// its group and Show / Hide flag — lib/profitLoss/headerGroups.js), the
+// header groups, Title Cards, Graphs, Tabs, Overview Tabs, and every
+// marketplace with its files, sheet settings and column mappings
+// (lib/profitLoss/versionMarketplaces.js). Nothing in Template Settings saves
+// on its own any more: Save New Version stores it all, and switching a
+// version Live puts exactly that version's setup on the dashboard. Under the
+// hood it's a marketplace_templates row (is_global = true, lazily created —
+// see getGlobalTemplateMeta) with its versions in marketplace_template_details.
+//
+// A version saved before marketplaces and groups were versioned has neither:
+// it opens with the marketplace rows and the header group tables as they
+// were (read once, at load — `legacy`), shown as an unsaved change, so the
+// next Save New Version keeps them in the version.
 //
 // The version dropdown at the top of Global Settings (GlobalVersion.jsx)
 // picks which saved version is loaded into the editor (`activeVersionId`;
@@ -42,11 +52,20 @@ export function versionToOpen(versions = []) {
   return versions[0] || null;
 }
 
-// What a stored version's config looks like in the editor. withFixedHeaders:
-// a version saved before Account Name / the SKU Cost headers were built in
-// opens with them locked in place — as the loaded state, not as an unsaved
-// change (the dashboard reads them the same way, saved yet or not).
-const editorConfig = (stored) => withFixedHeaders(stored && Object.keys(stored).length ? stored : makeEmptyGlobalConfig());
+// What a stored version's config looks like in the editor → { cfg, saved
+// (the JSON `dirty` compares against) }, or null when it can't be shown
+// whole. withFixedHeaders: a version saved before Account Name / the SKU
+// Cost headers were built in opens with them locked in place — as the
+// loaded state, not as an unsaved change (the dashboard reads them the same
+// way). A version with no marketplaces / groups of its own gets `legacy`'s
+// (see above) — as an unsaved change; with the marketplace rows unreadable
+// it can't be opened at all (null), or a save would store no marketplaces.
+function editorConfig(stored, legacy) {
+  const base = withFixedHeaders(stored && Object.keys(stored).length ? stored : makeEmptyGlobalConfig());
+  if (!Array.isArray(base.marketplaces) && !legacy?.rows) return null;
+  const cfg = withVersionGroups(withVersionMarketplaces(base, legacy?.rows || []), legacy?.groups || null);
+  return { cfg, saved: JSON.stringify(base) };
+}
 
 // A save the hub turned down, in the shape the builder's toasts read.
 const failed = (res) => ({ ok: false, status: res.status, error: res.data?.error, details: res.data?.details });
@@ -62,6 +81,15 @@ export default function useGlobalTemplateDraft() {
   const [config, setConfig] = useState(() => makeEmptyGlobalConfig());
   const [savedJson, setSavedJson] = useState(() => JSON.stringify(makeEmptyGlobalConfig()));
   const [saving, setSaving] = useState(false);
+  const legacy = useRef({ rows: null, groups: null }); // the marketplace rows + header group tables, read once at load
+  // Open a stored version's config in the editor → false when it can't be.
+  const openConfig = useCallback((stored) => {
+    const opened = editorConfig(stored, legacy.current);
+    if (!opened) return false;
+    setConfig(opened.cfg);
+    setSavedJson(opened.saved);
+    return true;
+  }, []);
 
   const reloadMeta = useCallback(async (id) => {
     const tid = id ?? templateId;
@@ -78,8 +106,9 @@ export default function useGlobalTemplateDraft() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const meta = await getGlobalTemplateMeta();
+      const [meta, rows, groups] = await Promise.all([getGlobalTemplateMeta(), listTemplates({ scopeAll: true }), listHeaderGroups()]);
       if (!alive) return;
+      legacy.current = { rows: rows.ok ? rows.data?.templates || [] : null, groups: groups.ok ? groups.data : null };
       if (!meta.ok || !meta.data?.template?.id) { setLoadError(true); setLoading(false); return; }
       const tid = meta.data.template.id;
       setTemplateId(tid);
@@ -91,11 +120,11 @@ export default function useGlobalTemplateDraft() {
       if (target) {
         const res = await getVersion(tid, target.id);
         if (alive && res.ok) {
-          const cfg = editorConfig(res.data.version?.config);
-          setConfig(cfg);
-          setSavedJson(JSON.stringify(cfg));
-          setActiveVersionId(target.id);
+          if (openConfig(res.data.version?.config)) setActiveVersionId(target.id);
+          else setLoadError(true);
         }
+      } else if (alive && !openConfig(null)) {
+        setLoadError(true);
       }
       if (alive) setLoading(false);
     })();
@@ -120,13 +149,11 @@ export default function useGlobalTemplateDraft() {
       if (res.status === 404) await reloadMeta(); // deleted elsewhere — show what is really there
       return res;
     }
-    const cfg = editorConfig(res.data.version?.config);
-    setConfig(cfg);
-    setSavedJson(JSON.stringify(cfg));
+    if (!openConfig(res.data.version?.config)) return { ok: false, error: 'The marketplaces could not be loaded — reload the page' };
     setActiveVersionId(versionId);
     setBaseVersionId(null);
     return res;
-  }, [templateId, activeVersionId, reloadMeta]);
+  }, [templateId, activeVersionId, reloadMeta, openConfig]);
 
   // ── local crash backup ─────────────────────────────────────────────────
   const lsTimer = useRef(null);
@@ -142,7 +169,7 @@ export default function useGlobalTemplateDraft() {
   const validation = useMemo(() => validateGlobalConfig(config), [config]);
   const headerIds = useMemo(() => new Set((config.headers || []).map((h) => h.id)), [config.headers]);
 
-  // ── generic mutators (same shape useTemplateDraft's section editors expect) ─
+  // ── generic mutators (the shape every section editor expects) ─────────────
   const patchConfig = useCallback((patch) => {
     setConfig((c) => ({ ...c, ...(typeof patch === 'function' ? patch(c) : patch) }));
   }, []);
@@ -207,21 +234,20 @@ export default function useGlobalTemplateDraft() {
     if (versionId !== activeVersionId) return res;
 
     const target = versionToOpen(data?.versions || []);
-    let cfg = makeEmptyGlobalConfig();
+    let stored = null;
     if (target) {
       const loaded = await getVersion(templateId, target.id);
       // Deleted fine, but its replacement didn't load — say so (the builder's
       // "reload the page" state) rather than leave a blank editor that a
       // save would then store as if it were real work.
       if (!loaded.ok) { setLoadError(true); return res; }
-      cfg = editorConfig(loaded.data.version?.config);
+      stored = loaded.data.version?.config;
     }
-    setConfig(cfg);
-    setSavedJson(JSON.stringify(cfg));
+    if (!openConfig(stored)) { setLoadError(true); return res; }
     setActiveVersionId(target?.id ?? null); // nothing left = a New draft, empty
     setBaseVersionId(null);
     return res;
-  }, [templateId, activeVersionId, reloadMeta]);
+  }, [templateId, activeVersionId, reloadMeta, openConfig]);
 
   // What the dashboard shows (the live version) vs. what's in the editor —
   // the dashboard ONLY ever reads the live version, so any other saved

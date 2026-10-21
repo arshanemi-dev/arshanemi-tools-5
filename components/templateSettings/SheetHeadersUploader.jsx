@@ -35,7 +35,8 @@ function settingsOf(c = {}) {
 // Column) and its Header Row and Value Row (empty = auto-detect; see
 // SheetListRow). "Save All Sheets" hands the result to `onSave` — per-sheet
 // settings + the file's unique header list, which MarketPlaceSection stores
-// on the slot and saves marketplace-wide; the dashboard reads every ticked
+// on the slot (in the Global Settings draft — Save New Version keeps it, and
+// the version switched Live is what the dashboard uses); it reads every ticked
 // sheet of an upload with exactly these settings (rowOverrideFor →
 // parseAllTabs → ingestWorkbook). Nothing is kept until then; re-uploading
 // replaces the pending review.

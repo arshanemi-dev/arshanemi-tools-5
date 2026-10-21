@@ -22,16 +22,20 @@ import SheetHeadersUploader from './SheetHeadersUploader';
 //
 // A file's upload goes through SheetHeadersUploader: every sheet in the
 // workbook is listed with Headers Row / Column buttons, and "Save All Sheets"
-// stores each sheet's settings + the file's unique headers on the slot and
-// saves the marketplace straight away — its unique header list (every file,
-// every included sheet) is what the global Header section offers in this
-// marketplace's column (`onSheetsSaved` refreshes that list). Nothing is
+// stores each sheet's settings + the file's unique headers on the slot —
+// its unique header list (every file, every included sheet) is what the
+// global Header section offers in this marketplace's column. Nothing is
 // mapped automatically.
-export default function MarketPlaceSection({ draft, globalHeaders = [], onSheetsSaved, activeSlotId = null, onActiveSlotId }) {
+//
+// `draft` = useVersionMarketplace: this marketplace is part of the Global
+// Settings version, so every change here (Save All Sheets included) is an
+// unsaved edit until the footer's Save New Version.
+const LATER = ' — Save New Version to keep it';
+
+export default function MarketPlaceSection({ draft, globalHeaders = [], activeSlotId = null, onActiveSlotId }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem, patchItem, updateMarketplace } = draft;
   const slots = useMemo(() => config.fileSlots || [], [config.fileSlots]);
-  const [savingSheets, setSavingSheets] = useState(false);
   const uniqueHeaders = useMemo(() => marketplaceUniqueHeaders(config), [config]);
   const [pick, setPick] = useState({}); // { [sheetHeader]: headerId }
   const [localSlotId, setLocalSlotId] = useState(null);
@@ -81,42 +85,22 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
   const defaultTargets = globalHeaders.filter(isOurHeader); // Our Headers only, never sheet columns
 
   // Mappings to Our Headers that have since been deleted: they do nothing on
-  // the dashboard but fail validation (Save stays blocked). One click removes
-  // them and saves.
+  // the dashboard. One click removes them.
   const knownIds = useMemo(() => new Set(globalHeaders.map((h) => h.id)), [globalHeaders]);
   const staleIds = useMemo(() => staleMappingHeaderIds(config, knownIds), [config, knownIds]);
   const staleCount = allMappings.filter((m) => staleIds.has(m.headerId)).length;
-  const [cleaning, setCleaning] = useState(false);
-  async function removeStaleMappings() {
-    setCleaning(true);
-    try {
-      const next = withoutHeaderMappings(config, staleIds);
-      setConfig(next);
-      const res = await draft.save(next);
-      addToast(res.ok ? `Removed ${staleCount} mapping${staleCount === 1 ? '' : 's'} to deleted headers` : (res.error || 'Removed locally — saving failed'), res.ok ? 'success' : 'error');
-      if (res.ok) onSheetsSaved?.();
-    } finally {
-      setCleaning(false);
-    }
+  function removeStaleMappings() {
+    setConfig((c) => withoutHeaderMappings(c, staleIds));
+    addToast(`Removed ${staleCount} mapping${staleCount === 1 ? '' : 's'} to deleted headers${LATER}`);
   }
 
   // "Save All Sheets": the slot takes the per-sheet settings + unique
-  // headers and the marketplace is saved right away. Its columns stay this
-  // marketplace's own — never added to Our Headers, never auto-mapped; map
-  // them in Global Settings › Header.
+  // headers. Its columns stay this marketplace's own — never added to Our
+  // Headers, never auto-mapped; map them in Global Settings › Header.
   async function saveSheets(slotId, slotPatch) {
-    setSavingSheets(true);
-    try {
-      const next = { ...config, fileSlots: slots.map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) };
-      setConfig(next);
-      const res = await draft.save(next);
-      if (!res.ok) { addToast(res.error || 'Sheets kept locally — saving the marketplace failed', 'error'); return false; }
-      onSheetsSaved?.();
-      addToast(`${slotPatch.extractedHeaders.length} unique headers saved — map them in Global Settings › Header`);
-      return true;
-    } finally {
-      setSavingSheets(false);
-    }
+    setConfig((c) => ({ ...c, fileSlots: (c.fileSlots || []).map((s) => (s.id === slotId ? { ...s, ...slotPatch } : s)) }));
+    addToast(`${slotPatch.extractedHeaders.length} unique headers kept — map them in Global Settings › Header, then Save New Version`);
+    return true;
   }
 
   // Mapping lives entirely in fileSlots[].mappings — headers themselves are
@@ -150,8 +134,8 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
           className="w-full max-w-md rounded-lg border border-divider bg-background px-3 py-1.5 text-sm font-medium focus:border-accent focus:outline-none"
         />
 
-        {/* Required-mapping status — informational only; marketplaces save
-            directly (no publish gate) so this is guidance, not a blocker. */}
+        {/* Required-mapping status — informational only: guidance, not a
+            blocker on Save New Version. */}
         <div className="flex flex-wrap items-center gap-2">
           {reservedStatus.map((r) => (
             <span
@@ -168,9 +152,9 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
         {staleCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neg/30 bg-neg/5 px-3 py-2">
             <p className="min-w-0 flex-1 text-[12px] text-foreground">
-              <span className="font-semibold">{staleCount} mapping{staleCount === 1 ? '' : 's'}</span> point at Our Headers that were deleted — they do nothing on the dashboard and block saving this marketplace.
+              <span className="font-semibold">{staleCount} mapping{staleCount === 1 ? '' : 's'}</span> point at Our Headers that were deleted — they do nothing on the dashboard.
             </p>
-            <button type="button" onClick={removeStaleMappings} disabled={cleaning} className="rounded-full bg-neg px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            <button type="button" onClick={removeStaleMappings} className="rounded-full bg-neg px-3 py-1 text-[12px] font-semibold text-white hover:opacity-90">
               Remove them
             </button>
           </div>
@@ -211,7 +195,6 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], onSheets
                   <SheetHeadersUploader
                     key={activeSlot.id}
                     slot={activeSlot}
-                    saving={savingSheets}
                     onSave={(payload) => saveSheets(activeSlot.id, payload)}
                   />
                   <div className="mt-3 flex items-center gap-2">

@@ -365,6 +365,37 @@ export function validateGlobalConfig(config) {
     for (const id of ov.graphIds || []) if (!graphIds.has(id)) push(`overview tab "${ov.name || ov.id}" references unknown graph`);
   }
 
+  // Everything Template Settings edits is versioned: a version also carries
+  // its header groups (lib/profitLoss/headerGroups.js) and every
+  // marketplace's files + mappings (lib/profitLoss/versionMarketplaces.js).
+  // The hub's lib/templateConfig.js checks the same. A mapping to a deleted
+  // header doesn't block saving — the Market Place section offers to clear
+  // those, and the dashboard ignores them.
+  if (config.headerGroups !== undefined) {
+    if (!Array.isArray(config.headerGroups)) push('headerGroups must be an array');
+    else {
+      checkUniqueNames(config.headerGroups, 'header group', push);
+      const ids = new Set();
+      for (const g of config.headerGroups) {
+        if (!g?.id || !String(g.name || '').trim()) { push('every header group needs an id and a name'); continue; }
+        if (ids.has(g.id)) push(`duplicate header group id: ${g.id}`);
+        ids.add(g.id);
+      }
+    }
+  }
+  if (config.marketplaces !== undefined) {
+    if (!Array.isArray(config.marketplaces)) push('marketplaces must be an array');
+    else {
+      const ids = new Set();
+      for (const m of config.marketplaces) {
+        if (!m?.id) { push('every marketplace needs an id'); continue; }
+        if (ids.has(m.id)) push(`duplicate marketplace id: ${m.id}`);
+        ids.add(m.id);
+        checkUniqueNames(m.fileSlots || [], `file in marketplace "${m.name || m.id}" —`, push, 'label');
+      }
+    }
+  }
+
   return { ok: errors.length === 0, errors };
 }
 

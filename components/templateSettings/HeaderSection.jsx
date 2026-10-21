@@ -31,14 +31,14 @@ import ListSearchSort from './ListSearchSort';
 //     spreadsheet-style filter (the funnel in its header).
 // Marketplace columns are never added to Our Headers automatically; headers
 // imported that way before (source 'extracted') get a one-click cleanup.
-// Headers are global (this draft — saved with the footer's Save New Version,
-// see GlobalVersion.jsx); mappings are
-// per-marketplace and save straight onto that marketplace (`mappingSaver`).
-// `headerGroups` = useHeaderGroups() (TemplateBuilder) — the "Our Groups"
-// row above the table (HeaderGroupsRow; picking a group narrows the table
-// to its headers, a header in one of the admin's own groups is tagged with
-// it) and every Our Header's Show / Hide switch (hidden = never a dashboard
-// column). Both save at once, outside Save New Version.
+// Everything here is part of the Global Settings draft — saved with the
+// footer's Save New Version (GlobalVersion.jsx): the headers, the mappings
+// (per marketplace, into that marketplace's entry of the draft —
+// `mappingSaver`), and `headerGroups` = useHeaderGroups (TemplateBuilder) —
+// the "Our Groups" row above the table (HeaderGroupsRow; picking a group
+// narrows the table to its headers, a header in one of the admin's own
+// groups is tagged with it) and every Our Header's Show / Hide switch
+// (hidden = never a dashboard column).
 export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null, headerGroups = null }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem } = draft;
@@ -64,11 +64,12 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     const g = headerGroups.groupOf(id);
     return g && g.kind !== 'general' ? g.name : '';
   };
-  // Each Our Header's Show / Hide switch — saved at once, live on the dashboard.
+  // Each Our Header's Show / Hide switch — for the dashboard, once the
+  // version it's saved in is Live.
   const toggleHidden = async (id) => {
     const h = headers.find((x) => x.id === id);
     const hide = !headerGroups.isHidden(id);
-    if (await headerGroups.setHidden([id], hide)) addToast(`“${h?.name || 'Header'}” ${hide ? 'hidden on' : 'shown on'} the dashboard`);
+    if (await headerGroups.setHidden([id], hide)) addToast(`“${h?.name || 'Header'}” ${hide ? 'hidden on' : 'shown on'} the dashboard — Save New Version to keep it`);
   };
 
   const mappedIds = useMemo(() => new Set((marketplaces || []).flatMap(
@@ -81,8 +82,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   // formulas to change first (formulaUsages).
   const deleteBlockedBy = deleteTarget ? formulaUsages(config, deleteTarget) : [];
   // Marketplaces that map a column to the header being deleted — their
-  // mappings go with it (otherwise they'd linger, fail validation and block
-  // saving that marketplace).
+  // mappings go with it (otherwise they'd linger, mapped to nothing).
   const mappedIn = (id) => (marketplaces || []).filter((t) => (t.config?.fileSlots || []).some((s) => (s.mappings || []).some((m) => m.headerId === id)));
   const deleteMappedIn = deleteTarget ? mappedIn(deleteTarget.id) : [];
 
@@ -93,8 +93,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   });
 
   // Mapped — every ticked marketplace column (a File › Sheet › Header)
-  // merges into the ticked Our Header, read from that sheet only; one save
-  // per marketplace touched.
+  // merges into the ticked Our Header, read from that sheet only.
   const mapChecked = async () => {
     if (!active || !checked.size || !mappingSaver) return;
     const byMarketplace = new Map();

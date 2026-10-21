@@ -1,122 +1,87 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
-import Popover from './Popover';
-import { ListSearchBox, matchesSearch, sortByLabel } from './SearchChecklist';
+import { SlidersHorizontal } from 'lucide-react';
+import MyDetailsModal from './MyDetailsModal';
 import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 
-// "My Details ▾" — the column set the table shows. Its dropdown is a
-// checklist of every header the table can show (`tabHeaders` — on the
-// dashboard that's every header of the active version, see tabColumnDefs),
-// in table order; the ticked ones are the user's own ticks for this tab
-// (`myColumns` — persisted to /api/profit-loss/settings when signed in).
-// Until they tick something, it's the tab's default (`defaultIds` — the
-// headers the template picked for this tab; see myDetailColumns), which is
-// also what Reset Position brings back.
+// "My Details" — the column set the table shows. The pill opens the My
+// Details window (MyDetailsModal): every header the table can show
+// (`tabHeaders` — on the dashboard that's every header of the active
+// version, see tabColumnDefs), group by group, each a tick; the ticked ones
+// are the user's own ticks for this tab (`myColumns` — persisted to
+// /api/profit-loss/settings when signed in). Until they tick something, it's
+// the tab's default (`defaultIds` — the headers the template picked for this
+// tab; see myDetailColumns), which is also what Reset Position brings back.
 // The first header is always shown (it's the row key / sticky column — on an
-// Overview tab, its hierarchy), so it's tagged "key" and locked.
+// Overview tab, its hierarchy), so it's locked.
 // `emptyShowsAll={false}` (Overview tabs) — with no ticks and no default,
-// nothing is ticked, instead of everything. A search box on top narrows the
-// list (a template can have dozens of headers) and its toggle orders it
-// A → Z / Z → A; ticks apply as they're made.
+// nothing is ticked, instead of everything.
 // The list offers every header the table can show — every one NOT switched
 // to Hidden (Template Settings › Header's Show / Hide switch; tabColumns.js
 // leaves hidden ones out of `tabHeaders`), picked by a tab or not.
+// `groups` (the config's headerGroups — Template Settings › Header › Our
+// Groups, in order) sorts the list into its groups (every header carries
+// its `groupId` — effectiveConfig.js); search and the A → Z order apply
+// within each group.
+//
+// Position Settings on (`onReorder` passed — the toolbar's Position toggle):
+// the window also has a Column order list to move the ticked columns with —
+// drag, "Position N", ↑ / ↓ — like Template Settings' lists. `orderIds` =
+// the ids that list arranges, in their current order (default: the table
+// order of `tabHeaders`). `onReorder(ids)` gets them all in their new order;
+// like every edit-mode change it's kept once Save Position is pressed.
 // `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
 // dashboard shows this; the default stays compact for the builder preview.
-// `groups` (the config's headerGroups — Template Settings › Header › Our
-// Groups, in order) lists the headers group by group, each under its own
-// title, whenever what's listed spans more than one group (every header
-// carries its `groupId` — effectiveConfig.js); search and the A → Z order
-// apply within each group. A header switched to Hidden is never here at all
-// (tabColumns.js leaves it out of `tabHeaders`).
 const SIZES = {
   sm: 'px-3 py-1.5 text-xs',
   md: 'h-9 px-3 text-sm',
 };
 
-const KeyTag = () => <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide text-subtle">key</span>;
-
-function ListTitle({ children }) {
-  return <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">{children}</div>;
-}
-
-// `listed` split by header group, in `groups` order — null when it's all one
-// group (or there are no groups): the list then stays flat.
-function bySection(listed, groups) {
-  if (!Array.isArray(groups) || groups.length < 2) return null;
-  const known = new Set(groups.map((g) => g.id));
-  const sections = groups.map((g) => ({ id: g.id, name: g.name, items: listed.filter((h) => h.groupId === g.id) }));
-  const rest = listed.filter((h) => !known.has(h.groupId));
-  if (rest.length) sections.push({ id: '__other', name: 'Other', items: rest });
-  const filled = sections.filter((s) => s.items.length);
-  return filled.length > 1 ? filled : null;
-}
-
-export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, size = 'sm', groups = null }) {
+export default function DetailsViewPills({ tabHeaders = [], myColumns = [], defaultIds = [], emptyShowsAll = true, onMyColumnsChange, onReorder = null, orderIds = null, size = 'sm', groups = null }) {
+  const [open, setOpen] = useState(false);
   const keyHeader = tabHeaders[0] || null;
   const toggleable = tabHeaders.slice(1); // keep the first (key) column always
-  const shown = new Set(myDetailColumns(toggleable, myColumns, defaultIds, emptyShowsAll ? toggleable : []).map((h) => h.id));
+  const fallback = emptyShowsAll ? toggleable : [];
+  const shown = myDetailColumns(toggleable, myColumns, defaultIds, fallback).map((h) => h.id);
+  const tabDefault = myDetailColumns(toggleable, [], defaultIds, fallback).map((h) => h.id);
   const ownTicks = toggleable.some((h) => myColumns.includes(h.id));
-  const [q, setQ] = useState('');
-  const [sort, setSort] = useState(null); // the checklist's own order — the table's column order is untouched
-  const listable = toggleable;
-  const listed = sortByLabel(listable.filter((h) => matchesSearch(h.name, q)), (h) => h.name, sort);
-  const sections = bySection(listed, groups);
 
-  // Until the user has ticks of their own here, the default is what's
-  // showing — so the first tick / untick starts from that, not from nothing.
-  const toggle = (id) => {
-    const picked = ownTicks ? myColumns : [...shown];
-    onMyColumnsChange(picked.includes(id) ? picked.filter((k) => k !== id) : [...picked, id]);
+  // A tick this list can't show (a column hidden in edit mode, say) stays
+  // ticked — only the ones the window offered are replaced.
+  const apply = ({ ticks, order }) => {
+    if (ticks) {
+      const offered = new Set(toggleable.map((h) => h.id));
+      const kept = ownTicks ? myColumns.filter((id) => !offered.has(id)) : [];
+      onMyColumnsChange([...kept, ...ticks]);
+    }
+    if (order && onReorder) onReorder(order);
   };
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Popover
-        align="left"
-        panelClass="min-w-[15rem] max-h-80 overflow-y-auto p-1"
-        onOpenChange={(open) => { if (!open) setQ(''); }}
-        trigger={() => (
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1.5 rounded-full border border-accent bg-accent/5 font-medium text-foreground transition-colors ${SIZES[size] || SIZES.sm}`}
-          >
-            <SlidersHorizontal size={12} />
-            My Details
-            <span className="text-subtle">· {1 + shown.size}</span>
-            <ChevronDown size={12} />
-          </button>
-        )}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        title={onReorder ? 'Pick the columns this tab shows and put them in order' : 'Pick the columns this tab shows'}
+        className={`inline-flex items-center gap-1.5 rounded-full border border-accent bg-accent/5 font-medium text-foreground transition-colors hover:bg-accent/10 ${SIZES[size] || SIZES.sm}`}
       >
-        <ListTitle>Columns in “My Details”</ListTitle>
-        {listable.length > 0 && (
-          <div className="px-1 pb-1">
-            <ListSearchBox value={q} onChange={setQ} placeholder="Search columns…" label="Search columns" sort={sort} onSort={setSort} />
-          </div>
-        )}
-        {keyHeader && matchesSearch(keyHeader.name, q) && (
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground" title="Row key — always shown">
-            <input type="checkbox" checked disabled readOnly className="accent-[var(--color-action)] opacity-60" />
-            <span className="min-w-0 truncate">{keyHeader.name}</span>
-            <KeyTag />
-          </div>
-        )}
-        {listable.length === 0 && <div className="px-2 py-2 text-sm text-muted">Only one column on this tab.</div>}
-        {listable.length > 0 && listed.length === 0 && <div className="px-2 py-2 text-sm text-muted">No column matches.</div>}
-        {(sections || [{ id: '__all', items: listed }]).map((s) => (
-          <div key={s.id} role={sections ? 'group' : undefined} aria-label={sections ? s.name : undefined}>
-            {sections && <div className="mt-1 border-t border-divider px-2 pb-0.5 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-accent first:mt-0 first:border-t-0">{s.name}</div>}
-            {s.items.map((h) => (
-              <label key={h.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-card-hover">
-                <input type="checkbox" checked={shown.has(h.id)} onChange={() => toggle(h.id)} className="accent-[var(--color-action)]" />
-                {h.name}
-              </label>
-            ))}
-          </div>
-        ))}
-      </Popover>
+        <SlidersHorizontal size={12} />
+        My Details
+        <span className="text-subtle">· {(keyHeader ? 1 : 0) + shown.length}</span>
+      </button>
+      <MyDetailsModal
+        open={open}
+        onClose={() => setOpen(false)}
+        keyHeader={keyHeader}
+        headers={toggleable}
+        shownIds={shown}
+        defaultIds={tabDefault}
+        orderIds={onReorder ? (orderIds || toggleable.map((h) => h.id)) : null}
+        groups={groups}
+        onApply={apply}
+      />
     </div>
   );
 }
