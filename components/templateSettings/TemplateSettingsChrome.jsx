@@ -10,13 +10,18 @@ import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
 const HEADER_HIDDEN = process.env.NEXT_PUBLIC_IS_Header_Hide === 'true';
 
-// Shell for every /profit-loss/template-settings (and /profit-loss/debug)
-// page — the shared navbar + a "back to dashboard" bar + a scroll container.
-// Mirrors ProfitLossShell's session bootstrap. `page` picks the breadcrumb
-// label and which of the two builder-area links to show (never a self-link).
+// Shell for every /profit-loss/template-settings (and /profit-loss/debug,
+// /profit-loss/position-settings) page — the shared navbar + a "back to
+// dashboard" bar + a scroll container. Mirrors ProfitLossShell's session
+// bootstrap. `page` picks the breadcrumb label and which of the two
+// builder-area links to show (never a self-link; none on Position Settings,
+// which is every user's, not the builder's).
 // The link to the Sheet Debugger is development-only (lib/debugTools.js).
+const LABELS = { 'template-settings': 'Template Settings', debug: 'Sheet Debugger', 'position-settings': 'Position Settings' };
+
 export default function TemplateSettingsChrome({ children, page = 'template-settings' }) {
   const isDebug = page === 'debug';
+  const builder = page !== 'position-settings';
   // Same hydration-safe user as ProfitLossShell — see useStoredUser.
   const storedUser = useStoredUser();
   const [profile, setProfile] = useState(null);
@@ -47,8 +52,8 @@ export default function TemplateSettingsChrome({ children, page = 'template-sett
           <ArrowLeft size={15} /> Back to dashboard
         </Link>
         <span className="text-subtle">/</span>
-        <span className="text-sm font-semibold text-foreground">{isDebug ? 'Sheet Debugger' : 'Template Settings'}</span>
-        {(isDebug || DEBUG_TOOLS) && (
+        <span className="text-sm font-semibold text-foreground">{LABELS[page] || LABELS['template-settings']}</span>
+        {builder && (isDebug || DEBUG_TOOLS) && (
           <Link
             href={isDebug ? '/profit-loss/template-settings?t=global' : '/profit-loss/debug'}
             className="ml-auto text-sm font-medium text-muted hover:text-foreground"

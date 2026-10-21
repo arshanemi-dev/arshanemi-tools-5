@@ -1,6 +1,6 @@
 'use client';
 
-import { FileDown, FileUp, Save, Settings, Undo2, Upload } from 'lucide-react';
+import { FileDown, FileUp, Settings, Upload } from 'lucide-react';
 import MarketplacePicker from './MarketplacePicker';
 import BrandPicker from './BrandPicker';
 import IconButton, { FileIconButton } from './IconButton';
@@ -14,12 +14,10 @@ import { ACCEPT } from '@/lib/sheet/readAnyFile';
 // "MarketPlace_Brand" — its Account Name (see DashboardWorkspace.onUpload).
 // The SKU Cost buttons (download the sheet of the fixed cost headers, upload
 // it back filled in) need actual uploaded rows to act on, so they unlock
-// separately once `hasData`. Then — right-aligned, signed-in users only — the
-// dashboard-personalization toggle (Position Settings -> Save Position, plus
-// Reset Position while active). While it's active the open tab's My Details
-// button sits between Reset Position and Save Position: this bar only holds
-// the empty `display: contents` slot (`myDetailsSlotRef`) that TabView /
-// OverviewTab portal it into — it isn't shown at all otherwise. Upload buttons are generated from
+// separately once `hasData`. Then — right-aligned, signed-in users only —
+// Position, which opens the Position Settings page (`onOpenPositions`):
+// where a user arranges their own tabs, title cards, graphs and columns
+// (components/positionSettings/). Upload buttons are generated from
 // config.fileSlots so a template with 3 aux "Header N" slots renders exactly
 // the reference's toolbar.
 export default function DashboardToolbar({
@@ -37,12 +35,7 @@ export default function DashboardToolbar({
   hasData,
   busy,
   loggedIn = false,
-  editMode = false,
-  onEnterEditMode = () => {},
-  onSaveLayout = () => {},
-  onResetLayout = () => {},
-  savingLayout = false,
-  myDetailsSlotRef,
+  onOpenPositions = () => {},
 }) {
   const uploadsReady = !!brand;
   return (
@@ -91,24 +84,12 @@ export default function DashboardToolbar({
 
         {loggedIn && (
           <div className="ml-auto flex items-center gap-2">
-            {editMode && (
-              <IconButton
-                icon={Undo2}
-                label="Reset Position"
-                title="Reset your dashboard — tab and column positions, hidden items and My Details columns — back to the template's default, and save it"
-                tone="outline"
-                onClick={onResetLayout}
-                disabled={savingLayout}
-              />
-            )}
-            {editMode && <div ref={myDetailsSlotRef} className="contents" />}
             <IconButton
-              icon={editMode ? Save : Settings}
-              label={editMode ? 'Save Position' : 'Position'}
-              title={editMode ? 'Save your dashboard layout' : 'Customize your dashboard layout'}
-              tone={editMode ? 'action' : 'outline'}
-              onClick={editMode ? onSaveLayout : onEnterEditMode}
-              disabled={savingLayout}
+              icon={Settings}
+              label="Position"
+              title="Arrange your dashboard — tabs, title cards, graphs and columns"
+              tone="outline"
+              onClick={onOpenPositions}
             />
           </div>
         )}

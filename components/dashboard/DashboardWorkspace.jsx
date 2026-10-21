@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useLiveTemplates } from '@/lib/profitLoss/useLiveTemplates';
 import { readAnyFile } from '@/lib/sheet/readAnyFile';
@@ -83,6 +84,7 @@ const DOC_TITLE_SUFFIX = ' | Barmeto Profit & Loss';
 
 export default function DashboardWorkspace({ canManageTemplates = false }) {
   const { addToast } = useToast();
+  const router = useRouter();
   const [calculations] = useState(() => createCalculationClient());
   useEffect(() => () => calculations.dispose(), [calculations]);
 
@@ -240,23 +242,17 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
   // ── view ────────────────────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
-  // DashboardToolbar's empty slot (callback ref → DOM node), there only
-  // while Position Settings is on: TabView / OverviewTab portal their My
-  // Details button into it, after Reset Position. With no slot the dashboard
-  // shows no My Details. The table's page limit + Prev/Next stay in its own
-  // footer, bottom right.
-  const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
-  // My Details column ticks (per tab) + the toolbar's Position Settings ->
-  // Save Position edit-mode layout (tabs/title-cards/graphs/columns show+order) — one
-  // per-user settings row, see lib/profitLoss/useDashboardSettings.js.
+  // My Details column ticks (per tab) + the user's own arrangement (tabs /
+  // title cards / graphs / columns, shown + in order — set on the Position
+  // Settings page, /profit-loss/position-settings) — one per-user settings
+  // row, see lib/profitLoss/useDashboardSettings.js.
   const {
-    loggedIn, settingsLoaded, reconcile, myColumnsFor, onMyColumnsChange,
-    layout, setTopSection, setTabSection, resetLayout,
+    loggedIn, settingsLoaded, reconcile, myColumnsFor,
+    layout,
     brands, addBrand,
     dropLegacySkuCosts,
     extractedData, onExtractedDataChange,
-    editMode, setEditMode, saveLayout, savingLayout,
   } = useDashboardSettings({
     ads: pending.ads,
     dateRange: pending.dateRange,
@@ -278,10 +274,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // what it added (tabs, title cards, graphs, headers) joins their saved
   // positions and My Details ticks, what it deleted leaves them, and the row
   // is saved (reconcileLayout.js). Only against the version the server says
-  // is live — never the last visit's copy — and never mid-arrangement.
+  // is live — never the last visit's copy.
   useEffect(() => {
-    if (settingsLoaded && templatesCurrent && !editMode && activeMarketplace) reconcile(config);
-  }, [settingsLoaded, templatesCurrent, editMode, activeMarketplace, config, reconcile]);
+    if (settingsLoaded && templatesCurrent && activeMarketplace) reconcile(config);
+  }, [settingsLoaded, templatesCurrent, activeMarketplace, config, reconcile]);
 
   // Automatic, unmetered per-ROW persistence (Task: "save all my headers
   // data user-wise... one row one json") — distinct from the per-SKU
@@ -413,9 +409,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // A (visible) Tab / Overview Tab named "Upload Sheet & Cost" — compared in
   // lower case, extra spaces ignored — becomes the home of the upload /
   // Position Settings toolbar: shown only while that tab is open, hidden on
-  // every other one. Without such a tab it shows everywhere, as before. While
-  // arranging (Position Settings → edit mode) it always shows, so Save
-  // Position stays reachable from whichever tab is being arranged.
+  // every other one. Without such a tab it shows everywhere, as before.
   const uploadTab = useMemo(
     () => [...visibleTabs, ...visibleOverviewTabs].find((t) => normTabName(t.name).includes(UPLOAD_TAB_NAME)) || null,
     [visibleTabs, visibleOverviewTabs],
@@ -700,6 +694,11 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   };
 
   const openTemplateSettings = () => { window.location.href = '/profit-loss/template-settings'; };
+  // The Position Settings page arranges this user's dashboard; ?m= tells it
+  // which marketplace is open here (a tab's key column can depend on it).
+  const openPositionSettings = () => {
+    router.push(`/profit-loss/position-settings${activeMarketplace ? `?m=${encodeURIComponent(activeMarketplace.id)}` : ''}`);
+  };
 
   const activeOverview = resolved.overviews?.[activeTabId] || null;
   const showOverview = (config.overviewTabs || []).some((tab) => tab.id === activeTabId);
@@ -722,8 +721,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // grouping (a SKU) has no meaning in the other (a fixed-header value).
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  // Reset Position saves straight away (see resetLayout), so it asks first.
-  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   useEffect(() => {
     (() => setSelectedKeys(new Set()))();
   }, [activeTabId]);
@@ -909,16 +906,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           overviewTabs={visibleOverviewTabs}
           showTemplateSettings={canManageTemplates}
           onOpenTemplateSettings={openTemplateSettings}
-          editMode={editMode}
-          allTabs={allTabsSorted}
-          tabsSection={layout.tabs || emptySection()}
-          onTabsSectionChange={(next) => setTopSection('tabs', next)}
-          allOverviewTabs={allOverviewTabsSorted}
-          overviewTabsSection={layout.overviewTabs || emptySection()}
-          onOverviewTabsSectionChange={(next) => setTopSection('overviewTabs', next)}
         />
 
-        {(!uploadTab || activeTabId === uploadTab.id || editMode) && (
+        {(!uploadTab || activeTabId === uploadTab.id) && (
         <DashboardToolbar
           templates={templates}
           activeTemplateId={activeMarketplace?.id ?? null}
@@ -934,12 +924,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           hasData={hasData}
           busy={busy || restoring || !!restoreError || merged.pending || !!merged.error}
           loggedIn={loggedIn}
-          editMode={editMode}
-          onEnterEditMode={() => setEditMode(true)}
-          onSaveLayout={saveLayout}
-          onResetLayout={() => setConfirmResetOpen(true)}
-          savingLayout={savingLayout}
-          myDetailsSlotRef={setViewPillsSlot}
+          onOpenPositions={openPositionSettings}
         />
         )}
 
@@ -950,10 +935,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
             (useFillHeight): the page scrolls the cards / graphs out of view,
             then the table fills the screen and only its rows scroll, under
             its pinned header and Total rows. Nothing else on the page scrolls
-            sideways (overflow-x-hidden) — except while arranging, when a
-            Title Card line wider than the screen scrolls the page sideways
-            (see KpiCardRow). */}
-        <main className={`flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto px-0 pt-2 ${editMode ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+            sideways (overflow-x-hidden). */}
+        <main className="flex w-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-0 pt-2">
          
 
           {/* Rows were uploaded and mapped fine, but every one of them falls
@@ -1049,9 +1032,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 config={config}
                 tab={activeOverviewTab}
                 resolved={resolved}
-                editMode={editMode}
                 layout={layout}
-                onSetTabSection={setTabSection}
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 onCostFill={onCostFill}
@@ -1061,8 +1042,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
-                onMyColumnsChange={(next) => onMyColumnsChange(activeOverviewTab?.id, next, activeOverviewTab?.headerIds || [])}
-                viewPillsSlot={viewPillsSlot}
                 fillHeight
               />
             ) : (
@@ -1071,10 +1050,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 tab={activeTab}
                 resolved={resolved.tableRows === displayTableRows ? resolved : { ...resolved, tableRows: displayTableRows }}
                 myColumns={myColumnsFor(activeTab?.id, activeTab?.headerIds || [])}
-                onMyColumnsChange={(next) => onMyColumnsChange(activeTab?.id, next, activeTab?.headerIds || [])}
-                editMode={editMode}
                 layout={layout}
-                onSetTabSection={setTabSection}
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 onCostFill={onCostFill}
@@ -1084,7 +1060,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
-                viewPillsSlot={viewPillsSlot}
                 myDetailsInline={false}
                 allHeaders
                 fillHeight
@@ -1141,16 +1116,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
         onCancel={() => setConfirmDeleteOpen(false)}
       />
 
-      <ConfirmDialog
-        open={confirmResetOpen}
-        title="Reset your dashboard to the default layout?"
-        description="Your own arrangement — tab order, hidden items, column order and My Details columns, on every tab — goes back to what the template sets. It is saved straight away."
-        confirmLabel="Reset"
-        loadingLabel="Resetting…"
-        loading={savingLayout}
-        onConfirm={async () => { await resetLayout(); setConfirmResetOpen(false); }}
-        onCancel={() => { if (!savingLayout) setConfirmResetOpen(false); }}
-      />
     </div>
   );
 }
