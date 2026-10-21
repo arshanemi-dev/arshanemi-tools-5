@@ -16,7 +16,10 @@ import { ACCEPT } from '@/lib/sheet/readAnyFile';
 // it back filled in) need actual uploaded rows to act on, so they unlock
 // separately once `hasData`. Then — right-aligned, signed-in users only — the
 // dashboard-personalization toggle (Position Settings -> Save Position, plus
-// Reset Position while active). Upload buttons are generated from
+// Reset Position while active). While it's active the open tab's My Details
+// button sits between Reset Position and Save Position: this bar only holds
+// the empty `display: contents` slot (`myDetailsSlotRef`) that TabView /
+// OverviewTab portal it into — it isn't shown at all otherwise. Upload buttons are generated from
 // config.fileSlots so a template with 3 aux "Header N" slots renders exactly
 // the reference's toolbar.
 export default function DashboardToolbar({
@@ -39,6 +42,7 @@ export default function DashboardToolbar({
   onSaveLayout = () => {},
   onResetLayout = () => {},
   savingLayout = false,
+  myDetailsSlotRef,
 }) {
   const uploadsReady = !!brand;
   return (
@@ -97,6 +101,7 @@ export default function DashboardToolbar({
                 disabled={savingLayout}
               />
             )}
+            {editMode && <div ref={myDetailsSlotRef} className="contents" />}
             <IconButton
               icon={editMode ? Save : Settings}
               label={editMode ? 'Save Position' : 'Position'}

@@ -44,7 +44,9 @@ function SectionLabel({ text, hidden, onShow }) {
 // `pagerSlot` (optional) is handed straight to the tree table's pager.
 //
 // My Details (the /profit-loss dashboard — passed `onMyColumnsChange`): the
-// same pill a regular Tab has, portaled into `viewPillsSlot`. Its checklist
+// same button a regular Tab has, portaled into `viewPillsSlot` — the
+// toolbar's, there only while Position Settings is on; no slot, no My
+// Details. Its checklist
 // is every header that isn't one of the levels; this tab's own picks are
 // the ones ticked until the user ticks their own (`myColumns`). The table
 // itself just shows ov.headers — DashboardWorkspace already had
@@ -116,7 +118,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   const orderIds = editMode
     ? startingOrder(headersSection, pickableIds).filter((id) => pickableSet.has(id) && !headersSection.hidden.includes(id))
     : null;
-  const pills = onMyColumnsChange && levels.length > 0 && (
+  const pills = onMyColumnsChange && viewPillsSlot && levels.length > 0 && (
     <DetailsViewPills
       tabHeaders={[{ id: TREE_COL, name: levels.map((h) => h.name).join(' › ') }, ...pickable.rest]}
       myColumns={myColumns || []}
@@ -125,7 +127,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       onMyColumnsChange={onMyColumnsChange}
       onReorder={editMode ? (ids) => setHeadersSection(reorderItems(headersSection, pickableIds, ids)) : null}
       orderIds={orderIds}
-      size={viewPillsSlot ? 'md' : 'sm'}
+      size="md"
       groups={config.headerGroups}
     />
   );
@@ -147,7 +149,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   // the Hierarchy nav keeps its own height beside it.
   return (
     <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}`}>
-      {pills && viewPillsSlot && createPortal(pills, viewPillsSlot)}
+      {pills && createPortal(pills, viewPillsSlot)}
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
       {allGraphs.length > 0 && (
@@ -193,7 +195,6 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
           {editMode && ov.headers?.length > 0 && (
             <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />
           )}
-          {!viewPillsSlot && pills}
         </div>
       </div>
 

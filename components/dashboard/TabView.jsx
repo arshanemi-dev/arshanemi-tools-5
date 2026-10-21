@@ -38,10 +38,12 @@ function SectionLabel({ text, hidden, onShow }) {
 // (headersArrange.reorder) — the same arrangement, moved from one place.
 //
 // `viewPillsSlot` / `pagerSlot` (optional DOM nodes): on /profit-loss the
-// My Details pill portals into DashboardHeaderBar instead of sitting above
-// the table. The pager stays in the table's footer (no page passes
-// `pagerSlot` now), as does Template Settings' preview.
-export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null }) {
+// My Details button portals into DashboardToolbar, after Reset Position —
+// a slot that's only there while Position Settings is on, and
+// `myDetailsInline={false}` means no slot = no My Details. Template
+// Settings' preview leaves both out: its button sits above the table. The
+// pager stays in the table's footer (no page passes `pagerSlot` now).
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, myDetailsInline = true, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -126,9 +128,9 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
 
       {tabHeaderDefs.length > 0 && (
         <>
-          {viewPillsSlot ? (
+          {viewPillsSlot || !myDetailsInline ? (
             <>
-              {createPortal(pills, viewPillsSlot)}
+              {viewPillsSlot && createPortal(pills, viewPillsSlot)}
               {editMode && <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />}
             </>
           ) : (

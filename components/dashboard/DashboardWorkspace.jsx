@@ -240,9 +240,11 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
   // ── view ────────────────────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
-  // DashboardHeaderBar's empty slot (callback ref → DOM node): TabView
-  // portals its My Details pill into it (after the date filter). The table's
-  // page limit + Prev/Next stay in its own footer, bottom right.
+  // DashboardToolbar's empty slot (callback ref → DOM node), there only
+  // while Position Settings is on: TabView / OverviewTab portal their My
+  // Details button into it, after Reset Position. With no slot the dashboard
+  // shows no My Details. The table's page limit + Prev/Next stay in its own
+  // footer, bottom right.
   const [viewPillsSlot, setViewPillsSlot] = useState(null);
 
   // My Details column ticks (per tab) + the toolbar's Position Settings ->
@@ -937,6 +939,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           onSaveLayout={saveLayout}
           onResetLayout={() => setConfirmResetOpen(true)}
           savingLayout={savingLayout}
+          myDetailsSlotRef={setViewPillsSlot}
         />
         )}
 
@@ -979,7 +982,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
            <DashboardHeaderBar
             title={activePageName}
-            viewPillsSlotRef={setViewPillsSlot}
             onReset={resetFilters}
             showSetting={canManageTemplates}
             onOpenSetting={openTemplateSettings}
@@ -1083,6 +1085,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
                 viewPillsSlot={viewPillsSlot}
+                myDetailsInline={false}
                 allHeaders
                 fillHeight
               />

@@ -31,8 +31,9 @@ import { myDetailColumns } from '@/lib/profitLoss/tabColumns';
 // the ids that list arranges, in their current order (default: the table
 // order of `tabHeaders`). `onReorder(ids)` gets them all in their new order;
 // like every edit-mode change it's kept once Save Position is pressed.
-// `size="md"` matches the h-9 controls of DashboardHeaderBar, where the
-// dashboard shows this; the default stays compact for the builder preview.
+// `size="md"` matches the h-9 buttons of DashboardToolbar, where the
+// dashboard shows this (Position Settings on, after Reset Position); the
+// default stays compact for the builder preview.
 const SIZES = {
   sm: 'px-3 py-1.5 text-xs',
   md: 'h-9 px-3 text-sm',

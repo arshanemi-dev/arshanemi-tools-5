@@ -8,11 +8,10 @@ import IconButton from './IconButton';
 
 // Row B: the active page's name as the title (the open Tab / Overview Tab /
 // Transactions — see DashboardWorkspace's activePageName) + Reset / Company
-// filter / Date / My Details, then Delete (selected rows) + the output
-// actions (Excel / PDF) on the far right. The My Details pill isn't rendered
-// here — this bar only provides the empty `display: contents` slot
-// (viewPillsSlotRef) that TabView / OverviewTab portal into, since that state
-// lives with them. The table's page limit + Prev/Next sit in its own footer.
+// filter / Date, then Delete (selected rows) + the output actions (Excel /
+// PDF) on the far right. My Details is in the toolbar above, beside Reset
+// Position (DashboardToolbar). The table's page limit + Prev/Next sit in its
+// own footer.
 //
 // No Apply button — every change here debounces into effect on its own (see
 // DashboardWorkspace's pending -> applied effect); `updating` shows a brief
@@ -23,7 +22,6 @@ import IconButton from './IconButton';
 // doExport.
 export default function DashboardHeaderBar({
   title = 'Dashboard',
-  viewPillsSlotRef,
   onReset,
   showSetting,
   onOpenSetting,
@@ -50,7 +48,6 @@ export default function DashboardHeaderBar({
         <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
         <DateRangeFilter value={dateRange} onChange={onDateChange} />
         {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
-        <div ref={viewPillsSlotRef} className="contents" />
         <IconButton icon={FileSpreadsheet} label="Excel" title="Download this tab to Excel — an Overview tab gets a sheet per level (only the columns shown)" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
         <AdsCostControl value={ads} onChange={onAdsChange} />
         <IconButton icon={FileText} label="PDF" title="Download this tab to PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
