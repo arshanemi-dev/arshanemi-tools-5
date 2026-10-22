@@ -30,7 +30,8 @@ const SHOW_GRAPHS = false;
 // `tabs` = [{ id, name, overview, onStrip }] (every one the version has —
 // one taken off the strip can still be arranged); `columns` = the picked
 // tab's { model (positionDraft columnsModel), ticked, order, onTicked,
-// onOrder } or null; `onSection(kind, nextSection)`.
+// onOrder } or null; `onSection(kind, nextSection)`; `dirtyIds` = the tabs
+// with unsaved changes (a dot on their pill).
 function Part({ icon: Icon, title, hint, right = null, children }) {
   return (
     <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
@@ -51,12 +52,11 @@ const Empty = ({ children }) => (
   <p className="rounded-lg border border-dashed border-divider-light px-3 py-5 text-center text-[13px] text-muted">{children}</p>
 );
 
-export default function TabContentsPanel({ config, layout, tabs = [], selectedId, onSelect, tab = null, overview = false, onSection, columns = null }) {
+export default function TabContentsPanel({ config, layout, tabs = [], dirtyIds = new Set(), selectedId, onSelect, tab = null, overview = false, onSection, columns = null }) {
   const sections = (tab && layout?.perTab?.[tab.id]) || {};
   const cards = partItems(tab, config, 'titleCards').map((c) => ({ id: c.id, name: c.name || c.id, own: c.own }));
   const graphs = partItems(tab, config, 'graphs').map((g) => ({ id: g.id, name: g.name || g.id, own: g.own }));
   const m = columns?.model;
-  const noneTicked = !!m && m.headers.length > 0 && columns.ticked.size === 0;
   const atDefault = !!m && columns.ticked.size === m.defaultIds.length && m.defaultIds.every((id) => columns.ticked.has(id));
 
   return (
@@ -79,6 +79,7 @@ export default function TabContentsPanel({ config, layout, tabs = [], selectedId
               {t.name}
               {t.overview && <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">overview</span>}
               {!t.onStrip && <span className="text-[10px] font-semibold uppercase tracking-wide text-subtle">off</span>}
+              {dirtyIds.has(t.id) && <span className="h-1.5 w-1.5 rounded-full bg-link" title="Unsaved changes" aria-label="unsaved" />}
             </button>
           );
         })}
@@ -132,7 +133,6 @@ export default function TabContentsPanel({ config, layout, tabs = [], selectedId
                 />
               </div>
             ) : <Empty>{overview && !m?.keyHeader ? 'Pick this overview’s hierarchy in Template Settings first.' : 'Only one column on this tab.'}</Empty>}
-            {noneTicked && <p className="text-[12px] font-medium text-neg">Tick at least one column — with none ticked the tab would go back to its default columns.</p>}
           </Part>
         </>
       )}
