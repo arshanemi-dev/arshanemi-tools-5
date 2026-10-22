@@ -27,6 +27,8 @@ import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportVi
 import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
+import { stripSectionOf } from '@/lib/profitLoss/positionDraft';
+import { partShownIds } from '@/lib/profitLoss/tabParts';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
@@ -104,13 +106,86 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const {
     templates, globalConfig, headerGroups, templatesReady, templatesChecked, templatesCurrent, templatesError, retryTemplates,
   } = useLiveTemplates({ addToast });
+
+  // Each SKU's DEFAULT costs ({ [sku]: { cogs, costGst, finalCost,
+  // otherExpense } } — lib/profitLoss/skuCosts.js): the live copy, its home
+  // in the hub's profit_loss_sku_costs table, and the tables' cost inputs —
+  // the four cost headers' own columns on a SKU's row (CostCell), one cost
+  // at a time: `onCostChange(sku, field, text)` makes it live at once and
+  // saves it as a request of its own. `dirtyCostCells` / `dirtySkuKeys` mark
+  // the box and its row light blue ("unsaved") until that cost's own save
+  // has landed — signed out that never happens, so the highlight correctly
+  // stays on. See lib/profitLoss/useSkuCosts.js.
+  const {
+    skuCosts, onCostChange, onCostFill, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
+  } = useSkuCosts({ addToast });
+
+  // ── filters (pending vs applied) ────────────────────────────────────────
+  // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
+  // resolveEverything below) but still respects company/platform. All three (plus
+  // ads) feed resolveTemplate directly, in-browser (see `resolved` below) —
+  // there's no server round-trip left to protect, so nothing here caps how
+  // many rows feed the calculation anymore; every saved row is always in
+  // play. Column sort/search/pagination of the RESULT stays entirely inside
+  // DetailsTable, which never re-fetches or re-resolves anything.
+  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
+  const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
+
+  // No "Apply" button — every change above debounces into effect on its own
+  // after a short pause, so picking a date/company or typing an ads value
+  // doesn't recompute the whole dashboard on every keystroke. resetFilters
+  // (below) sets `applied` directly for an instant reset, bypassing this.
+  // `applied` is only replaced when something in it really differs: a new
+  // object with the same values (an upload sets both to the same range) used
+  // to recalculate the whole dashboard a second time for nothing.
+  useEffect(() => {
+    const t = setTimeout(() => setApplied((cur) => (JSON.stringify(cur) === JSON.stringify(pending) ? cur : pending)), 500);
+    return () => clearTimeout(t);
+  }, [pending]);
+
+  // My Details column ticks (per tab) + the user's own arrangement (tabs /
+  // title cards / graphs / columns, shown + in order — set on the Position
+  // Settings page, /profit-loss/position-settings) — one per-user settings
+  // row, see lib/profitLoss/useDashboardSettings.js.
+  const {
+    loggedIn, settingsLoaded, reconcile, myColumnsFor,
+    layout,
+    brands, addBrand,
+    dropLegacySkuCosts,
+    extractedData, onExtractedDataChange,
+  } = useDashboardSettings({
+    ads: pending.ads,
+    dateRange: pending.dateRange,
+    addToast,
+    onLoadedPreferences: (p) => {
+      if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
+      if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
+      // SKU costs used to be saved in this settings row; whatever an account
+      // still has there is handed to the costs table's hook, which moves it
+      // across (once) and then says so — `legacyMoved`, below.
+      adoptLegacyCosts(normalizeSkuCosts(p.skuCosts));
+    },
+  });
+  useEffect(() => {
+    if (legacyMoved) dropLegacySkuCosts();
+  }, [legacyMoved, dropLegacySkuCosts]);
+  // The marketplaces in the user's own order, without the ones they took
+  // off (Position Settings — layout.marketplaces) — what the toolbar's
+  // Market Place picker offers; every one of them if none is left.
+  const myMarketplaces = useMemo(() => {
+    const mine = applyLayout(templates, layout.marketplaces || emptySection());
+    return mine.length ? mine : templates;
+  }, [templates, layout]);
+  const marketplaceIds = useMemo(() => templates.map((t) => t.id), [templates]);
+
   // The marketplace picked in the toolbar; until one is (or once it's gone
-  // from `templates`) the first one is the active one.
+  // from the list) the first one is the active one.
   const [activeTemplateId, setActiveTemplateId] = useState(null);
 
   const activeMarketplace = useMemo(
-    () => templates.find((t) => t.id === activeTemplateId) || templates[0],
-    [templates, activeTemplateId],
+    () => myMarketplaces.find((t) => t.id === activeTemplateId) || myMarketplaces[0],
+    [myMarketplaces, activeTemplateId],
   );
 
   // Global Settings + the active marketplace's files and mappings — see
@@ -122,8 +197,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     [globalConfig, activeMarketplace, headerGroups],
   );
 
-  // Every tab the template defines, in template order — the full list the
-  // tab bar's edit mode reorders/hides from.
+  // Every tab the template defines, in template order.
   const allTabsSorted = useMemo(
     () => [...(config.tabs || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [config],
@@ -138,18 +212,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
   // ── uploads ─────────────────────────────────────────────────────────────
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
-  // Each SKU's DEFAULT costs ({ [sku]: { cogs, costGst, finalCost,
-  // otherExpense } } — lib/profitLoss/skuCosts.js): the live copy, its home
-  // in the hub's profit_loss_sku_costs table, and the tables' cost inputs —
-  // the four cost headers' own columns on a SKU's row (CostCell), one cost
-  // at a time: `onCostChange(sku, field, text)` makes it live at once and
-  // saves it as a request of its own. `dirtyCostCells` / `dirtySkuKeys` mark
-  // the box and its row light blue ("unsaved") until that cost's own save
-  // has landed — signed out that never happens, so the highlight correctly
-  // stays on. See lib/profitLoss/useSkuCosts.js.
-  const {
-    skuCosts, onCostChange, onCostFill, applyCostSheet, adoptLegacyCosts, legacyMoved, dirtyCostCells, dirtySkuKeys,
-  } = useSkuCosts({ addToast });
   const [busy, setBusy] = useState(false);
   const [restorePaging, setRestorePaging] = useState(null);
   const [restoring, setRestoring] = useState(true);
@@ -207,29 +269,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Pricing is applied in the calculation worker; these canonical rows stay
   // unmodified for persistence. Untouched rows retain their original identity.
 
-  // ── filters (pending vs applied) ────────────────────────────────────────
-  // dateRange is a "getting data" bound — Download PDF/Excel ignores it (see
-  // resolveEverything below) but still respects company/platform. All three (plus
-  // ads) feed resolveTemplate directly, in-browser (see `resolved` below) —
-  // there's no server round-trip left to protect, so nothing here caps how
-  // many rows feed the calculation anymore; every saved row is always in
-  // play. Column sort/search/pagination of the RESULT stays entirely inside
-  // DetailsTable, which never re-fetches or re-resolves anything.
-  const [pending, setPending] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
-  const [applied, setApplied] = useState({ dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS });
-  const dirty = JSON.stringify(pending) !== JSON.stringify(applied);
-
-  // No "Apply" button — every change above debounces into effect on its own
-  // after a short pause, so picking a date/company or typing an ads value
-  // doesn't recompute the whole dashboard on every keystroke. resetFilters
-  // (below) sets `applied` directly for an instant reset, bypassing this.
-  // `applied` is only replaced when something in it really differs: a new
-  // object with the same values (an upload sets both to the same range) used
-  // to recalculate the whole dashboard a second time for nothing.
-  useEffect(() => {
-    const t = setTimeout(() => setApplied((cur) => (JSON.stringify(cur) === JSON.stringify(pending) ? cur : pending)), 500);
-    return () => clearTimeout(t);
-  }, [pending]);
 
   // ── brand (toolbar setup step, not a view filter) ───────────────────────
   // Market Place, then Brand — picking/creating one here is what unlocks the
@@ -243,32 +282,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // ── view ────────────────────────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // My Details column ticks (per tab) + the user's own arrangement (tabs /
-  // title cards / graphs / columns, shown + in order — set on the Position
-  // Settings page, /profit-loss/position-settings) — one per-user settings
-  // row, see lib/profitLoss/useDashboardSettings.js.
-  const {
-    loggedIn, settingsLoaded, reconcile, myColumnsFor,
-    layout,
-    brands, addBrand,
-    dropLegacySkuCosts,
-    extractedData, onExtractedDataChange,
-  } = useDashboardSettings({
-    ads: pending.ads,
-    dateRange: pending.dateRange,
-    addToast,
-    onLoadedPreferences: (p) => {
-      if (p.adsMode) setPending((s) => ({ ...s, ads: { mode: p.adsMode, value: p.adsValue ?? 0 } }));
-      if (p.defaultDatePreset) setPending((s) => ({ ...s, dateRange: { preset: p.defaultDatePreset, ...rangeForPreset(p.defaultDatePreset) } }));
-      // SKU costs used to be saved in this settings row; whatever an account
-      // still has there is handed to the costs table's hook, which moves it
-      // across (once) and then says so — `legacyMoved`, below.
-      adoptLegacyCosts(normalizeSkuCosts(p.skuCosts));
-    },
-  });
-  useEffect(() => {
-    if (legacyMoved) dropLegacySkuCosts();
-  }, [legacyMoved, dropLegacySkuCosts]);
 
   // A version that went Live since this user last saved their arrangement:
   // what it added (tabs, title cards, graphs, headers) joins their saved
@@ -276,8 +289,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // is saved (reconcileLayout.js). Only against the version the server says
   // is live — never the last visit's copy.
   useEffect(() => {
-    if (settingsLoaded && templatesCurrent && activeMarketplace) reconcile(config);
-  }, [settingsLoaded, templatesCurrent, activeMarketplace, config, reconcile]);
+    if (settingsLoaded && templatesCurrent && activeMarketplace) reconcile(config, marketplaceIds);
+  }, [settingsLoaded, templatesCurrent, activeMarketplace, config, marketplaceIds, reconcile]);
 
   // Automatic, unmetered per-ROW persistence (Task: "save all my headers
   // data user-wise... one row one json") — distinct from the per-SKU
@@ -385,14 +398,17 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loggedIn, restoreAttempt]);
 
-  const visibleTabs = useMemo(
-    () => applyLayout(allTabsSorted, layout.tabs || emptySection()),
-    [allTabsSorted, layout],
+  // The tab strip — Tabs and Overview Tabs in ONE list, in the user's own
+  // order and without the ones they took off (Position Settings —
+  // layout.strip, or a row saved while they were two lists:
+  // positionDraft.js stripSectionOf). The version's own order: Tabs first.
+  const visibleStrip = useMemo(
+    () => applyLayout([...allTabsSorted, ...allOverviewTabsSorted], stripSectionOf(layout, allTabsSorted, allOverviewTabsSorted)),
+    [allTabsSorted, allOverviewTabsSorted, layout],
   );
-  const visibleOverviewTabs = useMemo(
-    () => applyLayout(allOverviewTabsSorted, layout.overviewTabs || emptySection()),
-    [allOverviewTabsSorted, layout],
-  );
+  const overviewIds = useMemo(() => new Set(allOverviewTabsSorted.map((o) => o.id)), [allOverviewTabsSorted]);
+  const visibleTabs = useMemo(() => visibleStrip.filter((t) => !overviewIds.has(t.id)), [visibleStrip, overviewIds]);
+  const visibleOverviewTabs = useMemo(() => visibleStrip.filter((t) => overviewIds.has(t.id)), [visibleStrip, overviewIds]);
 
   // The tab the user last picked; the *actual* active tab is derived from it so
   // switching templates (or hiding the current tab in edit mode) can't leave a
@@ -402,8 +418,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     if (preferredTabId === TRANSACTIONS_TAB_ID) return TRANSACTIONS_TAB_ID;
     if (visibleTabs.some((t) => t.id === preferredTabId)) return preferredTabId;
     if (visibleOverviewTabs.some((o) => o.id === preferredTabId)) return preferredTabId;
-    return visibleTabs[0]?.id ?? visibleOverviewTabs[0]?.id ?? null;
-  }, [preferredTabId, visibleTabs, visibleOverviewTabs]);
+    return visibleStrip[0]?.id ?? null;
+  }, [preferredTabId, visibleTabs, visibleOverviewTabs, visibleStrip]);
   const showTransactions = activeTabId === TRANSACTIONS_TAB_ID;
 
   // A (visible) Tab / Overview Tab named "Upload Sheet & Cost" — compared in
@@ -411,8 +427,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Position Settings toolbar: shown only while that tab is open, hidden on
   // every other one. Without such a tab it shows everywhere, as before.
   const uploadTab = useMemo(
-    () => [...visibleTabs, ...visibleOverviewTabs].find((t) => normTabName(t.name).includes(UPLOAD_TAB_NAME)) || null,
-    [visibleTabs, visibleOverviewTabs],
+    () => visibleStrip.find((t) => normTabName(t.name).includes(UPLOAD_TAB_NAME)) || null,
+    [visibleStrip],
   );
 
   // ── resolve (in the calculation worker) ────────────────────────────────
@@ -439,10 +455,18 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     company: applied.company,
     overviewHeaderIds,
   }), [applied, overviewHeaderIds]);
+  // The Title Cards / Graphs the open tab shows — its own plus any the user
+  // added on Position Settings (tabParts.js) — the only ones worked out.
+  // Held as a string so an unrelated layout change doesn't recompute.
+  const partsKey = useMemo(() => {
+    const tab = [...(config.tabs || []), ...(config.overviewTabs || [])].find((t) => t.id === activeTabId);
+    return tab ? JSON.stringify({ titleCards: partShownIds(tab, config, layout, 'titleCards'), graphs: partShownIds(tab, config, layout, 'graphs') }) : '';
+  }, [config, layout, activeTabId]);
+  const viewParts = useMemo(() => (partsKey ? JSON.parse(partsKey) : null), [partsKey]);
   const viewInput = useMemo(() => ({
     config, rows: canonicalRows, skuCosts, options: viewOptions,
-    activeTabId, transactions: showTransactions,
-  }), [config, canonicalRows, skuCosts, viewOptions, activeTabId, showTransactions]);
+    activeTabId, parts: viewParts, transactions: showTransactions,
+  }), [config, canonicalRows, skuCosts, viewOptions, activeTabId, viewParts, showTransactions]);
   const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
   const { resolved, transactionResolved } = computed.value;
   // The Transactions table's columns — every header not switched to Hidden.
@@ -854,7 +878,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       adsMode: applied.ads.mode,
       adsValue: applied.ads.value,
       rowCount: canonicalRows.length,
-      summary: showTransactions ? {} : Object.fromEntries((activeTab?.titleCardIds || []).map((id) => {
+      summary: showTransactions ? {} : Object.fromEntries((viewParts?.titleCards || []).map((id) => {
         const c = (config.titleCards || []).find((x) => x.id === id);
         return [c?.name || id, resolved.titleCardValues[id]?.main?.raw ?? null];
       })),
@@ -870,7 +894,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       }),
       sourceFiles: uploads.map((u) => ({ kind: u.slotId, platform: u.platform, name: u.fileName, sizeBytes: 0, rowCount: u.rows.length, contentBase64: null })),
     };
-  }, [buildView, applied, resolved, canonicalRows, activeTab, config, uploads, showTransactions, transactionResolved]);
+  }, [buildView, applied, resolved, canonicalRows, viewParts, config, uploads, showTransactions, transactionResolved]);
 
   if (!templatesReady) {
     return (
@@ -900,17 +924,17 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-2">
         <DashboardTabBar
-          tabs={visibleTabs}
+          strip={visibleStrip}
+          overviewIds={overviewIds}
           activeKey={activeTabId}
           onSelect={setPreferredTabId}
-          overviewTabs={visibleOverviewTabs}
           showTemplateSettings={canManageTemplates}
           onOpenTemplateSettings={openTemplateSettings}
         />
 
         {(!uploadTab || activeTabId === uploadTab.id) && (
         <DashboardToolbar
-          templates={templates}
+          templates={myMarketplaces}
           activeTemplateId={activeMarketplace?.id ?? null}
           onSelectTemplate={setActiveTemplateId}
           brands={effectiveBrands}

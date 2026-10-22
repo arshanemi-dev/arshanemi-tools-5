@@ -36,12 +36,13 @@ export function KeyRow({ header }) {
   );
 }
 
-export default function MyDetailsGroupList({ sections = [], ticked, onToggle, onSetMany, keyHeader = null, total = 0, query = '' }) {
+// `words` = what the items are called (MyDetailsPanes COLUMN_WORDS).
+export default function MyDetailsGroupList({ sections = [], ticked, onToggle, onSetMany, keyHeader = null, total = 0, query = '', words }) {
   return (
     <div className="@container flex flex-col gap-3">
       {keyHeader && <KeyRow header={keyHeader} />}
-      {total === 0 && <p className="px-2 py-6 text-center text-sm text-muted">Only one column on this tab.</p>}
-      {total > 0 && sections.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted">No column matches “{query.trim()}”.</p>}
+      {total === 0 && <p className="px-2 py-6 text-center text-sm text-muted">{words.none}</p>}
+      {total > 0 && sections.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted">{words.noMatch} “{query.trim()}”.</p>}
 
       {sections.map((s) => {
         const on = s.items.filter((h) => ticked.has(h.id)).length;
@@ -54,13 +55,13 @@ export default function MyDetailsGroupList({ sections = [], ticked, onToggle, on
                 checked={all}
                 ref={(el) => { if (el) el.indeterminate = on > 0 && !all; }}
                 onChange={() => onSetMany(s.items.map((h) => h.id), !all)}
-                aria-label={`${all ? 'Untick' : 'Tick'} every column in ${s.name}`}
+                aria-label={`${all ? 'Untick' : 'Tick'} ${words.every} ${s.name}`}
                 className={BOX}
               />
               <span className="min-w-0 truncate text-[11.5px] font-semibold uppercase tracking-wide text-accent">{s.name}</span>
               <span className="ml-auto shrink-0 text-[11px] tabular-nums text-subtle">{on} / {s.items.length}</span>
             </label>
-            <div className="grid gap-0.5 p-1.5 @md:grid-cols-2 @2xl:grid-cols-3">
+            <div className="grid gap-0.5 p-1.5 @xs:grid-cols-2 @md:grid-cols-3">
               {s.items.map((h) => {
                 const isOn = ticked.has(h.id);
                 return (

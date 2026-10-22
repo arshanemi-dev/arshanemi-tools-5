@@ -18,10 +18,24 @@ import { GENERAL_GROUP_ID } from '@/lib/profitLoss/headerGroups';
 // Controlled — the caller keeps the copy being edited: `ticked` (a Set) +
 // `onTicked(set)`, `order` (every header id, arranged) + `onOrder(ids)`.
 // `headers` = { id, name, groupId }; `keyHeader` = the locked first column.
-// It fills the height it's given; each side scrolls on its own.
-// `autoFocus` puts the cursor in the search box (the window does).
-export default function MyDetailsPanes({ keyHeader = null, headers = [], groups = null, ticked, onTicked, order = null, onOrder, autoFocus = false, className = '' }) {
+// It fills the height it's given and each side scrolls on its own — or,
+// `fill={false}`, it is as tall as its lists, each scrolling past a height.
+// The two sides sit side by side once there is room for both (a container
+// query, so a half-width card stacks them).
+// `autoFocus` puts the cursor in the search box (the window does). `words`
+// = what the items are called (COLUMN_WORDS; Position Settings' other lists
+// pass their own — TickOrderList).
+export const COLUMN_WORDS = {
+  all: 'All headers', order: 'Column order', search: 'Search columns…', searchLabel: 'Search columns',
+  none: 'Only one column on this tab.', noMatch: 'No column matches', every: 'every column in',
+  empty: 'Tick a column to place it here.', off: 'Take off the table',
+};
+
+export default function MyDetailsPanes({ keyHeader = null, headers = [], groups = null, ticked, onTicked, order = null, onOrder, autoFocus = false, fill = true, words: own = null, className = '' }) {
   const positions = Array.isArray(order);
+  const words = own ? { ...COLUMN_WORDS, ...own } : COLUMN_WORDS;
+  const grow = fill ? 'min-h-0 flex-1' : '';
+  const scroll = fill ? 'min-h-0 flex-1 overflow-y-auto pr-1' : 'max-h-[24rem] overflow-y-auto pr-1';
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
 
@@ -54,16 +68,17 @@ export default function MyDetailsPanes({ keyHeader = null, headers = [], groups 
   const chip = 'shrink-0 rounded-lg border border-divider-light px-2.5 py-1.5 text-[12px] font-medium text-muted transition-colors hover:bg-card-hover disabled:opacity-40';
 
   return (
-    <div className={`flex min-h-0 flex-1 flex-col gap-4 ${positions ? 'lg:flex-row' : ''} ${className}`}>
-      <div className={`flex min-h-0 flex-1 flex-col gap-2 ${positions ? 'lg:flex-[3]' : ''}`}>
+    <div className={`@container flex flex-col ${grow} ${className}`}>
+    <div className={`flex flex-col gap-4 ${grow} ${positions ? '@3xl:flex-row' : ''}`}>
+      <div className={`flex flex-col gap-2 ${grow} ${positions ? '@3xl:flex-[3]' : ''}`}>
         <div className="flex items-center justify-between gap-2">
-          <span className={paneTitle}>All headers</span>
+          <span className={paneTitle}>{words.all}</span>
           <span className="text-[11px] tabular-nums text-subtle">{shownCount} of {total} shown</span>
         </div>
         {headers.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-[12rem] flex-1">
-              <ListSearchBox value={q} onChange={setQ} placeholder="Search columns…" label="Search columns" sort={sort} onSort={setSort} autoFocus={autoFocus} />
+              <ListSearchBox value={q} onChange={setQ} placeholder={words.search} label={words.searchLabel} sort={sort} onSort={setSort} autoFocus={autoFocus} />
             </div>
             <button type="button" className={chip} disabled={!listedIds.length || listedIds.every((id) => ticked.has(id))} onClick={() => setMany(listedIds, true)}>
               {searching ? 'Select results' : 'Select all'}
@@ -73,7 +88,7 @@ export default function MyDetailsPanes({ keyHeader = null, headers = [], groups 
             </button>
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className={scroll}>
           <MyDetailsGroupList
             sections={sections}
             ticked={ticked}
@@ -82,26 +97,29 @@ export default function MyDetailsPanes({ keyHeader = null, headers = [], groups 
             keyHeader={keyHeader && !positions && matchesSearch(keyHeader.name, q) ? keyHeader : null}
             total={headers.length}
             query={q}
+            words={words}
           />
         </div>
       </div>
 
       {positions && (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-divider pt-4 lg:flex-[2] lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+        <div className={`flex flex-col gap-2 border-t border-divider pt-4 ${grow} @3xl:flex-[2] @3xl:border-l @3xl:border-t-0 @3xl:pl-4 @3xl:pt-0`}>
           <div className="flex items-center justify-between gap-2">
-            <span className={paneTitle}>Column order</span>
+            <span className={paneTitle}>{words.order}</span>
             <span className="text-[11px] text-subtle">Drag ⋮⋮ or pick a position</span>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className={scroll}>
             <MyDetailsOrderPane
               keyHeader={keyHeader}
               items={placed.map((id) => ({ id, name: byId.get(id).name, groupName: groupName?.get(byId.get(id).groupId || GENERAL_GROUP_ID) || null }))}
               onMove={move}
               onRemove={toggle}
+              words={words}
             />
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

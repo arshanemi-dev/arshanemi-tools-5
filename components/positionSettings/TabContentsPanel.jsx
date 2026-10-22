@@ -1,23 +1,36 @@
 'use client';
 
 import { BarChart3, Columns3, LayoutGrid, RotateCcw } from 'lucide-react';
-import HeaderPickerStrip from '@/components/templateSettings/HeaderPickerStrip';
 import MyDetailsPanes from '@/components/dashboard/MyDetailsPanes';
-import { cardItems, graphItems, shownIds } from '@/lib/profitLoss/positionDraft';
+import { partItems, partList, partSection } from '@/lib/profitLoss/tabParts';
+import TickOrderList, { listWords } from './TickOrderList';
+
+// A tab's cards / graphs: every one of the version, the tab's own shown
+// unless taken off, any other once ticked (tabParts.js).
+const PARTS = {
+  list: (items, section) => partList(items, section),
+  save: (section, items, _list, order, ticked) => partSection(section, items, order, ticked),
+};
+
+const CARD_WORDS = listWords('title card', 'title cards', 'Card order', 'Take off this tab');
+const GRAPH_WORDS = listWords('graph', 'graphs', 'Graph order', 'Take off this tab');
+
+// The Graphs section is hidden for now — flip this to bring it back. Hidden,
+// nothing about graphs changes: each tab still shows its own, and any graph
+// arrangement saved before stays as it was (the page just doesn't edit it).
+const SHOW_GRAPHS = false;
 
 // Position Settings › one tab's contents: pick a Tab / Overview Tab from the
-// row on top, then arrange what its dashboard page shows —
-//  - Title Cards and Graphs: the "pick some, put them in order" list of
-//    Template Settings (HeaderPickerStrip) — drag ⋮⋮, "Position N", ↑ / ↓,
-//    every row a dropdown of this tab's own cards / graphs (each listed once;
-//    picking one already in the list swaps the two), × takes one off, Add
-//    brings it back;
-//  - Columns: My Details' two lists (MyDetailsPanes) — tick the columns,
-//    group by group, and put the ticked ones in order.
+// row on top, then arrange what its dashboard page shows — its Title Cards,
+// Graphs (hidden for now — SHOW_GRAPHS) and Columns, each the same way: My
+// Details' two lists — tick what shows — every card / graph / column of the
+// version, each listed once, the tab's own ticked to start with — then put
+// the ticked ones in order (TickOrderList for the cards and graphs,
+// MyDetailsPanes with the tab's key column pinned for the columns).
 // `tabs` = [{ id, name, overview, onStrip }] (every one the version has —
 // one taken off the strip can still be arranged); `columns` = the picked
 // tab's { model (positionDraft columnsModel), ticked, order, onTicked,
-// onOrder } or null; `onSection(kind, visibleIds, allIds)`.
+// onOrder } or null; `onSection(kind, nextSection)`.
 function Part({ icon: Icon, title, hint, right = null, children }) {
   return (
     <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
@@ -25,7 +38,7 @@ function Part({ icon: Icon, title, hint, right = null, children }) {
         <span className="rounded-lg bg-accent/10 p-1.5 text-accent"><Icon size={15} /></span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          <p className="text-[12px] text-muted">{hint}</p>
+          {/* <p className="text-[12px] text-muted">{hint}</p> */}
         </div>
         {right}
       </div>
@@ -40,8 +53,8 @@ const Empty = ({ children }) => (
 
 export default function TabContentsPanel({ config, layout, tabs = [], selectedId, onSelect, tab = null, overview = false, onSection, columns = null }) {
   const sections = (tab && layout?.perTab?.[tab.id]) || {};
-  const cards = cardItems(tab, config);
-  const graphs = graphItems(tab, config);
+  const cards = partItems(tab, config, 'titleCards').map((c) => ({ id: c.id, name: c.name || c.id, own: c.own }));
+  const graphs = partItems(tab, config, 'graphs').map((g) => ({ id: g.id, name: g.name || g.id, own: g.own }));
   const m = columns?.model;
   const noneTicked = !!m && m.headers.length > 0 && columns.ticked.size === 0;
   const atDefault = !!m && columns.ticked.size === m.defaultIds.length && m.defaultIds.every((id) => columns.ticked.has(id));
@@ -75,28 +88,18 @@ export default function TabContentsPanel({ config, layout, tabs = [], selectedId
         <Empty>Pick a tab to arrange.</Empty>
       ) : (
         <>
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Part icon={LayoutGrid} title="Title Cards" hint="The cards along the top of this tab, first one first.">
-              {cards.length ? (
-                <HeaderPickerStrip
-                  label="Title Card"
-                  options={cards}
-                  selectedIds={shownIds(cards, sections.titleCards)}
-                  onChange={(ids) => onSection('titleCards', ids, cards.map((c) => c.id))}
-                />
-              ) : <Empty>This tab has no title cards — they&rsquo;re added in Template Settings.</Empty>}
-            </Part>
-            <Part icon={BarChart3} title="Graphs" hint="The graphs under the cards, first one first.">
+          <Part icon={LayoutGrid} title="Title Cards" hint="Every title card of the template — this tab's own are ticked to start with. Tick the ones it shows, then put them in order.">
+            {cards.length ? (
+              <TickOrderList items={cards} section={sections.titleCards} onChange={(next) => onSection('titleCards', next)} title="Title Cards" words={CARD_WORDS} model={PARTS} />
+            ) : <Empty>The template has no title cards yet — they&rsquo;re made in Template Settings.</Empty>}
+          </Part>
+          {SHOW_GRAPHS && (
+            <Part icon={BarChart3} title="Graphs" hint="Every graph of the template — this tab's own are ticked to start with. Tick the ones it shows, then put them in order.">
               {graphs.length ? (
-                <HeaderPickerStrip
-                  label="Graph"
-                  options={graphs}
-                  selectedIds={shownIds(graphs, sections.graphs)}
-                  onChange={(ids) => onSection('graphs', ids, graphs.map((g) => g.id))}
-                />
-              ) : <Empty>This tab has no graphs — they&rsquo;re added in Template Settings.</Empty>}
+                <TickOrderList items={graphs} section={sections.graphs} onChange={(next) => onSection('graphs', next)} title="Graphs" words={GRAPH_WORDS} model={PARTS} />
+              ) : <Empty>The template has no graphs yet — they&rsquo;re made in Template Settings.</Empty>}
             </Part>
-          </div>
+          )}
 
           <Part
             icon={Columns3}

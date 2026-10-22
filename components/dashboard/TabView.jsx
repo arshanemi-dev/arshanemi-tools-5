@@ -9,6 +9,7 @@ import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
 import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
+import { partItems, partLayout } from '@/lib/profitLoss/tabParts';
 
 function SectionLabel({ text, hidden, onShow }) {
   return (
@@ -52,12 +53,12 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   const graphsSection = tabLayout.graphs || emptySection();
   const headersSection = tabLayout.headers || emptySection();
 
-  const cardById = new Map((config.titleCards || []).map((c) => [c.id, c]));
-  const graphById = new Map((config.graphs || []).map((g) => [g.id, g]));
   const spanById = new Map((tab?.layout?.graphs || []).map((g) => [g.id, g.span || 1]));
 
-  const allCards = (tab?.titleCardIds || []).map((id) => cardById.get(id)).filter(Boolean);
-  const allGraphs = (tab?.graphIds || []).map((id) => ({ id, name: graphById.get(id)?.name || id, span: spanById.get(id) || 1 }));
+  // Every Title Card / Graph the tab can show — its own, plus any other the
+  // user added on Position Settings (lib/profitLoss/tabParts.js).
+  const allCards = partItems(tab, config, 'titleCards');
+  const allGraphs = partItems(tab, config, 'graphs').map((g) => ({ ...g, name: g.name || g.id, span: spanById.get(g.id) || 1 }));
 
   // The first is the sticky key column, the rest can be hidden / reordered
   // per user (edit mode, My Details). Without `allHeaders`, a tab with no
@@ -67,8 +68,8 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
     groupByHeaderId: config.marketplace?.groupByHeaderId,
   });
 
-  const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
-  const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));
+  const cardsArrange = useArrangeableList(allCards, partLayout(allCards, cardsSection), (next) => onSetTabSection(tabId, 'titleCards', next));
+  const graphsArrange = useArrangeableList(allGraphs, partLayout(allGraphs, graphsSection), (next) => onSetTabSection(tabId, 'graphs', next));
   // The column arrangement keeps which headers were the tab's own then
   // (`picks`) — so a later version adding / removing one isn't read as
   // re-ordering the columns (lib/profitLoss/reconcileLayout.js).
@@ -102,7 +103,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   // The Title Cards. On the dashboard they portal up into `cardsSlot` —
   // above the header bar (DashboardWorkspace) — so the header bar sits
   // between them and the graphs / table; the preview keeps them here.
-  const cards = allCards.length > 0 && (
+  const cards = cardsArrange.visible.length > 0 && (
     <div className="space-y-2">
       {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
       {cardsArrange.visible.length > 0 && (
@@ -117,7 +118,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
     <div className={fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}>
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
-      {allGraphs.length > 0 && (
+      {graphsArrange.visible.length > 0 && (
         <div className="space-y-2">
           {editMode && <SectionLabel text="Graphs" hidden={graphsArrange.hidden} onShow={graphsArrange.show} />}
           {graphsArrange.visible.length > 0 && (

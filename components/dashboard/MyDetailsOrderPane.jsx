@@ -9,8 +9,9 @@ import { KeyRow } from './MyDetailsGroupList';
 // Template Settings' lists (PositionList) — drag a row onto another (a green
 // line shows where it lands), pick its "Position N", or ↑ / ↓ / ⇈ / ⇊; ×
 // unticks it. The key column is pinned above them — it is always first.
-// `items` = [{ id, name, groupName }] in order; `onMove(from, to)`.
-export default function MyDetailsOrderPane({ keyHeader = null, items = [], onMove, onRemove }) {
+// `items` = [{ id, name, groupName }] in order; `onMove(from, to)`;
+// `words` = what the items are called (MyDetailsPanes COLUMN_WORDS).
+export default function MyDetailsOrderPane({ keyHeader = null, items = [], onMove, onRemove, words }) {
   return (
     <div className="flex flex-col gap-2">
       {keyHeader && <KeyRow header={keyHeader} />}
@@ -31,7 +32,7 @@ export default function MyDetailsOrderPane({ keyHeader = null, items = [], onMov
           renderEnd={(it) => (
             <button
               type="button"
-              title="Take off the table"
+              title={words.off}
               aria-label={`Untick ${it.name}`}
               onClick={() => onRemove(it.id)}
               className="rounded-md p-1 text-subtle hover:bg-card-hover hover:text-neg"
@@ -42,7 +43,7 @@ export default function MyDetailsOrderPane({ keyHeader = null, items = [], onMov
         />
       ) : (
         <p className="rounded-lg border border-dashed border-divider-light px-3 py-6 text-center text-[13px] text-muted">
-          Tick a column to place it here.
+          {words.empty}
         </p>
       )}
     </div>

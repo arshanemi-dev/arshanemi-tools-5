@@ -12,6 +12,7 @@ import OverviewTreeTable from './OverviewTreeTable';
 import { levelStyle } from './overviewLevelStyles';
 import { emptySection, reorderItems, startingOrder } from '@/lib/profitLoss/layoutSections';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
+import { partItems, partLayout } from '@/lib/profitLoss/tabParts';
 import { TREE_COL, ancestorKeys, keysToDepth } from '@/lib/profitLoss/overviewTree';
 import { overviewColumnDefs } from '@/lib/profitLoss/tabColumns';
 
@@ -65,13 +66,12 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   const graphsSection = tabLayout.graphs || emptySection();
   const headersSection = tabLayout.headers || emptySection();
 
-  const cardById = new Map((config.titleCards || []).map((c) => [c.id, c]));
-  const graphById = new Map((config.graphs || []).map((g) => [g.id, g]));
-  const allCards = (tab?.titleCardIds || []).map((id) => cardById.get(id)).filter(Boolean);
-  const allGraphs = (tab?.graphIds || []).map((id) => ({ id, name: graphById.get(id)?.name || id, span: 1 }));
+  // Its own Title Cards / Graphs plus any other the user added (tabParts.js).
+  const allCards = partItems(tab, config, 'titleCards');
+  const allGraphs = partItems(tab, config, 'graphs').map((g) => ({ ...g, name: g.name || g.id, span: 1 }));
 
-  const cardsArrange = useArrangeableList(allCards, cardsSection, (next) => onSetTabSection(tabId, 'titleCards', next));
-  const graphsArrange = useArrangeableList(allGraphs, graphsSection, (next) => onSetTabSection(tabId, 'graphs', next));
+  const cardsArrange = useArrangeableList(allCards, partLayout(allCards, cardsSection), (next) => onSetTabSection(tabId, 'titleCards', next));
+  const graphsArrange = useArrangeableList(allGraphs, partLayout(allGraphs, graphsSection), (next) => onSetTabSection(tabId, 'graphs', next));
   // Saved with the overview's own headers then (`picks`) — see TabView.
   const setHeadersSection = (next) => onSetTabSection(tabId, 'headers', { ...next, picks: [...(tab?.headerIds || [])] });
   const headersArrange = useArrangeableList(ov.headers || [], headersSection, setHeadersSection);
@@ -135,7 +135,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   // The Title Cards. On the dashboard they portal up into `cardsSlot` —
   // above the header bar (DashboardWorkspace) — so the header bar sits
   // between them and the graphs / table; the preview keeps them here.
-  const cards = allCards.length > 0 && (
+  const cards = cardsArrange.visible.length > 0 && (
     <div className="space-y-2">
       {editMode && <SectionLabel text="Title Cards" hidden={cardsArrange.hidden} onShow={cardsArrange.show} />}
       {cardsArrange.visible.length > 0 && (
@@ -152,7 +152,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
       {pills && createPortal(pills, viewPillsSlot)}
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
-      {allGraphs.length > 0 && (
+      {graphsArrange.visible.length > 0 && (
         <div className="space-y-2">
           {editMode && <SectionLabel text="Graphs" hidden={graphsArrange.hidden} onShow={graphsArrange.show} />}
           {graphsArrange.visible.length > 0 && (
