@@ -35,6 +35,7 @@ import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
+import { requireLogin } from '@/lib/authGate';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import BillingGateModal from '@/components/billing/BillingGateModal';
 import FreeTierLimitModal from '@/components/billing/FreeTierLimitModal';
@@ -68,7 +69,7 @@ const RESTORED_SLOT_ID = 'restored';
 // without colliding with anything Template Settings defines.
 const TRANSACTIONS_TAB_ID = '__transactions__';
 
-// The tab that owns the upload / Position Settings toolbar (see uploadTab).
+// The tab that owns the toolbar's upload controls (see uploadTab).
 const UPLOAD_TAB_NAME = 'upload';
 const normTabName = (s) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 // The hub's own per-page cap (lib/db.js) — used as the restore loop's page
@@ -423,9 +424,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const showTransactions = activeTabId === TRANSACTIONS_TAB_ID;
 
   // A (visible) Tab / Overview Tab named "Upload Sheet & Cost" — compared in
-  // lower case, extra spaces ignored — becomes the home of the upload /
-  // Position Settings toolbar: shown only while that tab is open, hidden on
-  // every other one. Without such a tab it shows everywhere, as before.
+  // lower case, extra spaces ignored — becomes the home of the toolbar's
+  // upload controls (Market Place, Brand, the file uploads, SKU Cost): shown
+  // only while that tab is open. Without such a tab they show everywhere.
+  // The toolbar itself — with the filters at its end — is on every tab.
   const uploadTab = useMemo(
     () => visibleStrip.find((t) => normTabName(t.name).includes(UPLOAD_TAB_NAME)) || null,
     [visibleStrip],
@@ -930,9 +932,12 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           onSelect={setPreferredTabId}
           showTemplateSettings={canManageTemplates}
           onOpenTemplateSettings={openTemplateSettings}
+          showPositions={loggedIn}
+          onOpenPositions={openPositionSettings}
         />
 
-        {(!uploadTab || activeTabId === uploadTab.id) && (
+        {/* On every tab: the filters are needed everywhere — the upload
+            controls only where uploadTab says (showUploads). */}
         <DashboardToolbar
           templates={myMarketplaces}
           activeTemplateId={activeMarketplace?.id ?? null}
@@ -940,17 +945,41 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           brands={effectiveBrands}
           brand={selectedBrand}
           onBrandChange={setSelectedBrand}
-          onCreateBrand={addBrand}
+          onCreateBrand={(name) => { if (loggedIn) addBrand(name); else requireLogin(); }}
+          canCreateBrand={loggedIn}
+          onCreateBrandBlocked={requireLogin}
           fileSlots={config.fileSlots || []}
           onUpload={onUpload}
           onUploadSkuCost={onUploadSkuCost}
           onDownloadSkuTemplate={onDownloadSkuTemplate}
           hasData={hasData}
           busy={busy || restoring || !!restoreError || merged.pending || !!merged.error}
-          loggedIn={loggedIn}
-          onOpenPositions={openPositionSettings}
+          showUploads={!uploadTab || activeTabId === uploadTab.id}
+          filters={(
+            <DashboardHeaderBar
+              title={activePageName}
+              onReset={resetFilters}
+              showSetting={canManageTemplates}
+              onOpenSetting={openTemplateSettings}
+              companyOptions={companyOptions}
+              company={pending.company}
+              onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
+              dateRange={pending.dateRange}
+              onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
+              ads={pending.ads}
+              onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
+              updating={dirty || calculating || exporting}
+              actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
+              hasData={hasData}
+              selectedCount={selectedKeys.size}
+              onDeleteClick={() => setConfirmDeleteOpen(true)}
+              onExportExcel={() => doExport('xlsx')}
+              onExportPdf={() => doExport('pdf')}
+              onOpenHistory={() => setHistoryOpen(true)}
+              saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
+            />
+          )}
         />
-        )}
 
      
         {/* A flex column so the active tab's table can stretch into whatever
@@ -987,28 +1016,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
             </div>
           )}
 
-           <DashboardHeaderBar
-            title={activePageName}
-            onReset={resetFilters}
-            showSetting={canManageTemplates}
-            onOpenSetting={openTemplateSettings}
-            companyOptions={companyOptions}
-            company={pending.company}
-            onCompanyChange={(company) => setPending((s) => ({ ...s, company }))}
-            dateRange={pending.dateRange}
-            onDateChange={(dr) => setPending((s) => ({ ...s, dateRange: dr }))}
-            ads={pending.ads}
-            onAdsChange={(ads) => setPending((s) => ({ ...s, ads }))}
-            updating={dirty || calculating || exporting}
-            actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
-            hasData={hasData}
-            selectedCount={selectedKeys.size}
-            onDeleteClick={() => setConfirmDeleteOpen(true)}
-            onExportExcel={() => doExport('xlsx')}
-            onExportPdf={() => doExport('pdf')}
-            onOpenHistory={() => setHistoryOpen(true)}
-            saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
-          />
+
 
           {restoring && (
             <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">

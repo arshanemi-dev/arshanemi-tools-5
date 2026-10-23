@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth';
 import { fetchTemplateSettingsAllowed } from '@/lib/marketplaceTemplateAccess';
 import { ToastProvider } from '@/components/admin/Toast';
 import TemplateSettingsChrome from '@/components/templateSettings/TemplateSettingsChrome';
+import PageGate from '@/components/auth/PageGate';
 
 export const metadata = { title: 'Template Settings — Profit & Loss', robots: { index: false } };
 
@@ -11,7 +12,9 @@ export const metadata = { title: 'Template Settings — Profit & Loss', robots: 
 // template-settings/layout.js. A missing payload is deliberately NOT a
 // redirect: it can mean "genuinely signed out" or "signed in via the hub SSO
 // handoff, cookie not set yet". Only a positively-known non-privileged session
-// gets bounced; a real guest's API calls 401 → the shared login modal.
+// gets bounced here; in the browser, PageGate shows the builder only to a
+// signed-in user allowed to build templates — a guest gets a sign-in card,
+// never the page.
 export default async function TemplateSettingsLayout({ children }) {
   const cookieStore = await cookies();
   const token = cookieStore.get('barmeto-token')?.value || cookieStore.get('admin-token')?.value;
@@ -24,7 +27,9 @@ export default async function TemplateSettingsLayout({ children }) {
 
   return (
     <ToastProvider>
-      <TemplateSettingsChrome>{children}</TemplateSettingsChrome>
+      <TemplateSettingsChrome>
+        <PageGate access="templates" what="Template Settings">{children}</PageGate>
+      </TemplateSettingsChrome>
     </ToastProvider>
   );
 }

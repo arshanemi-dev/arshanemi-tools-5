@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Loader2, LogIn, PanelsTopLeft, Save, Undo2 } from 'lucide-react';
+import { Loader2, Save, Undo2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import TemplatesLoadError from '@/components/dashboard/TemplatesLoadError';
@@ -234,20 +233,9 @@ export default function PositionSettingsPage() {
   // loaded on either side yet — so both draw the same spinner.
   if (templatesError) return <TemplatesLoadError message={templatesError} onRetry={retryTemplates} />;
   if (!templatesReady) return <Centered><Loader2 className="animate-spin text-muted" size={28} /></Centered>;
-  if (!loggedIn) {
-    return (
-      <Centered>
-        <div className="max-w-sm rounded-2xl border border-divider bg-background p-8 text-center">
-          <PanelsTopLeft className="mx-auto text-accent" size={28} />
-          <h1 className="mt-3 text-lg font-bold text-foreground">Sign in to arrange your dashboard</h1>
-          <p className="mt-1 text-sm text-muted">Positions are saved to your account, so this page needs you signed in.</p>
-          <Link href="/login?next=/profit-loss/position-settings" className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-2 text-sm font-semibold text-white hover:bg-action-hover">
-            <LogIn size={15} /> Sign in
-          </Link>
-        </div>
-      </Centered>
-    );
-  }
+  // Only ever mounted for a signed-in user (PageGate, the route's page.js) —
+  // never a Save button for a guest, even if that changed under it.
+  if (!loggedIn) return null;
   if (!settingsLoaded) return <Centered><Loader2 className="animate-spin text-muted" size={28} /></Centered>;
   if (!templates.length) return <Centered><p className="text-sm text-muted">No marketplaces yet — there is nothing to arrange.</p></Centered>;
 

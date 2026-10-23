@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronDown, Plus, Tag } from 'lucide-react';
+import { ChevronDown, LogIn, Plus, Tag } from 'lucide-react';
 import Popover from './Popover';
 import { ListSearchBox, sortByLabel } from './SearchChecklist';
 
@@ -11,7 +11,10 @@ import { ListSearchBox, sortByLabel } from './SearchChecklist';
 // per-user in preferences.brands) and lets them type a new one and create it
 // on the spot. Selecting or creating a brand is what unlocks the file upload
 // buttons and tags the next upload with it (see DashboardWorkspace.onUpload).
-export default function BrandPicker({ brands = [], value, onChange, onCreate, compact = false }) {
+// Creating one needs an account: `canCreate={false}` (signed out) turns the
+// Create row into "Log in to create" — `onCreateBlocked` (the shared login
+// modal) — and no brand is made or picked.
+export default function BrandPicker({ brands = [], value, onChange, onCreate, canCreate = true, onCreateBlocked = () => {}, compact = false }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
 
@@ -64,10 +67,10 @@ export default function BrandPicker({ brands = [], value, onChange, onCreate, co
             </button>
           ))}
           {!filtered.length && !q.trim() && (
-            <p className="px-2.5 py-2 text-xs text-subtle">No brands yet — type a name to create one.</p>
+            <p className="px-2.5 py-2 text-xs text-subtle">{canCreate ? 'No brands yet — type a name to create one.' : 'No brands yet — log in to create one.'}</p>
           )}
 
-          {q.trim() && !exactMatch && (
+          {q.trim() && !exactMatch && (canCreate ? (
             <button
               type="button"
               onClick={() => { const name = q.trim(); onCreate(name); onChange(name); setQ(''); close(); }}
@@ -75,7 +78,15 @@ export default function BrandPicker({ brands = [], value, onChange, onCreate, co
             >
               <Plus size={13} className="shrink-0" /> Create “{q.trim()}”
             </button>
-          )}
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setQ(''); close(); onCreateBlocked(); }}
+              className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-sm font-medium text-accent hover:bg-card-hover"
+            >
+              <LogIn size={13} className="shrink-0" /> Log in to create “{q.trim()}”
+            </button>
+          ))}
         </>
       )}
     </Popover>

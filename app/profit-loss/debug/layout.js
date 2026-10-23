@@ -5,6 +5,7 @@ import { fetchTemplateSettingsAllowed } from '@/lib/marketplaceTemplateAccess';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { ToastProvider } from '@/components/admin/Toast';
 import TemplateSettingsChrome from '@/components/templateSettings/TemplateSettingsChrome';
+import PageGate from '@/components/auth/PageGate';
 
 export const metadata = { title: 'Sheet Debugger — Profit & Loss', robots: { index: false } };
 
@@ -27,7 +28,9 @@ export default async function DebugLayout({ children }) {
 
   return (
     <ToastProvider>
-      <TemplateSettingsChrome page="debug">{children}</TemplateSettingsChrome>
+      <TemplateSettingsChrome page="debug">
+        <PageGate access="templates" what="the Sheet Debugger">{children}</PageGate>
+      </TemplateSettingsChrome>
     </ToastProvider>
   );
 }

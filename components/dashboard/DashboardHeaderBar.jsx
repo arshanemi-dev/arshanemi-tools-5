@@ -6,12 +6,11 @@ import DateRangeFilter from './DateRangeFilter';
 import AdsCostControl from './AdsCostControl';
 import IconButton from './IconButton';
 
-// Row B: the active page's name as the title (the open Tab / Overview Tab /
-// Transactions — see DashboardWorkspace's activePageName) + Reset / Company
-// filter / Date, then Delete (selected rows) + the output actions (Excel /
-// PDF) on the far right. My Details is in the toolbar above, beside Reset
-// Position (DashboardToolbar). The table's page limit + Prev/Next sit in its
-// own footer.
+// The dashboard's filters and actions, as one inline group — DashboardToolbar
+// shows it at the end of its row, after the Market Place / upload controls
+// (on every tab): the Account Names filter, Date, Excel, Ads, PDF, then
+// Delete (selected rows). The table's page limit + Prev/Next sit in its own
+// footer.
 //
 // No Apply button — every change here debounces into effect on its own (see
 // DashboardWorkspace's pending -> applied effect); `updating` shows a brief
@@ -41,31 +40,27 @@ export default function DashboardHeaderBar({
   onExportPdf,
 }) {
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {/* <h1 className="text-2xl font-bold tracking-tight text-foreground">.</h1> */}
+      <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
+      <DateRangeFilter value={dateRange} onChange={onDateChange} />
+      {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
+      <IconButton icon={FileSpreadsheet} label="Excel" title="Download this tab to Excel — an Overview tab gets a sheet per level (only the columns shown)" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
+      <AdsCostControl value={ads} onChange={onAdsChange} />
+      <IconButton icon={FileText} label="PDF" title="Download this tab to PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
+      {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
-        <DateRangeFilter value={dateRange} onChange={onDateChange} />
-        {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}
-        <IconButton icon={FileSpreadsheet} label="Excel" title="Download this tab to Excel — an Overview tab gets a sheet per level (only the columns shown)" onClick={onExportExcel} disabled={!hasData || actionsDisabled} />
-        <AdsCostControl value={ads} onChange={onAdsChange} />
-        <IconButton icon={FileText} label="PDF" title="Download this tab to PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
-        {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
+      <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
 
-        <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
-  
-        <IconButton
-          icon={Trash2}
-          label="Delete"
-          title={selectedCount ? `Delete ${selectedCount} selected row${selectedCount === 1 ? '' : 's'}` : 'Select rows in the table to delete them'}
-          tone="outline"
-          badge={selectedCount || null}
-          disabled={!selectedCount || actionsDisabled}
-          onClick={onDeleteClick}
-        />
-      
-      </div>
+      <IconButton
+        icon={Trash2}
+        label="Delete"
+        title={selectedCount ? `Delete ${selectedCount} selected row${selectedCount === 1 ? '' : 's'}` : 'Select rows in the table to delete them'}
+        tone="outline"
+        badge={selectedCount || null}
+        disabled={!selectedCount || actionsDisabled}
+        onClick={onDeleteClick}
+      />
     </div>
   );
 }
