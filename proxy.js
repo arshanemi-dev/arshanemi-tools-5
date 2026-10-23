@@ -6,6 +6,8 @@ const SECRET = new TextEncoder().encode(process.env.JWT_SECRET)
 // runs entirely client-side now — no server compute route to expose here.
 // Every /api/profit-loss/* route is real per-user persistence and stays gated.
 const PUBLIC_PATHS = ['/api/auth/login']
+// lib/auth.js's COOKIE_NAME / ADMIN_COOKIE.
+const SESSION_COOKIES = ['barmeto-token', 'admin-token']
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3001').split(',').map((o) => o.trim())
 
@@ -26,6 +28,23 @@ export async function proxy(req) {
   if (req.method === 'OPTIONS' && pathname.startsWith('/api/')) {
     const res = new NextResponse(null, { status: 204 })
     setCorsHeaders(res, origin)
+    return res
+  }
+
+  // Hub signed out (lt_out=1 — see lib/tokenHandoff.js): drop this app's own
+  // session cookies too, or this render and every API call after it keep
+  // authenticating as whoever was signed in last. Deleted from the request as
+  // well as the response, so this very render already sees no session. Pages
+  // only — returning early for /api/* would skip the 401 gate below. Same
+  // cookie shape as lib/auth.js's clearAuthCookie (not imported: that module
+  // pulls in next/headers' cookies(), which isn't for middleware).
+  if (!pathname.startsWith('/api/') && req.nextUrl.searchParams.has('lt_out')) {
+    req.cookies.delete(SESSION_COOKIES)
+    const res = NextResponse.next({ request: { headers: new Headers(req.headers) } })
+    for (const name of SESSION_COOKIES) {
+      res.cookies.set({ name, value: '', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 0, path: '/' })
+    }
+    res.headers.set('x-pathname', pathname)
     return res
   }
 
