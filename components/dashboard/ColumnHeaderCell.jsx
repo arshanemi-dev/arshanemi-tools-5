@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import ArrangeControl from './ArrangeControl';
 import ColumnFilterButton from './ColumnFilterButton';
+import HeaderInfoTip from './HeaderInfoTip';
 
 // One <th> body: label + tri-state sort toggle + a spreadsheet-style menu
 // (ColumnFilterButton — the same sort as "Sort A → Z / Z → A", a Min / Max
@@ -14,6 +15,8 @@ import ColumnFilterButton from './ColumnFilterButton';
 // every column including the sticky one.
 // The <th> it sits in is the dark navy band (bg-footer, white text), so the
 // sort / filter icons use white tones rather than the page's grey ones.
+// Last comes the ⓘ (HeaderInfoTip) whenever the header has a Description
+// (`col.description` — Template Settings → Header): hover it to read it.
 // filter shape: { values: [text, ...], min, max } | null — any of the three
 // (lib/profitLoss/columnFilter.js)
 // `getFilterOptions()` → the column's distinct values, read when the menu
@@ -71,6 +74,7 @@ export default function ColumnHeaderCell({ col, sort, onSortChange, filter, onFi
           onHide={onHide}
         />
       )}
+      {col.description && <HeaderInfoTip label={col.label} text={col.description} />}
     </div>
   );
 }

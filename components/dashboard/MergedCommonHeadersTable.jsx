@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Download, FileText, Layers, Search, Table as TableIcon } from 'lucide-react';
 import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { normHeader } from '@/data/platforms/canonical';
+import HeaderInfoTip from './HeaderInfoTip';
 
 export default function MergedCommonHeadersTable({ canonicalRows = [], config = {}, uploads = [] }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -175,11 +176,15 @@ export default function MergedCommonHeadersTable({ canonicalRows = [], config = 
                 <th className="border-b border-divider px-3 py-2">Order ID</th>
                 <th className="border-b border-divider px-3 py-2">Transaction ID</th>
                 <th className="border-b border-divider px-3 py-2">SKU / Product</th>
-                {activeHeaders.map((hName) => (
-                  <th key={hName} className="border-b border-divider px-3 py-2 whitespace-nowrap">
-                    {hName}
-                  </th>
-                ))}
+                {activeHeaders.map((hName) => {
+                  const description = globalHeaders.find((h) => h.name === hName)?.description;
+                  return (
+                    <th key={hName} className="border-b border-divider px-3 py-2 whitespace-nowrap">
+                      {hName}
+                      {description && <span className="ml-1"><HeaderInfoTip label={hName} text={description} onDark={false} /></span>}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-divider bg-card">

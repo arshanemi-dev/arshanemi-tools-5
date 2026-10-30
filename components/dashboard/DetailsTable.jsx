@@ -81,6 +81,7 @@ export default function DetailsTable({
     id: h.id,
     key: h.id,
     label: h.name,
+    description: h.description || '',
     type: h.format === 'text' ? 'text' : 'num',
     numeric: isNumberHeader(h),
     sticky: i === 0,

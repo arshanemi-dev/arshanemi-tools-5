@@ -140,7 +140,7 @@ export default function OverviewTreeTable({
 
   const skuLevels = new Set(levels.map((h, i) => (h.primitive === 'sku' ? i : -1)).filter((i) => i >= 0));
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
-  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h) }));
+  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, description: h.description || '', type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h) }));
   // The standalone Cost column (a SKU's COGS) steps aside when the COGS
   // header's own column is here to type into.
   const showCost = skuLevels.size > 0 && !cols.some((c) => c.costField === 'cogs');

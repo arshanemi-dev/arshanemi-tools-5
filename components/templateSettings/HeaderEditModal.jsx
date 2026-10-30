@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '@/components/admin/Modal';
-import { AGGREGATE_BUILTIN_NAMES, makeHeader } from '@/data/templateSchema';
+import { AGGREGATE_BUILTIN_NAMES, HEADER_DESCRIPTION_MAX_CHARS, HEADER_DESCRIPTION_MAX_WORDS, capWords, makeHeader, wordCount } from '@/data/templateSchema';
 import { fixedHeaderHint } from '@/data/fixedHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import TypeToggle from './TypeToggle';
@@ -12,7 +12,8 @@ import FormulaEditor from './FormulaEditor';
 const FORMATS = ['money', 'int', 'pct', 'text'];
 
 // Add / Edit one Our Header in a popup — name, type, format, show-in-table
-// and the formula builder. Works on a local copy: nothing touches the draft
+// and the formula builder, plus a Description (≤ 300 words — the ⓘ tooltip
+// at the end of its dashboard column). Works on a local copy: nothing touches the draft
 // until Save (Cancel / × discards). Mount it with a `key` per open so the
 // copy starts fresh each time. `onSave(header)` gets the full header.
 export default function HeaderEditModal({ open, header = null, headers = [], onClose, onSave }) {
@@ -31,7 +32,9 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
   // A Date header has one way to be shown (a local date), so no Format to pick.
   const setType = (type) => set(type === 'date' ? { type, format: 'text' } : form.type === 'date' ? { type, format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money' } : { type });
 
-  const save = () => { if (canSave) onSave({ ...form, name: form.name.trim() }); };
+  const words = wordCount(form.description);
+
+  const save = () => { if (canSave) onSave({ ...form, name: form.name.trim(), description: String(form.description || '').trim() }); };
 
   return (
     <Modal
@@ -61,6 +64,23 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
           disabled={reserved}
           title={fixedHint ? 'Built-in header — name is locked' : reserved ? 'Required by every marketplace — name is locked' : undefined}
           className="rounded-lg border border-divider bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="flex items-center justify-between text-[12px] font-medium text-muted">
+          Description
+          <span className={`text-[11px] font-normal tabular-nums ${words >= HEADER_DESCRIPTION_MAX_WORDS ? 'text-neg' : 'text-subtle'}`}>
+            {words} / {HEADER_DESCRIPTION_MAX_WORDS} words
+          </span>
+        </span>
+        <textarea
+          value={form.description || ''}
+          onChange={(e) => set({ description: capWords(e.target.value) })}
+          rows={4}
+          maxLength={HEADER_DESCRIPTION_MAX_CHARS}
+          placeholder="What this header shows and how it's worked out — shown when hovering the ⓘ beside its column on the dashboard"
+          className="resize-y rounded-lg border border-divider bg-background px-3 py-2 text-sm leading-relaxed text-foreground focus:border-accent focus:outline-none"
         />
       </label>
 

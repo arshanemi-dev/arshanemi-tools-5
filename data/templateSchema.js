@@ -142,6 +142,22 @@ export function makeFileSlot(label = 'File', kind = 'aux') {
   };
 }
 
+// A header's Description (Add / Edit Header popup → the ⓘ tooltip at the end
+// of its dashboard column) is capped at this many words. The hub checks the
+// same limit (lib/templateConfig.js).
+export const HEADER_DESCRIPTION_MAX_WORDS = 300;
+// …and this many characters, so one huge "word" can't slip past the word cap.
+export const HEADER_DESCRIPTION_MAX_CHARS = 3000;
+export const wordCount = (text) => (String(text || '').match(/\S+/g) || []).length;
+// `text` cut after its first `max` words (and HEADER_DESCRIPTION_MAX_CHARS
+// characters) — what's typed / pasted past the cap is dropped, everything up
+// to it (line breaks too) kept as written.
+export function capWords(text, max = HEADER_DESCRIPTION_MAX_WORDS) {
+  const s = String(text || '').slice(0, HEADER_DESCRIPTION_MAX_CHARS);
+  if (wordCount(s) <= max) return s;
+  return s.match(new RegExp(`^\\s*(?:\\S+\\s+){${max - 1}}\\S+`))[0];
+}
+
 export function makeHeader({ name = 'Header', type = 'number', source = 'manual' } = {}) {
   return {
     id: newId('hdr'),
@@ -152,6 +168,7 @@ export function makeHeader({ name = 'Header', type = 'number', source = 'manual'
     primitive: null, // default headers bind to an engine base metric
     mappedFrom: null, // { slot, sheetHeader } — set per marketplace at resolve time, not stored on the global header itself
     note: '',
+    description: '', // the admin's own explanation — the ⓘ tooltip on its dashboard column (≤ HEADER_DESCRIPTION_MAX_WORDS)
     format: type === 'text' || type === 'alphanumeric' || type === 'date' ? 'text' : 'money',
     signed: false,
     showInTable: true,
