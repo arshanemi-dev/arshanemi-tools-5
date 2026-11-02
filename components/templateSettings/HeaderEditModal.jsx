@@ -16,7 +16,10 @@ const FORMATS = ['money', 'int', 'pct', 'text'];
 // at the end of its dashboard column). Works on a local copy: nothing touches the draft
 // until Save (Cancel / × discards). Mount it with a `key` per open so the
 // copy starts fresh each time. `onSave(header)` gets the full header.
-export default function HeaderEditModal({ open, header = null, headers = [], onClose, onSave }) {
+// `usages` (editing only) = where the header is used: `formulas` name it and
+// are rewritten on a rename (withHeaderUpdate), `others` (Tabs, Graphs,
+// marketplace mappings…) point at it by id and simply follow.
+export default function HeaderEditModal({ open, header = null, headers = [], usages = null, onClose, onSave }) {
   const [form, setForm] = useState(() => (header ? { ...header } : makeHeader({ name: '', type: 'number', source: 'manual' })));
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const isNew = !header;
@@ -33,6 +36,8 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
   const setType = (type) => set(type === 'date' ? { type, format: 'text' } : form.type === 'date' ? { type, format: type === 'text' || type === 'alphanumeric' ? 'text' : 'money' } : { type });
 
   const words = wordCount(form.description);
+  const renaming = !isNew && form.name.trim() && form.name.trim() !== header.name;
+  const usedAnywhere = !!(usages?.formulas.length || usages?.others.length);
 
   const save = () => { if (canSave) onSave({ ...form, name: form.name.trim(), description: String(form.description || '').trim() }); };
 
@@ -66,6 +71,27 @@ export default function HeaderEditModal({ open, header = null, headers = [], onC
           className="rounded-lg border border-divider bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         />
       </label>
+
+      {usages && (
+        <div className="rounded-lg border border-divider bg-card px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+          <p className="mb-1 font-semibold text-foreground">Where “{header.name}” is used</p>
+          {!usedAnywhere && <p>Not used in any formula, Tab, Overview Tab, Graph or mapping yet.</p>}
+          {usages.formulas.length > 0 && (
+            <p>
+              <span className="font-medium text-foreground">Formulas ({usages.formulas.length}):</span> {usages.formulas.join(', ')}
+              {renaming
+                ? <span className="block text-action">On Save, [{header.name}] becomes [{form.name.trim()}] in {usages.formulas.length === 1 ? 'this formula' : 'all of these'}.</span>
+                : <span className="block text-subtle">Rename it and these formulas are updated to the new name on Save.</span>}
+            </p>
+          )}
+          {usages.others.length > 0 && (
+            <p className={usages.formulas.length ? 'mt-1' : ''}>
+              <span className="font-medium text-foreground">Also in:</span> {usages.others.join(', ')}
+              <span className="block text-subtle">These follow the header itself, so a new name shows there with nothing to change.</span>
+            </p>
+          )}
+        </div>
+      )}
 
       <label className="flex flex-col gap-1.5">
         <span className="flex items-center justify-between text-[12px] font-medium text-muted">

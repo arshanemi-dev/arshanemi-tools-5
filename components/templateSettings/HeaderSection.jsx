@@ -85,6 +85,17 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   // mappings go with it (otherwise they'd linger, mapped to nothing).
   const mappedIn = (id) => (marketplaces || []).filter((t) => (t.config?.fileSlots || []).some((s) => (s.mappings || []).some((m) => m.headerId === id)));
   const deleteMappedIn = deleteTarget ? mappedIn(deleteTarget.id) : [];
+  // Where the header being edited is used — shown in the Edit popup, so a
+  // rename says up front which formulas it rewrites.
+  const editTarget = modal?.mode === 'edit' ? headers.find((h) => h.id === modal.id) || null : null;
+  const editFormulas = editTarget ? formulaUsages(config, editTarget) : [];
+  const editUsages = editTarget ? {
+    formulas: editFormulas,
+    others: [
+      ...headerUsages(config, editTarget).filter((u) => !editFormulas.includes(u)),
+      ...mappedIn(editTarget.id).map((t) => `Mapped in “${t.marketplaceName}”`),
+    ],
+  } : null;
 
   const onToggleCheck = (key) => setChecked((prev) => {
     const next = new Set(prev);
@@ -265,8 +276,9 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
         <HeaderEditModal
           key={modal.mode === 'edit' ? `edit:${modal.id}` : 'add'}
           open
-          header={modal.mode === 'edit' ? headers.find((h) => h.id === modal.id) : null}
+          header={editTarget}
           headers={headers}
+          usages={editUsages}
           onClose={() => setModal(null)}
           onSave={saveModal}
         />
