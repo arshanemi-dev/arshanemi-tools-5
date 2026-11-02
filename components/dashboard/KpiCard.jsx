@@ -21,7 +21,7 @@ export default function KpiCard({
   const ownText = isHexColor(textColor);
   const colors = { color: ownText ? textColor : undefined, backgroundColor: isHexColor(bgColor) ? bgColor : undefined };
   return (
-    <div className="relative flex h-2/3 flex-col justify-between rounded-2xl border border-divider bg-background p-2 text-left" style={colors}>
+    <div className="relative flex h-full flex-col justify-between rounded-2xl border border-divider bg-background p-2 text-left" style={colors}>
       {editMode && (
         <ArrangeControl
           currentId={currentId}
@@ -38,7 +38,7 @@ export default function KpiCard({
           <span className={`text-sm font-medium ${ownText ? 'opacity-70' : 'text-subtle'}`}>{subDisplay}</span>
         )}
       </div>
-      <div className={`mt-3 text-[1.7rem] font-bold leading-tight tracking-tight ${neg ? 'text-neg' : ownText ? '' : 'text-foreground'}`}>
+      <div className={` text-[1.5rem] font-bold leading-tight tracking-tight ${neg ? 'text-neg' : ownText ? '' : 'text-foreground'}`}>
         {prefix}{mainDisplay === '' || mainDisplay == null ? '0' : mainDisplay}
       </div>
     </div>
