@@ -34,7 +34,7 @@ export default function KpiCard({
       )}
       <div className={`flex items-start justify-between gap-2 ${editMode ? 'pr-10' : ''}`}>
         <span className={`text-sm ${ownText ? 'opacity-80' : 'text-muted'}`}>{name}</span>
-        {subDisplay != null && subDisplay !== '' && (
+        {subDisplay != null&& subDisplay != 0&& subDisplay !== '' && (
           <span className={`text-sm font-medium ${ownText ? 'opacity-70' : 'text-subtle'}`}>{subDisplay}</span>
         )}
       </div>
