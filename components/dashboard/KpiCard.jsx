@@ -21,7 +21,7 @@ export default function KpiCard({
   const ownText = isHexColor(textColor);
   const colors = { color: ownText ? textColor : undefined, backgroundColor: isHexColor(bgColor) ? bgColor : undefined };
   return (
-    <div className="relative flex h-full flex-col justify-between rounded-2xl border border-divider bg-background p-5 text-left" style={colors}>
+    <div className="relative flex h-2/3 flex-col justify-between rounded-2xl border border-divider bg-background p-2 text-left" style={colors}>
       {editMode && (
         <ArrangeControl
           currentId={currentId}

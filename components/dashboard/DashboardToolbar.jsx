@@ -1,9 +1,9 @@
 'use client';
 
-import { FileDown, FileUp, Upload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import MarketplacePicker from './MarketplacePicker';
 import BrandPicker from './BrandPicker';
-import { FileIconButton } from './IconButton';
+import IconButton, { FileIconButton } from './IconButton';
 import { ACCEPT } from '@/lib/sheet/readAnyFile';
 
 // Row A (under the tab strip): the data-I/O bar, with the dashboard's
@@ -69,26 +69,24 @@ export default function DashboardToolbar({
 
             <span className="mx-1 h-6 w-px bg-divider" />
 
+            {/* Same look as the file-slot buttons: Upload / Download icon on the action pill. */}
             <FileIconButton
-              icon={FileUp}
+              icon={Upload}
               label="SKU Cost"
               title={hasData ? 'Upload your filled-in SKU Cost sheet — COGS (Product Cost), Cost GST in, Final Product Cost, Other Expense (per order)' : 'Upload a settlement sheet first'}
               accept=".csv,.tsv,.txt,.xlsx,.xls"
               multiple={false}
               onFiles={(f) => onUploadSkuCost(f[0])}
               disabled={busy || !hasData}
-              tone="outline"
             />
-            <button
-              type="button"
+            <IconButton
+              icon={Download}
+              label="SKU Cost"
+              tone="action"
               onClick={onDownloadSkuTemplate}
               disabled={busy || !hasData}
-              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-divider-light bg-background px-3 text-sm font-medium text-foreground transition-colors hover:border-divider disabled:opacity-45"
               title={hasData ? 'Download the SKU Cost sheet — your SKUs with the costs saved so far; fill it in and upload it back' : 'Upload a settlement sheet first'}
-            >
-              <FileDown size={15} className="shrink-0" />
-              <span className="hidden sm:inline">SKU Cost</span>
-            </button>
+            />
           </>
         )}
 
