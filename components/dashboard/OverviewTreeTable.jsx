@@ -167,7 +167,8 @@ export default function OverviewTreeTable({
   }, [view]);
 
   const headCell = (col, extra = '') => (
-    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`bg-[#1565C0] px-1 py-1 text-center font-medium ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
+    <th key={col.key} data-preview-hl={hlHead(col) || undefined} className={`group/cell bg-[#1565C0] px-1 py-1 text-center font-medium ${hlHead(col) ? HL_HEAD : 'text-white'} ${extra}`}>
+      
       <ColumnHeaderCell
         col={col}
         sort={sort}

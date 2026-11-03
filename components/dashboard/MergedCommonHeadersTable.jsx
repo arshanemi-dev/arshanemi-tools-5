@@ -179,9 +179,13 @@ export default function MergedCommonHeadersTable({ canonicalRows = [], config = 
                 {activeHeaders.map((hName) => {
                   const description = globalHeaders.find((h) => h.name === hName)?.description;
                   return (
-                    <th key={hName} className="border-b border-divider px-3 py-2 whitespace-nowrap">
-                      {hName}
-                      {description && <span className="ml-1"><HeaderInfoTip label={hName} text={description} onDark={false} /></span>}
+                    <th key={hName} className="group/cell border-b border-divider px-3 py-2 whitespace-nowrap">
+                      <span>{hName}</span>
+                      {description && (
+                        <span className="ml-1 hidden group-hover/cell:inline-block">
+                          <HeaderInfoTip label={hName} text={description} onDark={false} />
+                        </span>
+                      )}
                     </th>
                   );
                 })}

@@ -18,14 +18,24 @@ const CLOSE_DELAY = 150; // ms — time to move the pointer from the ⓘ onto th
 // scroll of the page.
 // `onDark` = it sits in the dark navy header band (the dashboard tables) —
 // white tones; false for a light header row.
-export default function HeaderInfoTip({ label, text, onDark = true }) {
+export default function HeaderInfoTip({ label, text, onDark = true, onOpenChange }) {
   const btnRef = useRef(null);
   const panelRef = useRef(null);
   const timer = useRef(null);
   const [open, setOpen] = useState(false);
 
-  const show = () => { clearTimeout(timer.current); setOpen(true); };
-  const hideSoon = () => { clearTimeout(timer.current); timer.current = setTimeout(() => setOpen(false), CLOSE_DELAY); };
+  const show = () => {
+    clearTimeout(timer.current);
+    setOpen(true);
+    onOpenChange?.(true);
+  };
+  const hideSoon = () => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      setOpen(false);
+      onOpenChange?.(false);
+    }, CLOSE_DELAY);
+  };
   useEffect(() => () => clearTimeout(timer.current), []);
 
   // Placed straight on the panel's style once it's measured, before paint —
@@ -46,7 +56,10 @@ export default function HeaderInfoTip({ label, text, onDark = true }) {
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    const close = () => {
+      setOpen(false);
+      onOpenChange?.(false);
+    };
     const onScroll = (e) => { if (!panelRef.current?.contains(e.target)) close(); };
     const onKey = (e) => e.key === 'Escape' && close();
     const onDoc = (e) => { if (!btnRef.current?.contains(e.target) && !panelRef.current?.contains(e.target)) close(); };
@@ -60,7 +73,7 @@ export default function HeaderInfoTip({ label, text, onDark = true }) {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerdown', onDoc);
     };
-  }, [open]);
+  }, [open, onOpenChange]);
 
   return (
     <>
@@ -71,7 +84,14 @@ export default function HeaderInfoTip({ label, text, onDark = true }) {
         onMouseLeave={hideSoon}
         onFocus={show}
         onBlur={hideSoon}
-        onClick={() => (open ? setOpen(false) : show())}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            onOpenChange?.(false);
+          } else {
+            show();
+          }
+        }}
         className={`shrink-0 rounded p-0.5 align-middle transition-colors ${onDark
           ? `hover:bg-white/15 ${open ? 'text-white' : 'text-white/60 hover:text-white'}`
           : `hover:bg-card-hover ${open ? 'text-foreground' : 'text-subtle hover:text-foreground'}`}`}

@@ -230,7 +230,7 @@ export default function DetailsTable({
                 }
                 const hlCol = isHighlighted(hl, 'header', col.id);
                 return (
-                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`bg-[#1565C0] px-1 py-1 text-center font-medium ${hlCol ? HL_HEAD : 'text-white'}`}>
+                  <th key={col.key} data-preview-hl={hlCol || undefined} className={`group/cell bg-[#1565C0] px-1 py-1 text-center font-medium ${hlCol ? HL_HEAD : 'text-white'}`}>
                     <ColumnHeaderCell
                       col={col}
                       sort={sort}
