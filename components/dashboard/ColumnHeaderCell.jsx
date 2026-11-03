@@ -10,8 +10,9 @@ import HeaderInfoTip from './HeaderInfoTip';
 // (ColumnFilterButton — the same sort as "Sort A → Z / Z → A", a Min / Max
 // range on a number column, then search + tick the values to keep), plus an
 // inline ArrangeControl when this column offers one.
-// Sort, filter, and info icons are hidden by default to consume minimum space,
-// and show smoothly on hover (active sort/filter icons stay visible).
+// Sort, filter and info icons take no space: they float right against the
+// label only on hover or while their menu is open. A sorted / filtered
+// column shows a small dot on the label instead.
 export default function ColumnHeaderCell({
   col,
   sort,
@@ -47,45 +48,49 @@ export default function ColumnHeaderCell({
   };
 
   const hasFilter = !!filter;
-  const hasActiveIcon = !!dir || hasFilter || filterOpen || infoOpen;
+  const menuOpen = filterOpen || infoOpen;
 
   return (
-    <div className="group/cell relative flex items-center justify-center gap-1">
-   <span className="flex-1 text-center break-words overflow-hidden line-clamp-3 max-w-[70px] min-w-full">
-  {col.label}
-</span>
-      {!editMode && (
-        <span className={`items-center gap-0.5 shrink-0 ${hasActiveIcon ? 'inline-flex' : 'hidden group-hover/cell:inline-flex'}`}>
-          <button
-            type="button"
-            onClick={cycleSort}
-            className={`shrink-0 rounded p-0.5 transition-colors hover:bg-white/15 ${
-              dir ? 'inline-flex text-action' : 'hidden group-hover/cell:inline-flex text-white/60 hover:text-white'
-            }`}
-            aria-label={`Sort by ${col.label}`}
-          >
-            <SortIcon size={12} />
-          </button>
-          <span className={hasFilter || filterOpen ? 'inline-flex' : 'hidden group-hover/cell:inline-flex'}>
-            <ColumnFilterButton
-              label={col.label}
-              filter={filter}
-              getOptions={getFilterOptions}
-              getRange={getFilterRange}
-              onChange={onFilterChange}
-              onOpenChange={handleFilterOpenChange}
-              sortDir={dir}
-              onSort={(d) => onSortChange(d ? { key: col.key, dir: d } : null)}
-              onDark
-            />
-          </span>
-          {col.description && (
-            <span className={infoOpen ? 'inline-flex' : 'hidden group-hover/cell:inline-flex'}>
-              <HeaderInfoTip label={col.label} text={col.description} onOpenChange={setInfoOpen} />
+    <div className="group/cell flex items-center justify-center">
+      <span className="relative inline-flex min-w-0 max-w-full items-center">
+        <span className="line-clamp-3 break-words text-center">{col.label}</span>
+        {/* A sorted / filtered column, not hovered: a dot on the label's corner — no space taken. */}
+        {!editMode && (dir || hasFilter) && !menuOpen && (
+          <span aria-hidden className="absolute -right-1.5 top-0 size-1.5 rounded-full bg-amber-300 group-hover/cell:hidden" />
+        )}
+        {/* Sort / filter / info: only on hover or while a menu is open, floating
+            right against the label (absolute) — never widening the column. */}
+        {!editMode && (
+          <span className={`absolute left-full top-1/2 z-20 -translate-y-1/2 items-center rounded-r bg-[#1565C0] ${menuOpen ? 'flex' : 'hidden group-hover/cell:flex'}`}>
+            <button
+              type="button"
+              onClick={cycleSort}
+              className={`inline-flex shrink-0 rounded p-0.5 transition-colors hover:bg-white/15 ${dir ? 'text-action' : 'text-white/60 hover:text-white'}`}
+              aria-label={`Sort by ${col.label}`}
+            >
+              <SortIcon size={12} />
+            </button>
+            <span className="inline-flex">
+              <ColumnFilterButton
+                label={col.label}
+                filter={filter}
+                getOptions={getFilterOptions}
+                getRange={getFilterRange}
+                onChange={onFilterChange}
+                onOpenChange={handleFilterOpenChange}
+                sortDir={dir}
+                onSort={(d) => onSortChange(d ? { key: col.key, dir: d } : null)}
+                onDark
+              />
             </span>
-          )}
-        </span>
-      )}
+            {col.description && (
+              <span className="inline-flex">
+                <HeaderInfoTip label={col.label} text={col.description} onOpenChange={setInfoOpen} />
+              </span>
+            )}
+          </span>
+        )}
+      </span>
       {showArrange && (
         <ArrangeControl
           currentId={col.id}
