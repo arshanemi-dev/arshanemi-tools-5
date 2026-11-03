@@ -1045,7 +1045,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
               <div className="flex flex-1 flex-col gap-3">
                 {/* "Transactions" itself is the header bar's title now. */}
                 <p className="text-sm text-muted">
-                  One row per Order Id{transactionIdHeader ? ' + Transaction Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
+                  One row per Order-Id{transactionIdHeader ? ' + Transaction-Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
                 </p>
                 <DetailsTable
                   columns={transactionHeaders}

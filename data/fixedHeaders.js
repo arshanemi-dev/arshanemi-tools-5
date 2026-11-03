@@ -1,5 +1,5 @@
 // The headers every Global Settings config has built in on top of the two
-// required ones (Order Id / Transaction Id — data/templateSchema.js). Locked
+// required ones (Order-Id / Transaction-Id — data/templateSchema.js). Locked
 // the same way — name and type can't be changed, no Delete — but never
 // required to be mapped, because the dashboard fills them itself:
 //   - Account Name: the "MarketPlace_Brand" picked in the dashboard toolbar
@@ -37,18 +37,26 @@ export const FIXED_HEADERS = [
     skuCost: true,
     sheetAliases: ['COGS', 'Cost', 'Unit Cost', 'Product Cost', 'Cost Price', 'Purchase Price', 'Buy Price'],
   },
-  { key: 'costGst', id: 'hdr_cost_gst_in', name: 'Cost GST in', type: 'number', skuCost: true, sheetAliases: ['Cost GST'] },
+  { key: 'costGst', id: 'hdr_cost_gst_in', name: 'Product GST In', type: 'number', skuCost: true, aliases: ['Cost GST in'], sheetAliases: ['Cost GST'] },
   { key: 'finalCost', id: 'hdr_final_product_cost', name: 'Final Product Cost', type: 'number', skuCost: true, sheetAliases: ['Final Cost'] },
   {
     key: 'otherExpense',
     id: 'hdr_other_expense_per_order',
-    name: 'Other Expense (per order)',
+    name: 'Office Expense (Per Order)',
     type: 'number',
     skuCost: true,
-    aliases: ['Other Expanse (per order)'],
-    sheetAliases: ['Other Expense', 'Other Expanse'],
+    aliases: ['Other Expense (per order)', 'Other Expanse (per order)'],
+    sheetAliases: ['Office Expense', 'Other Expense', 'Other Expanse'],
   },
 ];
+
+// The two required headers' names (data/templateSchema.js makes them), by
+// their fixed ids — kept here so withFixedHeaders can bring a config saved
+// under an older name ("Order Id") up to the current one.
+export const RESERVED_HEADER_NAMES = {
+  hdr_order_id: 'Order-Id',
+  hdr_transaction_id: 'Transaction-Id',
+};
 
 // The fixed headers the SKU Cost sheet carries, in its column order.
 export const SKU_COST_FIELDS = FIXED_HEADERS.filter((f) => f.skuCost);
@@ -118,8 +126,9 @@ const sameHeader = (a, b) => Object.keys(b).every((k) => a[k] === b[k]);
 // Show-in-table and just gets the fixed name / type / lock; any that is
 // missing is added at the end. One that was built as a Formula keeps its
 // formula — only its name is locked — instead of losing it to the fixed
-// type. A header renamed on the way ("Other Expanse (per order )" → "Other
-// Expense (per order)") is renamed in every formula that names it. A config
+// type. A header renamed on the way ("Other Expense (per order)" → "Office
+// Expense (Per Order)", "Order Id" → "Order-Id") is renamed in every formula
+// that names it. A config
 // with no headers at all — nothing published yet — stays as it is. Returns
 // `config` itself when nothing changed. Pure.
 export function withFixedHeaders(config) {
@@ -147,6 +156,14 @@ export function withFixedHeaders(config) {
     const oldName = String(existing.name ?? '').trim();
     if (oldName && oldName !== def.name) renames.set(oldName.toLowerCase(), def.name);
     headers = headers.map((h) => (h === existing ? fixed : h));
+  }
+  // The required Order-Id / Transaction-Id: only their name follows.
+  for (const [id, name] of Object.entries(RESERVED_HEADER_NAMES)) {
+    const existing = headers.find((h) => h?.id === id);
+    if (!existing || existing.name === name) continue;
+    const oldName = String(existing.name ?? '').trim();
+    if (oldName) renames.set(oldName.toLowerCase(), name);
+    headers = headers.map((h) => (h === existing ? { ...existing, name } : h));
   }
   if (headers === current) return config;
 

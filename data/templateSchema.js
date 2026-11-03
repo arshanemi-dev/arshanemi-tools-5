@@ -14,7 +14,7 @@
 
 import { nanoid } from 'nanoid';
 import { MAX_OVERVIEW_LEVELS, overviewLevelIds } from '@/lib/profitLoss/overviewTree';
-import { makeFixedHeaders } from './fixedHeaders';
+import { RESERVED_HEADER_NAMES, makeFixedHeaders } from './fixedHeaders';
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
@@ -89,8 +89,8 @@ export function makeEmptyGlobalConfig() {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     headers: [
-      makeReservedHeader(RESERVED_HEADER_IDS.orderId, 'Order Id'),
-      makeReservedHeader(RESERVED_HEADER_IDS.transactionId, 'Transaction Id'),
+      makeReservedHeader(RESERVED_HEADER_IDS.orderId, RESERVED_HEADER_NAMES[RESERVED_HEADER_IDS.orderId]),
+      makeReservedHeader(RESERVED_HEADER_IDS.transactionId, RESERVED_HEADER_NAMES[RESERVED_HEADER_IDS.transactionId]),
       ...makeFixedHeaders(),
     ],
     titleCards: [],
@@ -442,7 +442,7 @@ export function validateMarketplaceConfig(config, globalHeaderIds, { strict = fa
 
   if (strict) {
     for (const id of RESERVED_HEADER_ID_LIST) {
-      if (!mappedHeaderIds.has(id)) push(`"${id === RESERVED_HEADER_IDS.orderId ? 'Order Id' : 'Transaction Id'}" must be mapped to a sheet column before this marketplace can be published`);
+      if (!mappedHeaderIds.has(id)) push(`"${RESERVED_HEADER_NAMES[id]}" must be mapped to a sheet column before this marketplace can be published`);
     }
   }
 

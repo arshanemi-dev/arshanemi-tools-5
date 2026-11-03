@@ -4,8 +4,8 @@ import { proxyAdminCall, authHeaderFrom } from '@/lib/connect'
 
 export const runtime = 'nodejs'
 
-// Per-SKU default costs (COGS (Product Cost), Cost GST in, Final Product
-// Cost, Other Expense (per order)). Thin proxy to the hub's
+// Per-SKU default costs (COGS (Product Cost), Product GST In, Final Product
+// Cost, Office Expense (Per Order)). Thin proxy to the hub's
 // profit_loss_sku_costs table, same idiom as ./settings/route.js. The hub
 // validates every entry — this only checks there is something to forward.
 

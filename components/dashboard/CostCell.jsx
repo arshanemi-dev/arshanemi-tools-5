@@ -10,8 +10,8 @@ const isNumber = (text) => !isBlank(text) && Number.isFinite(Number(text));
 const sameCost = (text, value) => (isBlank(text) ? !Number.isFinite(value) : Number(text) === value);
 
 // One SKU's one DEFAULT cost, typed straight into the table — the body of a
-// cost header's cell (COGS (Product Cost), Cost GST in, Final Product Cost,
-// Other Expense (per order) — data/fixedHeaders.js) on a SKU's row. No Save
+// cost header's cell (COGS (Product Cost), Product GST In, Final Product Cost,
+// Office Expense (Per Order) — data/fixedHeaders.js) on a SKU's row. No Save
 // button: the box keeps what is being typed to itself and hands it over
 // (`onCommit(text)`) once the typing pauses, on Enter, or on leaving the box
 // — so the dashboard isn't recomputed and re-saved on every digit — and a

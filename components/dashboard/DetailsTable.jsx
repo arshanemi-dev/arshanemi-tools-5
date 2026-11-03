@@ -33,7 +33,7 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 //
 // Costs are typed in the table itself, per SKU, instead of only via the SKU
 // Cost sheet upload: the column of each of the four cost headers (COGS
-// (Product Cost), Cost GST in, Final Product Cost, Other Expense (per order)
+// (Product Cost), Product GST In, Final Product Cost, Office Expense (Per Order)
 // — costFieldOf) is an input box on every SKU's row (CostCell — it saves by
 // itself, one cost at a time). The box holds the SKU's DEFAULT (`skuCosts` =
 // { [sku]: { cogs, costGst, finalCost, otherExpense } }) — what the next

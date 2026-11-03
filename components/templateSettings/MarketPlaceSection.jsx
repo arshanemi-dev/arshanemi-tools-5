@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Minus, Plus, X as XIcon } from 'lucide-react';
 import { makeFileSlot, RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { RESERVED_HEADER_NAMES } from '@/data/fixedHeaders';
 import { marketplaceColumns, slotExtractedHeaders, staleMappingHeaderIds, withoutHeaderMappings } from '@/lib/profitLoss/marketplaceHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import { useToast } from '@/components/admin/Toast';
@@ -80,9 +81,9 @@ export default function MarketPlaceSection({ draft, globalHeaders = [], activeSl
 
   const mappedHeaderIds = useMemo(() => new Set(allMappings.map((m) => m.headerId)), [allMappings]);
   const reservedStatus = [
-    { id: RESERVED_HEADER_IDS.orderId, name: 'Order Id' },
-    { id: RESERVED_HEADER_IDS.transactionId, name: 'Transaction Id' },
-  ].map((r) => ({ ...r, mapped: mappedHeaderIds.has(r.id) }));
+    RESERVED_HEADER_IDS.orderId,
+    RESERVED_HEADER_IDS.transactionId,
+  ].map((id) => ({ id, name: RESERVED_HEADER_NAMES[id], mapped: mappedHeaderIds.has(id) }));
 
   const defaultTargets = globalHeaders.filter(isOurHeader); // Our Headers only, never sheet columns
 
