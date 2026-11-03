@@ -13,6 +13,17 @@ import HeaderInfoTip from './HeaderInfoTip';
 // Sort, filter and info icons take no space: they float right against the
 // label only on hover or while their menu is open. A sorted / filtered
 // column shows a small dot on the label instead.
+// A label of more than two words goes onto lines of two words each
+// ("Final Product Cost GST" → "Final Product" / "Cost GST"), so a long
+// header doesn't make its column wide.
+const WORDS_PER_LINE = 2;
+function labelLines(label) {
+  const words = String(label ?? '').trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  for (let i = 0; i < words.length; i += WORDS_PER_LINE) lines.push(words.slice(i, i + WORDS_PER_LINE).join(' '));
+  return lines.length ? lines : [''];
+}
+
 export default function ColumnHeaderCell({
   col,
   sort,
@@ -51,9 +62,11 @@ export default function ColumnHeaderCell({
   const menuOpen = filterOpen || infoOpen;
 
   return (
-    <div className="group/cell flex items-center justify-center">
+    <div className="px-1 group/cell flex items-center justify-center">
       <span className="relative inline-flex min-w-0 max-w-full items-center">
-        <span className="line-clamp-3 break-words text-center">{col.label}</span>
+        <span className="text-center">
+          {labelLines(col.label).map((line, i) => <span key={i} className="block whitespace-nowrap">{line}</span>)}
+        </span>
         {/* A sorted / filtered column, not hovered: a dot on the label's corner — no space taken. */}
         {!editMode && (dir || hasFilter) && !menuOpen && (
           <span aria-hidden className="absolute -right-1.5 top-0 size-1.5 rounded-full bg-amber-300 group-hover/cell:hidden" />
