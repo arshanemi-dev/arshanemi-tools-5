@@ -50,8 +50,10 @@ export default function ColumnHeaderCell({
   const hasActiveIcon = !!dir || hasFilter || filterOpen || infoOpen;
 
   return (
-    <div className="group/cell relative flex min-w-36 items-center justify-center gap-1">
-      <span className="min-w-0 flex-1 text-center break-words [contain:inline-size]">{col.label}</span>
+    <div className="group/cell relative flex items-center justify-center gap-1">
+   <span className="flex-1 text-center break-words overflow-hidden line-clamp-3 max-w-[70px] min-w-full">
+  {col.label}
+</span>
       {!editMode && (
         <span className={`items-center gap-0.5 shrink-0 ${hasActiveIcon ? 'inline-flex' : 'hidden group-hover/cell:inline-flex'}`}>
           <button

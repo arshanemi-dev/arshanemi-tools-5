@@ -148,7 +148,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   // the height the page leaves and let the table take what's left over —
   // the Hierarchy nav keeps its own height beside it.
   return (
-    <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}`}>
+    <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-2' : 'space-y-5'}`}>
       {pills && createPortal(pills, viewPillsSlot)}
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 

@@ -115,7 +115,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   // fillHeight (the dashboard, not Template Settings' preview): stretch to
   // the height the page leaves and let the table take what's left over.
   return (
-    <div className={fillHeight ? 'flex flex-1 flex-col gap-5' : 'space-y-5'}>
+    <div className={fillHeight ? 'flex flex-1 flex-col gap-2' : 'space-y-5'}>
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
       {graphsArrange.visible.length > 0 && (

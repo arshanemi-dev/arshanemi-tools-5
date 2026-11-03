@@ -4,7 +4,7 @@ export function Skeleton({ className = '' }) {
 
 export function FormSkeleton({ rows = 4 }) {
   return (
-    <div className="bg-card rounded-2xl border border-divider shadow-sm p-6 flex flex-col gap-5 max-w-3xl mx-auto">
+    <div className="bg-card rounded-2xl border border-divider shadow-sm p-6 flex flex-col gap-2 max-w-3xl mx-auto">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex flex-col gap-1.5">
           <Skeleton className="h-3.5 w-20" />

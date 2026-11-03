@@ -15,6 +15,7 @@ import { columnsModel, columnsSaved, marketplaceItems, overviewItems, sectionLis
 import { partItems, partList } from '@/lib/profitLoss/tabParts';
 import TabContentsPanel from './TabContentsPanel';
 import TickOrderList, { listWords } from './TickOrderList';
+import AccountNamesSection from './AccountNamesSection';
 
 const MARKET_WORDS = listWords('market place', 'market places', 'Market place order', 'Take off the list');
 const TAB_WORDS = listWords('tab', 'tabs', 'Tab strip order', 'Take off the tab strip');
@@ -242,7 +243,7 @@ export default function PositionSettingsPage() {
   const activeProblem = activeTab ? tabProblem(activeTab.id) : '';
 
   return (
-    <div className="flex w-full flex-col gap-5 px-4 py-6 sm:px-6 lg:px-10">
+    <div className="flex w-full flex-col gap-2 px-4 py-6 sm:px-6 lg:px-10">
       <header className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-foreground">Position Settings</h1>
@@ -254,7 +255,7 @@ export default function PositionSettingsPage() {
           <IconButton icon={Save} label="Save all" title={allProblem || 'Save every change on this page'} tone="action" onClick={() => commit({ top: topDirty, tabIds: dirtyTabIds })} disabled={savingLayout || !dirty || !!allProblem} />
         </div>
       </header>
-
+<AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} />
       <Card
         title="Market Places & Tabs"
         right={<ScopeActions what="the market places and tabs" dirty={topDirty} problem={topProblem} saving={savingLayout} onReset={resetTop} onSave={() => commit({ top: true })} />}
@@ -267,6 +268,8 @@ export default function PositionSettingsPage() {
           <TickOrderList items={strip} section={stripSection} onChange={setStrip} groups={overviews.length ? STRIP_GROUPS : null} title="Tabs" words={TAB_WORDS} />
         </SubPart>
       </Card>
+
+      
 
       <Card
         title="Select Tabs and arrange Title Cards and Headers (Tabs Wise)"
