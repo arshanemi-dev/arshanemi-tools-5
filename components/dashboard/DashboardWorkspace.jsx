@@ -33,7 +33,9 @@ import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/prof
 import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { REVIEW_KEY } from '@/data/fixedHeaders';
+import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
+import { formulaUsages } from '@/lib/profitLoss/headerUsage';
+import { applyReviewOverrides, patchTransactionRows, reviewOverrideOf, withReviewOverride } from '@/lib/profitLoss/reviewOverrides';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import { requireLogin } from '@/lib/authGate';
@@ -271,6 +273,27 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Pricing is applied in the calculation worker; these canonical rows stay
   // unmodified for persistence. Untouched rows retain their original identity.
 
+  // Review / Reason picked on the Transactions page this session
+  // (onReviewChange — lib/profitLoss/reviewOverrides.js): kept apart from
+  // `uploads` so a pick re-merges and re-resolves nothing. `reviewedRows`
+  // = the rows with them applied — what is saved, exported and shown on
+  // every page but Transactions, which patches its own rows on screen.
+  const [reviewOverrides, setReviewOverrides] = useState(() => new Map());
+  const reviewedRows = useMemo(
+    () => applyReviewOverrides(canonicalRows, reviewOverrides, orderIdHeader, transactionIdHeader),
+    [canonicalRows, reviewOverrides, orderIdHeader, transactionIdHeader],
+  );
+  const reviewHeaders = useMemo(() => ({
+    review: (config.headers || []).find((h) => h.fixedKey === REVIEW_KEY) || null,
+    reason: (config.headers || []).find((h) => h.fixedKey === REVIEW_REASON_KEY) || null,
+  }), [config]);
+  // A formula that reads Review / Reason has to be worked out again on a
+  // pick, even on the Transactions page.
+  const reviewInFormulas = useMemo(
+    () => [reviewHeaders.review, reviewHeaders.reason].some((h) => h && formulaUsages(config, h).length),
+    [config, reviewHeaders],
+  );
+
 
   // ── brand (toolbar setup step, not a view filter) ───────────────────────
   // Market Place, then Brand — picking/creating one here is what unlocks the
@@ -309,7 +332,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored, forget: forgetStoredRows,
   } = useRowSaver({
     enabled: loggedIn && !restoring && !restoreError && !merged.pending && !merged.error && (reviewEdited || uploads.some((u) => u.slotId !== RESTORED_SLOT_ID)),
-    rows: canonicalRows,
+    rows: reviewedRows,
     orderIdHeader,
     transactionIdHeader,
   });
@@ -470,11 +493,20 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   }, [config, layout, activeTabId]);
   const viewParts = useMemo(() => (partsKey ? JSON.parse(partsKey) : null), [partsKey]);
   const viewInput = useMemo(() => ({
-    config, rows: canonicalRows, skuCosts, options: viewOptions,
+    // Transactions shows a Review pick by patching its own rows (below), so
+    // the pick doesn't make it resolve everything again.
+    config, rows: showTransactions && !reviewInFormulas ? canonicalRows : reviewedRows, skuCosts, options: viewOptions,
     activeTabId, parts: viewParts, transactions: showTransactions,
-  }), [config, canonicalRows, skuCosts, viewOptions, activeTabId, viewParts, showTransactions]);
+  }), [config, canonicalRows, reviewedRows, reviewInFormulas, skuCosts, viewOptions, activeTabId, viewParts, showTransactions]);
   const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
   const { resolved, transactionResolved } = computed.value;
+  // The Transactions rows with this session's Review picks swapped in.
+  const transactionRows = useMemo(() => patchTransactionRows(transactionResolved.rows, reviewOverrides, {
+    orderId: RESERVED_HEADER_IDS.orderId,
+    txnId: RESERVED_HEADER_IDS.transactionId,
+    review: reviewHeaders.review?.id,
+    reason: reviewHeaders.reason?.id,
+  }), [transactionResolved, reviewOverrides, reviewHeaders]);
   // The Transactions table's columns — every header not switched to Hidden.
   const transactionHeaders = useMemo(() => (transactionResolved.headers || []).filter(isShown), [transactionResolved]);
   const calculating = merged.pending || computed.pending;
@@ -484,10 +516,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // Export resolves ALL tabs and all dates explicitly. A single active view
   // is deliberately incomplete for export, even when its date filter is empty.
   const resolveEverything = useCallback(() => calculations.run('export', {
-    config, rows: canonicalRows, skuCosts,
+    config, rows: reviewedRows, skuCosts,
     options: { ...viewOptions, dateFrom: null, dateTo: null },
     transactions: !!orderIdHeader,
-  }), [calculations, config, canonicalRows, skuCosts, viewOptions, orderIdHeader]);
+  }), [calculations, config, reviewedRows, skuCosts, viewOptions, orderIdHeader]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
@@ -771,34 +803,26 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     });
   }, []);
 
-  // Review / Reason (data/fixedHeaders.js) on one Transactions row: written
-  // onto every uploaded row of that transaction — same Order-Id, and the same
-  // Transaction-Id where both have one (a merged order's other sheet may
-  // not) — so it survives the merge, and the automatic row save stores the
-  // changed rows (useRowSaver). `cells` = the Transactions row's cells;
-  // `patch` = { review: 'yes' | 'no' } or { reviewReason }.
+  // Review / Reason (data/fixedHeaders.js) on one Transactions row, kept as
+  // an override (see reviewedRows): the row on screen changes at once, and
+  // the automatic row save stores that transaction's rows with it. `cells`
+  // = the Transactions row's cells; `patch` = { review: 'yes' | 'no' } or
+  // { reviewReason }. A reason survives a No → Yes in the same session.
   const onReviewChange = useCallback((cells, patch) => {
     const orderId = String(cells[RESERVED_HEADER_IDS.orderId]?.raw ?? '').trim();
     if (!orderId || !orderIdHeader) return;
     const txnId = String(cells[RESERVED_HEADER_IDS.transactionId]?.raw ?? '').trim();
-    const sameTxn = (r) => {
-      if (String(readHeaderFromRow(orderIdHeader, r) ?? '').trim() !== orderId) return false;
-      if (!txnId || !transactionIdHeader) return true;
-      const own = String(readHeaderFromRow(transactionIdHeader, r) ?? '').trim();
-      return !own || own === txnId;
-    };
-    setUploads((prev) => prev.map((u) => {
-      let changed = false;
-      const rows = u.rows.map((r) => {
-        if (!sameTxn(r)) return r;
-        changed = true;
-        return { ...r, review: r.review || 'no', ...patch };
-      });
-      return changed ? { ...u, rows } : u;
-    }));
+    setReviewOverrides((prev) => {
+      const before = reviewOverrideOf(prev, orderId, txnId);
+      const shownYes = cells[reviewHeaders.review?.id]?.raw === 'Yes';
+      const state = {
+        review: patch.review ?? before?.review ?? (shownYes ? 'yes' : 'no'),
+        reviewReason: patch.reviewReason ?? before?.reviewReason ?? (shownYes ? String(cells[reviewHeaders.reason?.id]?.raw ?? '') : ''),
+      };
+      return withReviewOverride(prev, orderId, txnId, state);
+    });
     setReviewEdited(true);
-  }, [orderIdHeader, transactionIdHeader]);
-  const reviewHeaderId = useMemo(() => (config.headers || []).find((h) => h.fixedKey === REVIEW_KEY)?.id ?? null, [config]);
+  }, [orderIdHeader, reviewHeaders]);
 
   const onDeleteSelected = useCallback(() => {
     if (calculating || calculationError || restoring || restoreError) return;
@@ -878,8 +902,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
   const buildView = useCallback((source = resolved) => ({
     label: config.marketplace?.name || 'Dashboard',
-    ...(showTransactions ? buildTransactionsView(transactionResolved) : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source)),
-  }), [showTransactions, buildTransactionsView, transactionResolved, buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
+    ...(showTransactions ? buildTransactionsView({ ...transactionResolved, rows: transactionRows }) : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, source)),
+  }), [showTransactions, buildTransactionsView, transactionResolved, transactionRows, buildTabView, showOverview, activeOverviewTab, activeTab, config, resolved]);
 
   // Excel/PDF download the page that is open — that Tab, that Overview Tab
   // (in Excel a sheet per hierarchy level) or Transactions — with only the
@@ -922,14 +946,14 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // shape of flat record) the per-transaction one while Transactions
       // is the active view. "Save what I'm looking at", same rule buildView
       // already applies to the label/cards above.
-      skuRows: (showTransactions ? transactionResolved.rows : resolved.tableRows).map((r) => {
+      skuRows: (showTransactions ? transactionRows : resolved.tableRows).map((r) => {
         const o = {};
         for (const h of (showTransactions ? transactionResolved.headers : resolved.headers)) { if (r.cells[h.id]) o[h.name] = r.cells[h.id].raw; }
         return o;
       }),
       sourceFiles: uploads.map((u) => ({ kind: u.slotId, platform: u.platform, name: u.fileName, sizeBytes: 0, rowCount: u.rows.length, contentBase64: null })),
     };
-  }, [buildView, applied, resolved, canonicalRows, viewParts, config, uploads, showTransactions, transactionResolved]);
+  }, [buildView, applied, resolved, canonicalRows, viewParts, config, uploads, showTransactions, transactionResolved, transactionRows]);
 
   if (!templatesReady) {
     return (
@@ -1082,13 +1106,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 </p>
                 <DetailsTable
                   columns={transactionHeaders}
-                  rows={transactionResolved.rows}
+                  rows={transactionRows}
                   disableCostColumn
                   selectedKeys={selectedKeys}
                   onToggleRow={onToggleRow}
                   onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
-                  review={orderIdHeader ? { onChange: onReviewChange, headerId: reviewHeaderId } : null}
+                  review={orderIdHeader ? { onChange: onReviewChange, headerId: reviewHeaders.review?.id } : null}
                   fillHeight
                 />
               </div>
