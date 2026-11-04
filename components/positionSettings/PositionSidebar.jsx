@@ -24,10 +24,10 @@ function SectionRow({ section, active, open, onClick, count }) {
         active ? 'bg-accent/10 text-foreground' : 'text-foreground'
       }`}
     >
-      {section.tabs && (open ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
+      {/* {section.tabs && (open ? <ChevronDown size={13} /> : <ChevronRight size={13} />)} */}
       {Icon && <Icon size={13} />}
       <span className="min-w-0 flex-1 truncate">{section.label}</span>
-      {count != null && <span className="text-[11px] font-normal text-subtle">· {count}</span>}
+      {count != null && <span className="text-[11px] font-normal text-subtle hidden">· {count}</span>}
       {section.dirty && <Dot />}
     </button>
   );
