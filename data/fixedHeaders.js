@@ -38,7 +38,7 @@ export const FIXED_HEADERS = [
   {
     key: 'cogs',
     id: 'hdr_cogs_product_cost',
-    name: 'COGS (Product Cost)',
+    name: 'Product Cost',
     type: 'number',
     skuCost: true,
     sheetAliases: ['COGS', 'Cost', 'Unit Cost', 'Product Cost', 'Cost Price', 'Purchase Price', 'Buy Price'],

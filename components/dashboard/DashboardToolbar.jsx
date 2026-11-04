@@ -73,7 +73,7 @@ export default function DashboardToolbar({
             <FileIconButton
               icon={Upload}
               label="SKU Cost"
-              title={hasData ? 'Upload your filled-in SKU Cost sheet — COGS (Product Cost), Product GST In, Final Product Cost, Office Expense (Per Order)' : 'Upload a settlement sheet first'}
+              title={hasData ? 'Upload your filled-in SKU Cost sheet — Product Cost, Product GST In, Final Product Cost, Office Expense (Per Order)' : 'Upload a settlement sheet first'}
               accept=".csv,.tsv,.txt,.xlsx,.xls"
               multiple={false}
               onFiles={(f) => onUploadSkuCost(f[0])}
