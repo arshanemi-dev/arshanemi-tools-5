@@ -11,8 +11,9 @@ import HeaderInfoTip from './HeaderInfoTip';
 // range on a number column, then search + tick the values to keep), plus an
 // inline ArrangeControl when this column offers one.
 // Sort, filter and info icons take no space: they float right against the
-// label only on hover or while their menu is open. A sorted / filtered
-// column shows a small dot on the label instead.
+// label only on hover or while their menu is open — red on a small white pill
+// so they stand out on the blue header; a sorted / filtered / open one is
+// solid red. Not hovered, a sorted / filtered column shows a red dot instead.
 // A label of more than two words goes onto lines of two words each
 // ("Final Product Cost GST" → "Final Product" / "Cost GST"), so a long
 // header doesn't make its column wide.
@@ -69,16 +70,16 @@ export default function ColumnHeaderCell({
         </span>
         {/* A sorted / filtered column, not hovered: a dot on the label's corner — no space taken. */}
         {!editMode && (dir || hasFilter) && !menuOpen && (
-          <span aria-hidden className="absolute -right-1.5 top-0 size-1.5 rounded-full bg-amber-300 group-hover/cell:hidden" />
+          <span aria-hidden className="absolute -right-1.5 top-0 size-1.5 rounded-full bg-neg ring-1 ring-white group-hover/cell:hidden" />
         )}
         {/* Sort / filter / info: only on hover or while a menu is open, floating
             right against the label (absolute) — never widening the column. */}
         {!editMode && (
-          <span className={`absolute left-full top-1/2 z-20 -translate-y-1/2 items-center rounded-r bg-[#1565C0] ${menuOpen ? 'flex' : 'hidden group-hover/cell:flex'}`}>
+          <span className={`absolute left-full top-1/2 z-20 ml-0.5 -translate-y-1/2 items-center gap-px rounded-md bg-white p-px shadow-md ${menuOpen ? 'flex' : 'hidden group-hover/cell:flex'}`}>
             <button
               type="button"
               onClick={cycleSort}
-              className={`inline-flex shrink-0 rounded p-0.5 transition-colors hover:bg-white/15 ${dir ? 'text-action' : 'text-white/60 hover:text-white'}`}
+              className={`inline-flex shrink-0 rounded p-0.5 transition-colors ${dir ? 'bg-neg text-white' : 'text-neg hover:bg-neg/10'}`}
               aria-label={`Sort by ${col.label}`}
             >
               <SortIcon size={12} />
@@ -93,12 +94,12 @@ export default function ColumnHeaderCell({
                 onOpenChange={handleFilterOpenChange}
                 sortDir={dir}
                 onSort={(d) => onSortChange(d ? { key: col.key, dir: d } : null)}
-                onDark
+                highlight
               />
             </span>
             {col.description && (
               <span className="inline-flex">
-                <HeaderInfoTip label={col.label} text={col.description} onOpenChange={setInfoOpen} />
+                <HeaderInfoTip label={col.label} text={col.description} highlight onOpenChange={setInfoOpen} />
               </span>
             )}
           </span>

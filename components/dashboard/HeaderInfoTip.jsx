@@ -17,8 +17,9 @@ const CLOSE_DELAY = 150; // ms — time to move the pointer from the ⓘ onto th
 // scrolls inside it); closes on leave / blur / Escape / outside tap / a
 // scroll of the page.
 // `onDark` = it sits in the dark navy header band (the dashboard tables) —
-// white tones; false for a light header row.
-export default function HeaderInfoTip({ label, text, onDark = true, onOpenChange }) {
+// white tones; false for a light header row. `highlight` = red, for the
+// dashboard tables' white icon pill (ColumnHeaderCell) — solid while open.
+export default function HeaderInfoTip({ label, text, onDark = true, highlight = false, onOpenChange }) {
   const btnRef = useRef(null);
   const panelRef = useRef(null);
   const timer = useRef(null);
@@ -92,7 +93,9 @@ export default function HeaderInfoTip({ label, text, onDark = true, onOpenChange
             show();
           }
         }}
-        className={`shrink-0 rounded p-0.5 align-middle transition-colors ${onDark
+        className={`shrink-0 rounded p-0.5 align-middle transition-colors ${highlight
+          ? (open ? 'bg-neg text-white' : 'text-neg hover:bg-neg/10')
+          : onDark
           ? `hover:bg-white/15 ${open ? 'text-white' : 'text-white/60 hover:text-white'}`
           : `hover:bg-card-hover ${open ? 'text-foreground' : 'text-subtle hover:text-foreground'}`}`}
         aria-label={`About ${label}`}
