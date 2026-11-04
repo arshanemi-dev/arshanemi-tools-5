@@ -6,6 +6,10 @@
 //     before an upload (row.company).
 //   - the four cost headers: per SKU, from the SKU Cost sheet — Download SKU
 //     Cost, fill it in, Upload SKU Cost (lib/profitLoss/skuCosts.js).
+//   - Review + Reason: per transaction, set on the dashboard's Transactions
+//     page — has someone confirmed this (pending) payment: Yes / No (No
+//     until set), and why. Kept on the order's own row (`row.review`,
+//     `row.reviewReason`), so the automatic row save stores it.
 // lib/profitLoss/resolveTemplate.js readHeaderFromRow is where both are read.
 //
 // A fixed header is found by `fixedKey`, not by id: a config saved before
@@ -17,6 +21,8 @@
 // know about these.
 
 export const ACCOUNT_NAME_KEY = 'accountName';
+export const REVIEW_KEY = 'review';
+export const REVIEW_REASON_KEY = 'reviewReason';
 
 // `aliases` = other spellings of an existing header that is adopted as this
 // one; `sheetAliases` = further column names an uploaded SKU Cost sheet may
@@ -48,7 +54,23 @@ export const FIXED_HEADERS = [
     aliases: ['Other Expense (per order)', 'Other Expanse (per order)'],
     sheetAliases: ['Office Expense', 'Other Expense', 'Other Expanse'],
   },
+  {
+    key: REVIEW_KEY,
+    id: 'hdr_review',
+    name: 'Review',
+    type: 'text',
+    hint: 'Yes / No per transaction — set on the dashboard’s Transactions page; No until someone confirms it.',
+  },
+  {
+    key: REVIEW_REASON_KEY,
+    id: 'hdr_review_reason',
+    name: 'Reason',
+    type: 'text',
+    hint: 'Why a transaction’s Review is Yes — typed on the dashboard’s Transactions page.',
+  },
 ];
+
+export const isReviewField = (h) => h?.fixedKey === REVIEW_KEY || h?.fixedKey === REVIEW_REASON_KEY;
 
 // The two required headers' names (data/templateSchema.js makes them), by
 // their fixed ids — kept here so withFixedHeaders can bring a config saved

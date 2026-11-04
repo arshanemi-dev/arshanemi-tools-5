@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
+import { ReasonInput, ReviewSelect } from './ReviewCells';
 import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
@@ -13,6 +14,7 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
+import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
@@ -46,6 +48,12 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // any. `disableCostColumn` = the rows aren't SKUs (Transactions, a table
 // grouped by something else): no inputs, the cost columns show as numbers.
 //
+// `review` = { onChange(cells, patch) } makes the Review / Reason columns
+// (data/fixedHeaders.js) editable — only on a table whose row IS one
+// transaction (Transactions): a Yes / No pick, and a reason box that opens
+// once it is Yes. `patch` = { review: 'yes' | 'no' } or { reviewReason }.
+// Elsewhere they show as text (a SKU's Review reads "3/10 Yes").
+//
 // Row selection (the checkboxes) is controlled from DashboardWorkspace, not
 // local state — the header bar's Delete button acts on `selectedKeys`
 // regardless of which tab/table it was checked in.
@@ -72,7 +80,7 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
-  pagerSlot = null, fillHeight = false,
+  pagerSlot = null, fillHeight = false, review = null,
   // Every header of the template — what a ratio formula's Total reads
   // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
   headers = null,
@@ -88,7 +96,11 @@ export default function DetailsTable({
     signed: !!h.signed,
     isSku: h.primitive === 'sku',
     costField: disableCostColumn ? null : costFieldOf(h),
+    reviewField: review && isReviewField(h) ? h.fixedKey : null,
   }));
+  // The row's own Review, which the Reason box opens on — read off the row
+  // even when the Review column itself isn't shown.
+  const reviewId = review ? (columns.find((h) => h.fixedKey === REVIEW_KEY)?.id ?? review.headerId ?? null) : null;
 
   // A cost input keyed by SKU only makes sense on a table actually grouped
   // by SKU — never on a per-transaction table (see resolveTransactionRows),
@@ -300,6 +312,16 @@ export default function DetailsTable({
                     return (
                       <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''}`}>
                         {costInput(r.key, col.costField, col.label)}
+                      </td>
+                    );
+                  }
+                  if (col.reviewField) {
+                    const isYes = r.cells[reviewId]?.raw === 'Yes';
+                    return (
+                      <td key={col.key} className="px-3 py-1.5 whitespace-nowrap">
+                        {col.reviewField === REVIEW_KEY
+                          ? <ReviewSelect value={cell.raw} label={`${col.label} for ${r.key}`} onChange={(v) => review.onChange(r.cells, { review: v })} />
+                          : <ReasonInput key={`${r.key}:${isYes}`} value={cell.raw} enabled={isYes} label={`${col.label} for ${r.key}`} onCommit={(text) => review.onChange(r.cells, { reviewReason: text.trim() })} />}
                       </td>
                     );
                   }

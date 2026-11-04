@@ -33,6 +33,7 @@ import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/prof
 import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
+import { REVIEW_KEY } from '@/data/fixedHeaders';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import { requireLogin } from '@/lib/authGate';
@@ -301,10 +302,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // and SavingRowsLine show it). Only once something was uploaded this
   // session: what was just fetched back from that same table is stored
   // already (markRowsStored, in addRestoredRows). See useRowSaver.
+  // A Review / Reason set on the Transactions page (onReviewChange) changes
+  // already-saved rows — those need saving too, upload or not.
+  const [reviewEdited, setReviewEdited] = useState(false);
   const {
     status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored, forget: forgetStoredRows,
   } = useRowSaver({
-    enabled: loggedIn && !restoring && !restoreError && !merged.pending && !merged.error && uploads.some((u) => u.slotId !== RESTORED_SLOT_ID),
+    enabled: loggedIn && !restoring && !restoreError && !merged.pending && !merged.error && (reviewEdited || uploads.some((u) => u.slotId !== RESTORED_SLOT_ID)),
     rows: canonicalRows,
     orderIdHeader,
     transactionIdHeader,
@@ -767,6 +771,35 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     });
   }, []);
 
+  // Review / Reason (data/fixedHeaders.js) on one Transactions row: written
+  // onto every uploaded row of that transaction — same Order-Id, and the same
+  // Transaction-Id where both have one (a merged order's other sheet may
+  // not) — so it survives the merge, and the automatic row save stores the
+  // changed rows (useRowSaver). `cells` = the Transactions row's cells;
+  // `patch` = { review: 'yes' | 'no' } or { reviewReason }.
+  const onReviewChange = useCallback((cells, patch) => {
+    const orderId = String(cells[RESERVED_HEADER_IDS.orderId]?.raw ?? '').trim();
+    if (!orderId || !orderIdHeader) return;
+    const txnId = String(cells[RESERVED_HEADER_IDS.transactionId]?.raw ?? '').trim();
+    const sameTxn = (r) => {
+      if (String(readHeaderFromRow(orderIdHeader, r) ?? '').trim() !== orderId) return false;
+      if (!txnId || !transactionIdHeader) return true;
+      const own = String(readHeaderFromRow(transactionIdHeader, r) ?? '').trim();
+      return !own || own === txnId;
+    };
+    setUploads((prev) => prev.map((u) => {
+      let changed = false;
+      const rows = u.rows.map((r) => {
+        if (!sameTxn(r)) return r;
+        changed = true;
+        return { ...r, review: r.review || 'no', ...patch };
+      });
+      return changed ? { ...u, rows } : u;
+    }));
+    setReviewEdited(true);
+  }, [orderIdHeader, transactionIdHeader]);
+  const reviewHeaderId = useMemo(() => (config.headers || []).find((h) => h.fixedKey === REVIEW_KEY)?.id ?? null, [config]);
+
   const onDeleteSelected = useCallback(() => {
     if (calculating || calculationError || restoring || restoreError) return;
     const count = selectedKeys.size;
@@ -1055,6 +1088,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                   onToggleRow={onToggleRow}
                   onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
+                  review={orderIdHeader ? { onChange: onReviewChange, headerId: reviewHeaderId } : null}
                   fillHeight
                 />
               </div>
