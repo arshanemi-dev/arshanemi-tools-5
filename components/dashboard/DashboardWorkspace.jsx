@@ -153,7 +153,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const {
     loggedIn, settingsLoaded, reconcile, myColumnsFor,
     layout,
-    brands, addBrand,
     dropLegacySkuCosts,
     extractedData, onExtractedDataChange,
   } = useDashboardSettings({
@@ -298,8 +297,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // file upload buttons and tags every row of the next upload as
   // "MarketPlace_Brand" (Company). Unlike the filters above this takes effect
   // immediately, no Apply needed — it has to be live the moment an upload
-  // button is clicked. The saved brand *list* persists per-user (or
-  // session-only when signed out); which one is currently active does not.
+  // button is clicked. The brand *list* is this user's accounts (below);
+  // which one is currently picked is not saved.
   const [selectedBrand, setSelectedBrand] = useState(null);
 
   // ── view ────────────────────────────────────────────────────────────────
@@ -344,12 +343,13 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     freeLimit, closeFreeLimit,
   } = useUploadBilling({ loggedIn, orderIdHeader, addToast });
 
-  // Every Marketplace x Brand combo ("company") this user has actually used,
-  // from the dedicated market_place_companies table — reloaded on every
-  // mount so a returning session's Brand picker isn't limited to only what
-  // preferences.brands happens to remember. Merged with `brands` (never
-  // replaces it) since the two lists can diverge (a brand typed before this
-  // table existed, say).
+  // This user's accounts — Marketplace x Brand ("company") — from the
+  // market_place_companies table: the one list, the same one Position
+  // Settings › Account Names shows and edits. The Brand picker offers the
+  // active marketplace's brands only; creating one there adds an account
+  // (createBrand). The old preferences.brands list (brands typed before the
+  // table existed, never tied to a marketplace) is no longer read — it kept
+  // showing brands deleted in Account Names, and every marketplace's at once.
   const [savedCompanies, setSavedCompanies] = useState([]);
   useEffect(() => {
     if (!loggedIn) return;
@@ -357,10 +357,24 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       if (ok && Array.isArray(data?.companies)) setSavedCompanies(data.companies);
     });
   }, [loggedIn]);
-  const effectiveBrands = useMemo(
-    () => [...new Set([...brands, ...savedCompanies.map((c) => c.brand)])],
-    [brands, savedCompanies],
-  );
+  const activeMarketplaceName = config.marketplace?.name || activeMarketplace?.marketplaceName || '';
+  const effectiveBrands = useMemo(() => {
+    const mp = activeMarketplaceName.trim().toLowerCase();
+    return [...new Set(savedCompanies.filter((c) => String(c.marketplace || '').trim().toLowerCase() === mp).map((c) => c.brand))];
+  }, [savedCompanies, activeMarketplaceName]);
+  // The picked brand, while it is one of this marketplace's — switching
+  // marketplace drops a brand that isn't (its upload would make a new account).
+  const brand = selectedBrand && effectiveBrands.includes(selectedBrand) ? selectedBrand : null;
+  // "Create" in the Brand picker: a new account for the active marketplace,
+  // picked at once — exactly what Account Names' Add Account makes.
+  const createBrand = useCallback(async (name) => {
+    const trimmed = String(name || '').trim();
+    if (!trimmed || !activeMarketplaceName) return;
+    const { ok, data } = await saveCompany({ marketplace: activeMarketplaceName, brand: trimmed });
+    if (!ok || !data?.company) { addToast(data?.error || 'Could not add that brand', 'error'); return; }
+    setSavedCompanies((prev) => [...prev.filter((c) => c.id !== data.company.id), data.company]);
+    setSelectedBrand(data.company.brand);
+  }, [activeMarketplaceName, addToast]);
 
   // Every previously-saved row (GET /api/profit-loss/rows) for this user —
   // ALL of it, every page, auto-loaded on load before any fresh upload. No
@@ -605,7 +619,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const [uploadStage, setUploadStage] = useState(null); // { step: 'reading' | 'adding' | 'saving' | 'done', fileIndex, fileCount, fileName, rows, hidden }
   const onUpload = useCallback(async (slotId, files) => {
     if (restoring || restoreError || merged.pending || merged.error) { addToast('Wait for your saved data to finish loading, or retry the failed load', 'error'); return; }
-    if (!selectedBrand) { addToast('Pick or create a brand first', 'error'); return; }
+    if (!brand) { addToast('Pick or create a brand first', 'error'); return; }
     // The file slots + mappings on screen may still be the last visit's copy
     // (useLiveTemplates) — a sheet isn't read against them until the server
     // has confirmed they're current.
@@ -619,11 +633,11 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       const slotDef = (config.fileSlots || []).find((s) => s.id === slotId);
       const rowOverride = rowOverrideFor(slotDef);
       const marketplaceName = config.marketplace?.name || 'Marketplace';
-      const tag = { brand: selectedBrand, company: `${marketplaceName}_${selectedBrand}` };
+      const tag = { brand, company: `${marketplaceName}_${brand}` };
       // Record this Marketplace x Brand combo in the backend the moment it's
       // actually used — fire-and-forget, never blocks the upload; a brand
       // already-known to this table just gets its updated_at bumped.
-      if (loggedIn) saveCompany({ marketplace: marketplaceName, brand: selectedBrand }).catch(() => {});
+      if (loggedIn) saveCompany({ marketplace: marketplaceName, brand }).catch(() => {});
       const added = [];
       for (const [fileIndex, file] of [...files].entries()) {
         if (fileIndex) {
@@ -710,7 +724,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // went in (every file was turned down — the toasts say why): no window.
       setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, selectedBrand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies]);
+  }, [addToast, config, brand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies]);
 
   // The window closes by itself a moment after its last step is done — a
   // failed save keeps it open (it offers Try again), and so does one still
@@ -918,9 +932,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           activeTemplateId={activeMarketplace?.id ?? null}
           onSelectTemplate={setActiveTemplateId}
           brands={effectiveBrands}
-          brand={selectedBrand}
+          brand={brand}
           onBrandChange={setSelectedBrand}
-          onCreateBrand={(name) => { if (loggedIn) addBrand(name); else requireLogin(); }}
+          onCreateBrand={(name) => { if (loggedIn) createBrand(name); else requireLogin(); }}
           canCreateBrand={loggedIn}
           onCreateBrandBlocked={requireLogin}
           fileSlots={config.fileSlots || []}
