@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Building2, Edit2, Loader2, Plus, Tag, Trash2, X } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
@@ -171,7 +172,9 @@ function AddEditModal({ open, marketplaces = [], initial = null, saving, onSave,
 // `marketplaces` = [{ id, name }] from useLiveTemplates (the live version's
 //   marketplace list). Passed in so this component doesn't re-fetch them.
 // ---------------------------------------------------------------------------
-export default function AccountNamesSection({ marketplaces = [] }) {
+// `actionsSlot` = the page header's button area (PositionSettingsPage) —
+// Add Account goes there, top right, instead of in a header of its own.
+export default function AccountNamesSection({ marketplaces = [], actionsSlot = null }) {
   const { addToast } = useToast();
 
   const [companies, setCompanies] = useState([]);
@@ -280,19 +283,7 @@ export default function AccountNamesSection({ marketplaces = [] }) {
   // ------------------------------------------------------------------
   return (
     <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
-      {/* Section header */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="rounded-lg bg-accent/10 p-1.5 text-accent shrink-0">
-            <Building2 size={15} />
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Account Names</h2>
-            <p className="text-[12px] text-muted">
-              Each account is named <span className="font-mono font-medium text-foreground">Marketplace_Brand</span>. Deleting an account also removes all its associated data.
-            </p>
-          </div>
-        </div>
+      {actionsSlot && createPortal(
         <button
           type="button"
           onClick={() => setShowAdd(true)}
@@ -300,8 +291,9 @@ export default function AccountNamesSection({ marketplaces = [] }) {
         >
           <Plus size={14} />
           Add Account
-        </button>
-      </div>
+        </button>,
+        actionsSlot,
+      )}
 
       {/* Body */}
       {loading ? (

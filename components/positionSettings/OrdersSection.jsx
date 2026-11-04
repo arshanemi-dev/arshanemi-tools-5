@@ -1,11 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, ReceiptText, RotateCw, Search, Trash2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Loader2, RotateCw, Search, Trash2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import IconButton from '@/components/dashboard/IconButton';
 import TablePager from '@/components/dashboard/TablePager';
+import ColumnHeaderCell from '@/components/dashboard/ColumnHeaderCell';
+import { activeFilters, cellPasses, cellText, columnOptions } from '@/lib/profitLoss/columnFilter';
 import { listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
 
@@ -23,7 +26,9 @@ const TYPE_TO_CONFIRM_AT = 100;
 // row matching the search / account filter) and delete them, after a
 // confirmation. This is the only place saved rows are deleted — the
 // dashboard has no Delete button. The dashboard picks the change up on its
-// next load.
+// next load. Reload and Delete sit in the page header (`actionsSlot`), and
+// every column sorts and filters from its header like the dashboard tables
+// (ColumnHeaderCell).
 const keyOf = (orderId, transactionId) => `${orderId}::${transactionId ?? ''}`;
 
 // The hub's rows → one entry per key: a key saved with several SKUs /
@@ -43,13 +48,27 @@ function toOrders(saved) {
     const account = String(r.data?.company ?? '').trim();
     if (account) o.accounts.add(account);
   }
-  return [...byKey.values()].map((o) => ({ ...o, sku: [...o.skus].join(', '), account: [...o.accounts].join(', ') }));
+  return [...byKey.values()].map((o) => {
+    const sku = [...o.skus].join(', ');
+    const account = [...o.accounts].join(', ');
+    // `cells` — the shape the dashboard's column sort / filter read.
+    const cell = (v) => ({ raw: v ?? '', display: v ?? '' });
+    return { ...o, sku, account, cells: { orderId: cell(o.orderId), transactionId: cell(o.transactionId), sku: cell(sku), account: cell(account) } };
+  });
 }
 
-const TH = 'sticky top-0 z-10 bg-[#1565C0] px-3 py-2 text-left text-[12px] font-medium text-white whitespace-nowrap';
+const COLUMNS = [
+  { key: 'orderId', id: 'orderId', label: 'Order Id' },
+  { key: 'transactionId', id: 'transactionId', label: 'Transaction Id' },
+  { key: 'sku', id: 'sku', label: 'SKU' },
+  { key: 'account', id: 'account', label: 'Account Name' },
+];
+const COLUMN_KEYS = COLUMNS.map((c) => c.key);
+
+const TH = 'group/cell sticky top-0 z-10 bg-[#1565C0] px-3 py-2 text-[12px] font-medium text-white whitespace-nowrap';
 const TD = 'px-3 py-2 text-[13px] text-foreground whitespace-nowrap';
 
-export default function OrdersSection() {
+export default function OrdersSection({ actionsSlot = null }) {
   const { addToast } = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +80,9 @@ export default function OrdersSection() {
   const [selected, setSelected] = useState(() => new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [sort, setSort] = useState(null); // { key, dir }
+  const [filters, setFilters] = useState({}); // { [columnKey]: filter | null }
+  const [filterOpen, setFilterOpen] = useState(false); // a filter menu is open — the table makes room for it
 
   useEffect(() => {
     let cancelled = false;
@@ -92,11 +114,26 @@ export default function OrdersSection() {
     [orders],
   );
 
-  const view = useMemo(() => {
+  // Search + Account Name, then the columns' own filters, then the sort.
+  const searched = useMemo(() => {
     const s = q.trim().toLowerCase();
     return orders.filter((o) => (account === ALL || o.accounts.has(account))
       && (!s || [o.orderId, o.transactionId, o.sku, o.account].some((v) => String(v ?? '').toLowerCase().includes(s))));
   }, [orders, q, account]);
+  const applied = useMemo(() => activeFilters(filters, COLUMN_KEYS), [filters]);
+  const passes = (o, except = null) => applied.every(([key, f]) => key === except || cellPasses(f, o.cells[key]));
+  const view = useMemo(() => {
+    let out = applied.length ? searched.filter((o) => applied.every(([key, f]) => cellPasses(f, o.cells[key]))) : searched;
+    if (sort?.key) {
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      out = [...out].sort((a, b) => String(a.cells[sort.key].raw).localeCompare(String(b.cells[sort.key].raw), undefined, { numeric: true }) * dir);
+    }
+    return out;
+  }, [searched, applied, sort]);
+  // A column's checklist offers what the OTHER filters leave, like a sheet.
+  const optionsFor = (key) => columnOptions(searched.filter((o) => passes(o, key)), (o) => cellText(o.cells[key]), (o) => o.cells[key]?.raw);
+  const setColumnFilter = (key) => (f) => { setFilters((cur) => ({ ...cur, [key]: f })); setPage(1); };
+  const changeSort = (next) => { setSort(next); setPage(1); };
 
   const pageCount = Math.max(1, Math.ceil(view.length / ROWS_PER_PAGE));
   const currentPage = Math.min(page, pageCount);
@@ -137,14 +174,9 @@ export default function OrdersSection() {
   const count = selected.size;
 
   return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <span className="rounded-lg bg-accent/10 p-1.5 text-accent"><ReceiptText size={15} /></span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">Orders</h2>
-          <p className="text-[12px] text-muted">Your saved orders. Select the ones to remove and delete them — they go from your dashboard too.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <section aria-label="Orders" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
+      {actionsSlot && createPortal(
+        <>
           <IconButton icon={RotateCw} label="Reload" title="Load your saved orders again" tone="outline" onClick={() => setAttempt((n) => n + 1)} disabled={loading || deleting} />
           <IconButton
             icon={Trash2}
@@ -155,8 +187,9 @@ export default function OrdersSection() {
             disabled={!count || loading || deleting}
             onClick={() => setConfirmOpen(true)}
           />
-        </div>
-      </div>
+        </>,
+        actionsSlot,
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[14rem] flex-1">
@@ -191,7 +224,7 @@ export default function OrdersSection() {
           <span><span className="font-semibold">{count}</span> selected</span>
           {!allInView && (
             <button type="button" onClick={() => setMany(view.map((o) => o.key), true)} className="font-semibold text-link hover:underline">
-              Select all {view.length} {q || account !== ALL ? 'matching' : ''} order{view.length === 1 ? '' : 's'}
+              Select all {view.length} {q || account !== ALL || applied.length ? 'matching' : ''} order{view.length === 1 ? '' : 's'}
             </button>
           )}
           {count > 0 && (
@@ -201,7 +234,7 @@ export default function OrdersSection() {
       )}
 
       <div className="overflow-hidden rounded-xl border border-divider">
-        <div className="max-h-[60vh] overflow-auto">
+        <div data-table-scroll className={`max-h-[60vh] overflow-auto ${filterOpen ? 'min-h-[30rem]' : ''}`}>
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
@@ -215,10 +248,19 @@ export default function OrdersSection() {
                     aria-label="Select all orders on this page"
                   />
                 </th>
-                <th className={TH}>Order Id</th>
-                <th className={TH}>Transaction Id</th>
-                <th className={TH}>SKU</th>
-                <th className={TH}>Account Name</th>
+                {COLUMNS.map((col) => (
+                  <th key={col.key} className={TH}>
+                    <ColumnHeaderCell
+                      col={col}
+                      sort={sort}
+                      onSortChange={changeSort}
+                      filter={filters[col.key] || null}
+                      onFilterChange={setColumnFilter(col.key)}
+                      getFilterOptions={() => optionsFor(col.key)}
+                      onFilterOpenChange={setFilterOpen}
+                    />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -227,7 +269,7 @@ export default function OrdersSection() {
               ) : view.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-10 text-center text-[13px] text-muted">
-                    {orders.length ? 'No orders match the search.' : 'No saved orders yet — upload a sheet on the dashboard.'}
+                    {orders.length ? 'No orders match the search or filters.' : 'No saved orders yet — upload a sheet on the dashboard.'}
                   </td>
                 </tr>
               ) : pageRows.map((o) => {

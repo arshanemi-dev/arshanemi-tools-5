@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Building2, Columns3, LayoutGrid, Loader2, PanelLeft, ReceiptText, Save, Undo2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
-import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import TemplatesLoadError from '@/components/dashboard/TemplatesLoadError';
 import IconButton from '@/components/dashboard/IconButton';
 import { useLiveTemplates } from '@/lib/profitLoss/useLiveTemplates';
@@ -46,9 +45,8 @@ const PARTS = ['titleCards', 'graphs'];
 // + Tabs together, and each tab's contents one tab at a time — each with its
 // own Reset (back to the template's arrangement — an unsaved change, Save
 // keeps it) and Save (just that scope; the others stay as they are, saved or
-// not). The header's Save all saves every scope with changes in one go;
-// Reset all puts everything back and saves that at once. Every save goes to
-// the same settings row the dashboard reads (useDashboardSettings
+// not) — there's no page-wide Save all / Reset all. Every save goes to the
+// same settings row the dashboard reads (useDashboardSettings
 // saveArrangement). Leaving with unsaved changes asks first.
 // `?m=` = the marketplace the dashboard had open. Every header is listed
 // whichever it is (effectiveConfig) — it only picks the key column of a tab
@@ -58,16 +56,11 @@ const PARTS = ['titleCards', 'graphs'];
 // (the saved rows, deleted from there — OrdersSection) — and only the one
 // picked is shown, like Template Settings. Drafts live here, so switching
 // sections keeps every unsaved change.
-function Card({ title, hint, right = null, children }) {
+// One section's body. The page title above already names it, so no title
+// or description of its own here (`title` labels it for screen readers).
+function Card({ title, children }) {
   return (
-    <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          {/* <p className="text-[12px] text-muted">{hint}</p> */}
-        </div>
-        {right}
-      </div>
+    <section aria-label={title} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
       {children}
     </section>
   );
@@ -102,7 +95,7 @@ export default function PositionSettingsPage() {
   const { addToast } = useToast();
   const params = useSearchParams();
   const { templates, globalConfig, headerGroups, templatesReady, templatesCurrent, templatesError, retryTemplates } = useLiveTemplates({ addToast });
-  const { loggedIn, settingsLoaded, reconcile, layout, myColumnsFor, saveArrangement, resetLayout, savingLayout } = useDashboardSettings({ addToast });
+  const { loggedIn, settingsLoaded, reconcile, layout, myColumnsFor, saveArrangement, savingLayout } = useDashboardSettings({ addToast });
 
   const marketplaceId = params.get('m');
   const marketplace = templates.find((t) => t.id === marketplaceId) || templates[0] || null;
@@ -116,9 +109,10 @@ export default function PositionSettingsPage() {
   const [draftTabs, setDraftTabs] = useState({}); // { [tabId]: { titleCards?, graphs? } }
   const [draftCols, setDraftCols] = useState({}); // { [tabId]: { ticked: [ids], order: [ids] } }
   const [selectedId, setSelectedId] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [openSection, setOpenSection] = useState(SECTIONS[0].key);
   const [navOpen, setNavOpen] = useState(false);
+  // Where the open section's own header buttons go (see the page header).
+  const [actionsSlot, setActionsSlot] = useState(null);
   const current = useMemo(() => withDrafts(layout, draftTop, draftTabs), [layout, draftTop, draftTabs]);
 
   const markets = useMemo(() => marketplaceItems(templates), [templates]);
@@ -167,7 +161,6 @@ export default function PositionSettingsPage() {
     if (!e || !tab || e.ticked.length) return '';
     return modelFor(tab, isOverview(id)).defaultIds.length ? `Tick at least one column on ${tab.name}.` : '';
   };
-  const allProblem = (topDirty && topProblem) || dirtyTabIds.map(tabProblem).find(Boolean) || '';
 
   // Same as the dashboard: the saved row brought up to the live version
   // first — never while something here is being edited.
@@ -247,7 +240,6 @@ export default function PositionSettingsPage() {
       setDraftCols(without(tabIds));
     }
   };
-  const clearDrafts = () => { setDraftTop({}); setDraftTabs({}); setDraftCols({}); };
 
   // Loading first: the server can't tell who is signed in, and nothing has
   // loaded on either side yet — so both draw the same spinner.
@@ -288,20 +280,21 @@ export default function PositionSettingsPage() {
           <h1 className="text-xl font-bold text-foreground">{SECTIONS.find((s) => s.key === openSection)?.label || 'Position Settings'}</h1>
           {/* <p className="text-[13px] text-muted">Arrange your own dashboard — its market places, the tab strip, and on each tab its title cards, graphs and columns. Only you see it.</p> */}
         </div>
-        {/* Arrangement actions — not on Orders (saved rows, deleted there), which they don't touch. */}
-        {openSection !== 'orders' && (
-          <div className="flex flex-wrap items-center gap-2">
-            {dirty && <span className="text-[12px] font-medium text-link">Unsaved changes</span>}
-            <IconButton icon={Undo2} label="Reset all" title="Put everything back to the template's own arrangement, and save it" tone="outline" onClick={() => setConfirmReset(true)} disabled={savingLayout} />
-            <IconButton icon={Save} label="Save all" title={allProblem || 'Save every change on this page'} tone="action" onClick={() => commit({ top: topDirty, tabIds: dirtyTabIds })} disabled={savingLayout || !dirty || !!allProblem} />
-          </div>
+        {/* The open section's own buttons, top right of the page: Reset +
+            Save here, or Account Names' / Orders' own (they portal into
+            `actionsSlot`). */}
+        <div ref={setActionsSlot} className="flex flex-wrap items-center gap-2 empty:hidden" />
+        {openSection === 'marketsTabs' && (
+          <ScopeActions what="the market places and tabs" dirty={topDirty} problem={topProblem} saving={savingLayout} onReset={resetTop} onSave={() => commit({ top: true })} />
+        )}
+        {openSection === 'tabContents' && activeTab && (
+          <ScopeActions what={activeTab.name} dirty={dirtyTabIds.includes(activeTab.id)} problem={activeProblem} saving={savingLayout} onReset={() => resetTab(activeTab.id)} onSave={() => commit({ tabIds: [activeTab.id] })} />
         )}
       </header>
-      {openSection === 'accounts' && <AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} />}
+      {openSection === 'accounts' && <AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} actionsSlot={actionsSlot} />}
       {openSection === 'marketsTabs' && (
       <Card
         title="Market Places & Tabs"
-        right={<ScopeActions what="the market places and tabs" dirty={topDirty} problem={topProblem} saving={savingLayout} onReset={resetTop} onSave={() => commit({ top: true })} />}
       >
         {topDirty && topProblem && <Problem>{topProblem}</Problem>}
         <SubPart title="Market Places">
@@ -315,11 +308,7 @@ export default function PositionSettingsPage() {
 
       {openSection === 'tabContents' && (
       <Card
-        title="Select Tabs and arrange Title Cards and Headers (Tabs Wise)"
-        hint="Pick a tab, then put its title cards, graphs and columns in the order you want."
-        right={activeTab && (
-          <ScopeActions what={activeTab.name} dirty={dirtyTabIds.includes(activeTab.id)} problem={activeProblem} saving={savingLayout} onReset={() => resetTab(activeTab.id)} onSave={() => commit({ tabIds: [activeTab.id] })} />
-        )}
+        title="Tab Contents"
       >
         {activeProblem && <Problem>{activeProblem}</Problem>}
         <TabContentsPanel
@@ -337,18 +326,8 @@ export default function PositionSettingsPage() {
       </Card>
       )}
 
-      {openSection === 'orders' && <OrdersSection />}
+      {openSection === 'orders' && <OrdersSection actionsSlot={actionsSlot} />}
 
-      <ConfirmDialog
-        open={confirmReset}
-        title="Reset your dashboard?"
-        description="Your own arrangement — market places, tab order, and every tab's title cards, graphs and columns — goes back to what the template sets. It is saved straight away."
-        confirmLabel="Reset"
-        loadingLabel="Resetting…"
-        loading={savingLayout}
-        onConfirm={async () => { if (await resetLayout()) clearDrafts(); setConfirmReset(false); }}
-        onCancel={() => { if (!savingLayout) setConfirmReset(false); }}
-      />
     </div>
     </div>
   );
