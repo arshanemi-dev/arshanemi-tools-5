@@ -7,6 +7,7 @@ import { resolveTemplate, resolveTransactionRows } from '../lib/profitLoss/resol
 import { mergeUploadsAcrossSlots } from '../lib/profitLoss/mergeRows.js';
 import { withSkuCosts, unitCostMap } from '../lib/profitLoss/skuCosts.js';
 import { createRowLedger } from '../lib/profitLoss/rowLedger.js';
+import { packRows, unpackRows, withCells } from '../lib/profitLoss/packedRows.js';
 import { canonicalRow } from '../data/platforms/canonical.js';
 import { DEFAULT_HEADERS } from '../data/defaultHeaders.js';
 import { RESERVED_HEADER_IDS } from '../data/templateSchema.js';
@@ -54,9 +55,27 @@ test('active view keeps hidden formula dependencies and matches full totals, cha
 
 test('transactions skip other outputs and match existing transaction calculations', async () => {
   const result = await runCalculationTask('view', { config, rows, skuCosts, options, transactions: true });
-  assert.deepEqual(result.transactionResolved, resolveTransactionRows(config, fullOptions));
+  // Sent back column by column (packedRows.js) — the same values.
+  assert.deepEqual(result.transactionResolved, packRows(resolveTransactionRows(config, fullOptions)));
   assert.deepEqual(result.resolved.tableRows, []);
   assert.deepEqual(result.resolved.companyOptions, ['Shop_A', 'Shop_B']);
+});
+
+test('packed Transactions rows read exactly like the plain ones', () => {
+  const plain = resolveTransactionRows(config, fullOptions);
+  const back = unpackRows(structuredClone(packRows(plain)));
+  assert.equal(back.rows.length, plain.rows.length);
+  assert.equal(back.rowCount, plain.rowCount);
+  plain.rows.forEach((row, i) => {
+    assert.equal(back.rows[i].key, row.key);
+    assert.equal(back.rows[i].company, row.company);
+    for (const h of plain.headers) assert.deepEqual(back.rows[i].cells[h.id], row.cells[h.id]);
+  });
+  // A changed cell laid over a packed row; the rest still read through.
+  const [first] = plain.headers;
+  const changed = withCells(back.rows[0].cells, { [first.id]: { raw: 'x', display: 'x' } });
+  assert.deepEqual(changed[first.id], { raw: 'x', display: 'x' });
+  for (const h of plain.headers.slice(1)) assert.deepEqual(changed[h.id], plain.rows[0].cells[h.id]);
 });
 
 test('all-date export includes inactive overview tabs and complete financial data', async () => {
@@ -64,7 +83,7 @@ test('all-date export includes inactive overview tabs and complete financial dat
   const result = await runCalculationTask('export', { config, rows, skuCosts, options: exportOptions, transactions: true });
   const expectedOptions = { ...fullOptions, dateFrom: null, dateTo: null };
   assert.deepEqual(result.full, resolveTemplate(config, expectedOptions));
-  assert.deepEqual(result.fullTransactions, resolveTransactionRows(config, expectedOptions));
+  assert.deepEqual(result.fullTransactions, packRows(resolveTransactionRows(config, expectedOptions)));
   assert.deepEqual(Object.keys(result.full.overviews), ['overview', 'otherOverview']);
 });
 

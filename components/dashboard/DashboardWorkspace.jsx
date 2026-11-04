@@ -36,6 +36,7 @@ import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
 import { formulaUsages } from '@/lib/profitLoss/headerUsage';
 import { applyReviewOverrides, patchTransactionRows, reviewOverrideOf, withReviewOverride } from '@/lib/profitLoss/reviewOverrides';
+import { unpackRows } from '@/lib/profitLoss/packedRows';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import { requireLogin } from '@/lib/authGate';
@@ -499,7 +500,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     activeTabId, parts: viewParts, transactions: showTransactions,
   }), [config, canonicalRows, reviewedRows, reviewInFormulas, skuCosts, viewOptions, activeTabId, viewParts, showTransactions]);
   const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
-  const { resolved, transactionResolved } = computed.value;
+  const { resolved } = computed.value;
+  // The worker sends Transactions back column by column (packedRows.js).
+  const transactionResolved = useMemo(() => unpackRows(computed.value.transactionResolved), [computed.value]);
   // The Transactions rows with this session's Review picks swapped in.
   const transactionRows = useMemo(() => patchTransactionRows(transactionResolved.rows, reviewOverrides, {
     orderId: RESERVED_HEADER_IDS.orderId,
@@ -915,7 +918,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     try {
       const { full, fullTransactions } = await resolveEverything();
       const tab = showTransactions
-        ? buildTransactionsView(fullTransactions)
+        ? buildTransactionsView(unpackRows(fullTransactions))
         : buildTabView(showOverview ? activeOverviewTab : activeTab, showOverview, full);
       if (!tab.table.columns.length) { addToast('Nothing to export on this tab', 'error'); return; }
       await downloadTab(kind, { label: config.marketplace?.name || 'Dashboard', tab });
