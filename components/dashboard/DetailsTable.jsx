@@ -54,9 +54,9 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // once it is Yes. `patch` = { review: 'yes' | 'no' } or { reviewReason }.
 // Elsewhere they show as text (a SKU's Review reads "3/10 Yes").
 //
-// Row selection (the checkboxes) is controlled from DashboardWorkspace, not
-// local state — the header bar's Delete button acts on `selectedKeys`
-// regardless of which tab/table it was checked in.
+// Row selection (the checkboxes) is controlled by the caller, not local
+// state, and only shown when it passes `selectedKeys` — the dashboard
+// doesn't (saved rows are deleted in Position Settings › Orders).
 //
 // `dirtyKeys` (a Set of row keys — SKUs with a just-typed cost) tints a row
 // light blue — "edited, not saved yet" — and `dirtyCostCells` (a Set of
@@ -120,6 +120,7 @@ export default function DetailsTable({
   const [page, setPage] = useState(1);
   const fillRef = useFillHeight(fillHeight);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const selectable = !!selectedKeys;
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
@@ -229,9 +230,11 @@ export default function DetailsTable({
               whatever height the header labels wrap to. */}
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-divider">
-              <th className="w-10 bg-[#1565C0] px-1 py-1">
-                <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
-              </th>
+              {selectable && (
+                <th className="w-10 bg-[#1565C0] px-1 py-1">
+                  <input type="checkbox" checked={allChecked} onChange={toggleAll} className="accent-[var(--color-action)]" aria-label="Select all rows" />
+                </th>
+              )}
               {displayCols.map((col) => {
                 if (col.kind === 'cost') {
                   return (
@@ -265,7 +268,7 @@ export default function DetailsTable({
             </tr>
             {view.length > 0 && (
               <tr>
-                <td className={TOTAL_CELL} />
+                {selectable && <td className={TOTAL_CELL} />}
                 {displayCols.map((col, i) => {
                   if (col.kind === 'cost') return <td key="__cost__" className={TOTAL_CELL} />;
                   if (i === 0) return <td key={col.key} className={`${TOTAL_CELL} text-center uppercase tracking-wide`}>Total</td>;
@@ -283,7 +286,7 @@ export default function DetailsTable({
           <tbody>
             {view.length === 0 && (
               <tr>
-                <td colSpan={displayCols.length + 1} className="px-4 py-10 text-center text-sm text-muted">
+                <td colSpan={displayCols.length + (selectable ? 1 : 0)} className="px-4 py-10 text-center text-sm text-muted">
                   {rows.length === 0 ? 'No data yet — upload a sheet to see rows here.' : 'No rows match the current filters.'}
                 </td>
               </tr>
@@ -296,9 +299,11 @@ export default function DetailsTable({
                 className="transition-colors"
                 title={dirty.has(r.key) ? 'Edited — not saved yet' : undefined}
               >
-                <td className="px-3 py-2.5">
-                  <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
-                </td>
+                {selectable && (
+                  <td className="px-3 py-2.5">
+                    <input type="checkbox" checked={selected.has(r.key)} onChange={() => toggleOne(r.key)} className="accent-[var(--color-action)]" aria-label={`Select ${r.key}`} />
+                  </td>
+                )}
                 {displayCols.map((col) => {
                   if (col.kind === 'cost') {
                     return (

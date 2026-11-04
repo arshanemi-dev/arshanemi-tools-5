@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Loader2, Save, Undo2 } from 'lucide-react';
+import { Building2, Columns3, LayoutGrid, Loader2, PanelLeft, ReceiptText, Save, Undo2 } from 'lucide-react';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import TemplatesLoadError from '@/components/dashboard/TemplatesLoadError';
@@ -16,6 +16,18 @@ import { partItems, partList } from '@/lib/profitLoss/tabParts';
 import TabContentsPanel from './TabContentsPanel';
 import TickOrderList, { listWords } from './TickOrderList';
 import AccountNamesSection from './AccountNamesSection';
+import OrdersSection from './OrdersSection';
+import PositionSidebar from './PositionSidebar';
+
+// The left rail's shortcuts (PositionSidebar), in order — the main column
+// shows only the one picked, like Template Settings. `tabs`: lists every tab
+// under it, each a shortcut to that tab's contents.
+const SECTIONS = [
+  { key: 'accounts', label: 'Account Names', icon: Building2 },
+  { key: 'marketsTabs', label: 'Market Places & Tabs', icon: LayoutGrid },
+  { key: 'tabContents', label: 'Tab Contents', icon: Columns3, tabs: true },
+  { key: 'orders', label: 'Orders', icon: ReceiptText },
+];
 
 const MARKET_WORDS = listWords('market place', 'market places', 'Market place order', 'Take off the list');
 const TAB_WORDS = listWords('tab', 'tabs', 'Tab strip order', 'Take off the tab strip');
@@ -41,6 +53,11 @@ const PARTS = ['titleCards', 'graphs'];
 // `?m=` = the marketplace the dashboard had open. Every header is listed
 // whichever it is (effectiveConfig) — it only picks the key column of a tab
 // with no headers of its own, so there's no picker for it here.
+// A left rail (PositionSidebar) has a shortcut per section — Account Names,
+// Market Places & Tabs, Tab Contents (each tab listed under it) and Orders
+// (the saved rows, deleted from there — OrdersSection) — and only the one
+// picked is shown, like Template Settings. Drafts live here, so switching
+// sections keeps every unsaved change.
 function Card({ title, hint, right = null, children }) {
   return (
     <section className="flex min-w-0 flex-col gap-3 rounded-2xl border border-divider bg-background p-4">
@@ -100,6 +117,8 @@ export default function PositionSettingsPage() {
   const [draftCols, setDraftCols] = useState({}); // { [tabId]: { ticked: [ids], order: [ids] } }
   const [selectedId, setSelectedId] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [openSection, setOpenSection] = useState(SECTIONS[0].key);
+  const [navOpen, setNavOpen] = useState(false);
   const current = useMemo(() => withDrafts(layout, draftTop, draftTabs), [layout, draftTop, draftTabs]);
 
   const markets = useMemo(() => marketplaceItems(templates), [templates]);
@@ -241,12 +260,32 @@ export default function PositionSettingsPage() {
   if (!templates.length) return <Centered><p className="text-sm text-muted">No marketplaces yet — there is nothing to arrange.</p></Centered>;
 
   const activeProblem = activeTab ? tabProblem(activeTab.id) : '';
+  const sections = SECTIONS.map((s) => ({
+    ...s,
+    dirty: (s.key === 'marketsTabs' && topDirty) || (s.key === 'tabContents' && dirtyTabIds.length > 0),
+  }));
+  const openTab = (key) => { setOpenSection(key); setNavOpen(false); };
 
   return (
-    <div className="flex w-full flex-col gap-2 px-4 py-6 sm:px-6 lg:px-10">
+    <div className="flex h-full min-h-0">
+      <PositionSidebar
+        sections={sections}
+        openKey={openSection}
+        onOpen={openTab}
+        tabs={pickerTabs}
+        selectedTabId={activeId}
+        onSelectTab={setSelectedId}
+        dirtyTabIds={new Set(dirtyTabIds)}
+        mobileOpen={navOpen}
+        onCloseMobile={() => setNavOpen(false)}
+      />
+    <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
       <header className="flex flex-wrap items-start gap-3">
+        <button type="button" onClick={() => setNavOpen(true)} className="rounded-lg border border-divider p-1.5 text-muted hover:bg-card-hover lg:hidden" aria-label="Open sections">
+          <PanelLeft size={16} />
+        </button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-foreground">Position Settings</h1>
+          <h1 className="text-xl font-bold text-foreground">{SECTIONS.find((s) => s.key === openSection)?.label || 'Position Settings'}</h1>
           {/* <p className="text-[13px] text-muted">Arrange your own dashboard — its market places, the tab strip, and on each tab its title cards, graphs and columns. Only you see it.</p> */}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -255,7 +294,8 @@ export default function PositionSettingsPage() {
           <IconButton icon={Save} label="Save all" title={allProblem || 'Save every change on this page'} tone="action" onClick={() => commit({ top: topDirty, tabIds: dirtyTabIds })} disabled={savingLayout || !dirty || !!allProblem} />
         </div>
       </header>
-<AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} />
+      {openSection === 'accounts' && <AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} />}
+      {openSection === 'marketsTabs' && (
       <Card
         title="Market Places & Tabs"
         right={<ScopeActions what="the market places and tabs" dirty={topDirty} problem={topProblem} saving={savingLayout} onReset={resetTop} onSave={() => commit({ top: true })} />}
@@ -268,9 +308,9 @@ export default function PositionSettingsPage() {
           <TickOrderList items={strip} section={stripSection} onChange={setStrip} groups={overviews.length ? STRIP_GROUPS : null} title="Tabs" words={TAB_WORDS} />
         </SubPart>
       </Card>
+      )}
 
-      
-
+      {openSection === 'tabContents' && (
       <Card
         title="Select Tabs and arrange Title Cards and Headers (Tabs Wise)"
         hint="Pick a tab, then put its title cards, graphs and columns in the order you want."
@@ -292,6 +332,9 @@ export default function PositionSettingsPage() {
           columns={columns}
         />
       </Card>
+      )}
+
+      {openSection === 'orders' && <OrdersSection />}
 
       <ConfirmDialog
         open={confirmReset}
@@ -303,6 +346,7 @@ export default function PositionSettingsPage() {
         onConfirm={async () => { if (await resetLayout()) clearDrafts(); setConfirmReset(false); }}
         onCancel={() => { if (!savingLayout) setConfirmReset(false); }}
       />
+    </div>
     </div>
   );
 }

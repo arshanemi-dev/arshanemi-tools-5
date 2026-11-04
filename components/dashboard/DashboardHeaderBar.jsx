@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSpreadsheet, FileText, RotateCcw, Settings, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, FileText, RotateCcw, Settings } from 'lucide-react';
 import ValueFilter from './ValueFilter';
 import DateRangeFilter from './DateRangeFilter';
 import AdsCostControl from './AdsCostControl';
@@ -8,9 +8,9 @@ import IconButton from './IconButton';
 
 // The dashboard's filters and actions, as one inline group — DashboardToolbar
 // shows it at the end of its row, after the Market Place / upload controls
-// (on every tab): the Account Names filter, Date, Excel, Ads, PDF, then
-// Delete (selected rows). The table's page limit + Prev/Next sit in its own
-// footer.
+// (on every tab): the Account Names filter, Date, Excel, Ads and PDF. Saved
+// rows are deleted in Position Settings › Orders, not here. The table's page
+// limit + Prev/Next sit in its own footer.
 //
 // No Apply button — every change here debounces into effect on its own (see
 // DashboardWorkspace's pending -> applied effect); `updating` shows a brief
@@ -34,8 +34,6 @@ export default function DashboardHeaderBar({
   updating,
   hasData,
   actionsDisabled = false,
-  selectedCount = 0,
-  onDeleteClick,
   onExportExcel,
   onExportPdf,
 }) {
@@ -49,18 +47,6 @@ export default function DashboardHeaderBar({
       <AdsCostControl value={ads} onChange={onAdsChange} />
       <IconButton icon={FileText} label="PDF" title="Download this tab to PDF (only the columns shown)" onClick={onExportPdf} disabled={!hasData || actionsDisabled} />
       {updating && <span className="animate-pulse text-xs font-medium text-muted">Updating…</span>}
-
-      <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
-
-      <IconButton
-        icon={Trash2}
-        label="Delete"
-        title={selectedCount ? `Delete ${selectedCount} selected row${selectedCount === 1 ? '' : 's'}` : 'Select rows in the table to delete them'}
-        tone="outline"
-        badge={selectedCount || null}
-        disabled={!selectedCount || actionsDisabled}
-        onClick={onDeleteClick}
-      />
     </div>
   );
 }

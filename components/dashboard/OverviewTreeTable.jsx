@@ -61,6 +61,7 @@ export default function OverviewTreeTable({
   const [childLimits, setChildLimits] = useState({});
   const scrollRef = useRef(null);
   const fillRef = useFillHeight(fillHeight);
+  const selectable = !!selectedKeys; // no checkboxes unless the caller selects (the dashboard doesn't)
   const selected = selectedKeys || new Set();
   const dirty = dirtyKeys || new Set();
   const hl = usePreviewHighlight();
@@ -154,7 +155,7 @@ export default function OverviewTreeTable({
       fill={onCostFill ? { col: field, sku, start: startFill } : null}
     />
   );
-  const colSpan = cols.length + (showCost ? 3 : 2); // checkbox + hierarchy (+ cost) + headers
+  const colSpan = cols.length + (showCost ? 2 : 1) + (selectable ? 1 : 0); // (checkbox +) hierarchy (+ cost) + headers
 
   // A sort or filter the user picks is a new order — the held one goes.
   const resetPaging = () => { order.release(); setPage(1); };
@@ -223,16 +224,18 @@ export default function OverviewTreeTable({
               whatever height the header labels wrap to. */}
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-divider">
-              <th className="w-10 bg-[#1565C0] px-1 py-1">
-                <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
-              </th>
+              {selectable && (
+                <th className="w-10 bg-[#1565C0] px-1 py-1">
+                  <input type="checkbox" checked={allChecked} onChange={() => onToggleAll(pageNodes.map((n) => n.key))} className="accent-[var(--color-action)]" aria-label="Select all rows on this page" />
+                </th>
+              )}
               {headCell(treeCol, 'sticky left-0 z-20')}
               {showCost && <th className="bg-[#1565C0] px-1 py-1 text-center font-medium text-white whitespace-nowrap">Cost</th>}
               {cols.map((c) => headCell(c))}
             </tr>
             {view.length > 0 && (
               <tr>
-                <td className={TOTAL_CELL} />
+                {selectable && <td className={TOTAL_CELL} />}
                 <td className={`${TOTAL_CELL} sticky left-0 z-20 text-left uppercase tracking-wide`}>Total</td>
                 {showCost && <td className={TOTAL_CELL} />}
                 {cols.map((c) => {
@@ -260,8 +263,8 @@ export default function OverviewTreeTable({
                 const st = levelStyle(item.depth);
                 return (
                   <tr key={`more:${item.parentKey}`} className="border-t border-divider">
-                    <td />
-                    <td colSpan={colSpan - 1} className="p-0">
+                    {selectable && <td />}
+                    <td colSpan={colSpan - (selectable ? 1 : 0)} className="p-0">
                       <button
                         type="button"
                         onClick={() => setChildLimits((prev) => ({ ...prev, [item.parentKey]: item.limit + CHILD_PAGE }))}
@@ -293,17 +296,19 @@ export default function OverviewTreeTable({
                   className="transition-colors"
                   title={isDirty ? 'Edited — not saved yet' : undefined}
                 >
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={inherited || selected.has(n.key)}
-                      disabled={inherited}
-                      onChange={() => onToggleRow(n.key)}
-                      title={inherited ? 'Included — its parent row is selected' : undefined}
-                      className="accent-[var(--color-action)] disabled:opacity-50"
-                      aria-label={`Select ${n.value}`}
-                    />
-                  </td>
+                  {selectable && (
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={inherited || selected.has(n.key)}
+                        disabled={inherited}
+                        onChange={() => onToggleRow(n.key)}
+                        title={inherited ? 'Included — its parent row is selected' : undefined}
+                        className="accent-[var(--color-action)] disabled:opacity-50"
+                        aria-label={`Select ${n.value}`}
+                      />
+                    </td>
+                  )}
                   <td className="sticky left-0 z-[1] bg-inherit p-0">
                     <div className={`flex items-center gap-1 border-l-4 py-2 ${st.stripe}`}>
                       {hasKids ? (

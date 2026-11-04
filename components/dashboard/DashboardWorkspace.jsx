@@ -11,12 +11,10 @@ import { rowOverrideFor } from '@/lib/sheet/rowOverride';
 import { effectiveConfig } from '@/lib/profitLoss/effectiveConfig';
 import { isShown } from '@/lib/profitLoss/headerGroups';
 import { rangeForPreset, todayISO } from '@/lib/profitLoss/dateRanges';
-import { readHeaderFromRow, transactionKeyFor } from '@/lib/profitLoss/resolveTemplate';
-import { rowPathKeys } from '@/lib/profitLoss/overviewTree';
 import { mergeExtractedData, fillFromExtractedData, snapshotConfig } from '@/lib/profitLoss/extractedDataStore';
 import { createCalculationClient } from '@/lib/profitLoss/calculationClient';
 import { useCalculation } from '@/lib/profitLoss/useCalculation';
-import { buildExtractedRowsPayload, rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
+import { rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
 import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
 import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
@@ -24,7 +22,7 @@ import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
 import { downloadTab } from '@/lib/profitLoss/exportTemplate';
 import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportView';
-import { listCompanies, saveCompany, listExtractedRows, deleteExtractedRows } from '@/lib/profitLoss/apiClient';
+import { listCompanies, saveCompany, listExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { stripSectionOf } from '@/lib/profitLoss/positionDraft';
@@ -40,7 +38,6 @@ import { unpackRows } from '@/lib/profitLoss/packedRows';
 import { DEBUG_TOOLS } from '@/lib/debugTools';
 import { useToast } from '@/components/admin/Toast';
 import { requireLogin } from '@/lib/authGate';
-import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import BillingGateModal from '@/components/billing/BillingGateModal';
 import FreeTierLimitModal from '@/components/billing/FreeTierLimitModal';
 
@@ -330,7 +327,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // already-saved rows — those need saving too, upload or not.
   const [reviewEdited, setReviewEdited] = useState(false);
   const {
-    status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored, forget: forgetStoredRows,
+    status: rowSave, retry: retryRowSave, reset: resetRowSave, markStored: markRowsStored,
   } = useRowSaver({
     enabled: loggedIn && !restoring && !restoreError && !merged.pending && !merged.error && (reviewEdited || uploads.some((u) => u.slotId !== RESTORED_SLOT_ID)),
     rows: reviewedRows,
@@ -776,36 +773,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     document.title = `${activePageName}${DOC_TITLE_SUFFIX}`;
   }, [activePageName]);
 
-  // ── row selection + delete ───────────────────────────────────────────────
-  // Checkboxes in the table (DetailsTable) are controlled from here so the
-  // header bar's Delete button can act on them regardless of which tab they
-  // were checked in. A table row is a group (by SKU on a regular tab, or by
-  // the Overview's fixed header on an Overview tab), not a single uploaded
-  // record — deleting one removes every underlying uploaded row that fell
-  // into that group. Selection resets on tab switch since a key from one
-  // grouping (a SKU) has no meaning in the other (a fixed-header value).
-  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  useEffect(() => {
-    (() => setSelectedKeys(new Set()))();
-  }, [activeTabId]);
-
-  const onToggleRow = useCallback((key) => {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }, []);
-  const onToggleAll = useCallback((keys) => {
-    setSelectedKeys((prev) => {
-      const allIn = keys.every((k) => prev.has(k));
-      const next = new Set(prev);
-      keys.forEach((k) => (allIn ? next.delete(k) : next.add(k)));
-      return next;
-    });
-  }, []);
-
   // Review / Reason (data/fixedHeaders.js) on one Transactions row, kept as
   // an override (see reviewedRows): the row on screen changes at once, and
   // the automatic row save stores that transaction's rows with it. `cells`
@@ -826,58 +793,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     });
     setReviewEdited(true);
   }, [orderIdHeader, reviewHeaders]);
-
-  const onDeleteSelected = useCallback(() => {
-    if (calculating || calculationError || restoring || restoreError) return;
-    const count = selectedKeys.size;
-    if (!count) return;
-    // An Overview row is a hierarchy node (Company → Sku → …) keyed by its
-    // path; a raw row is covered when ANY prefix of its own path is
-    // selected — checking a Company removes every row beneath it.
-    const overviewLevels = activeOverview?.levels || [];
-    const isSelected = showTransactions
-      ? (r) => selectedKeys.has(transactionKeyFor(r, orderIdHeader, transactionIdHeader))
-      : showOverview && overviewLevels.length
-      ? (r) => rowPathKeys(overviewLevels, r, readHeaderFromRow).some((k) => selectedKeys.has(k))
-      : (r) => selectedKeys.has(r.sku);
-    const removedRows = uploads.flatMap((u) => u.rows.filter(isSelected));
-    setUploads((prev) => prev
-      .map((u) => ({ ...u, rows: u.rows.filter((r) => !isSelected(r)) }))
-      .filter((u) => u.rows.length > 0));
-    addToast(`Deleted ${count} row${count === 1 ? '' : 's'}`);
-    setSelectedKeys(new Set());
-    setConfirmDeleteOpen(false);
-
-    // Removing rows from `uploads` only clears the in-browser view — every
-    // one of them may already be mirrored in profit_loss_extracted_rows by
-    // the automatic save (useRowSaver), and load-on-refresh reloads ALL of
-    // it, so without this a "deleted" row just comes right back on the next
-    // visit. Keyed off the same {orderId, transactionId} the save itself
-    // uses (buildExtractedRowsPayload), deduped since a SKU/Overview-group
-    // delete can match many raw rows that share one order. Surfaced as a
-    // toast on failure, since this is a deliberate action the user just
-    // took. The saver is told too (forgetStoredRows): the same rows uploaded
-    // again must be saved again, not taken for still stored.
-    if (loggedIn && orderIdHeader && removedRows.length) {
-      const seen = new Set();
-      const keys = buildExtractedRowsPayload(removedRows, orderIdHeader, transactionIdHeader)
-        .map((r) => ({ orderId: r.orderId, transactionId: r.transactionId }))
-        .filter((k) => {
-          const sig = `${k.orderId}::${k.transactionId ?? ''}`;
-          if (seen.has(sig)) return false;
-          seen.add(sig);
-          return true;
-        });
-      if (keys.length) {
-        forgetStoredRows({ keys });
-        deleteExtractedRows(keys)
-          .then(({ ok }) => {
-            if (!ok) addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error');
-          })
-          .catch(() => addToast('Deleted here, but failed to remove from your saved history — it may come back on refresh', 'error'));
-      }
-    }
-  }, [selectedKeys, showTransactions, showOverview, activeOverview, orderIdHeader, transactionIdHeader, uploads, loggedIn, addToast, forgetStoredRows, calculating, calculationError, restoring, restoreError]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
@@ -1031,8 +946,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
               updating={dirty || calculating || exporting}
               actionsDisabled={busy || restoring || !!restoreError || calculating || !!calculationError || exporting}
               hasData={hasData}
-              selectedCount={selectedKeys.size}
-              onDeleteClick={() => setConfirmDeleteOpen(true)}
               onExportExcel={() => doExport('xlsx')}
               onExportPdf={() => doExport('pdf')}
               onOpenHistory={() => setHistoryOpen(true)}
@@ -1111,9 +1024,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                   columns={transactionHeaders}
                   rows={transactionRows}
                   disableCostColumn
-                  selectedKeys={selectedKeys}
-                  onToggleRow={onToggleRow}
-                  onToggleAll={onToggleAll}
                   totalCount={canonicalRows.length}
                   review={orderIdHeader ? { onChange: onReviewChange, headerId: reviewHeaders.review?.id } : null}
                   fillHeight
@@ -1129,9 +1039,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 onCostFill={onCostFill}
-                selectedKeys={selectedKeys}
-                onToggleRow={onToggleRow}
-                onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
@@ -1147,9 +1054,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 skuCosts={skuCosts}
                 onCostChange={onCostChange}
                 onCostFill={onCostFill}
-                selectedKeys={selectedKeys}
-                onToggleRow={onToggleRow}
-                onToggleAll={onToggleAll}
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
                 totalCount={canonicalRows.length}
@@ -1200,14 +1104,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       <BillingGateModal gate={billingGate} onClose={closeBillingGate} />
       <FreeTierLimitModal limit={freeLimit} onClose={closeFreeLimit} />
 
-      <ConfirmDialog
-        open={confirmDeleteOpen}
-        title={`Delete ${selectedKeys.size} row${selectedKeys.size === 1 ? '' : 's'}?`}
-        description="Removes the underlying uploaded rows from this session's loaded data. This can't be undone."
-        confirmLabel="Delete"
-        onConfirm={onDeleteSelected}
-        onCancel={() => setConfirmDeleteOpen(false)}
-      />
 
     </div>
   );
