@@ -5,7 +5,7 @@ import {
   Check, ChevronDown, ChevronRight, Globe, Loader2, Pencil, Plus, Search, Settings, Store, Trash2, X,
 } from 'lucide-react';
 import {
-  makeFileSlot, makeGraph, makeOverviewTab, makeTab, makeTitleCard,
+  makeFileSlot, makeGraph, makeOverviewTab, makeTitleCard,
 } from '@/data/templateSchema';
 import SearchSelect from '@/components/dashboard/SearchSelect';
 
@@ -46,13 +46,8 @@ const GLOBAL_GROUPS = [
     listKey: 'titleCards', nameField: 'name', addLabel: 'Add Title Card',
     make: (n) => makeTitleCard(`Title Card ${n}`),
   },
-  {
-    key: 'tab', label: 'Tab', anchor: 'section-tab',
-    listKey: 'tabs', nameField: 'name', addLabel: 'Add New Tab',
-    make: (n) => makeTab(`Tab ${n}`, n - 1),
-    orderField: 'order',
-    sortBy: (a, b) => (a.order ?? 0) - (b.order ?? 0),
-  },
+  // Plain too: the Tab section lists, picks, adds and deletes its tabs itself.
+  { key: 'tab', label: 'Tab', anchor: 'section-tab', listKey: 'tabs', plain: true },
   // Global position of every Tab (TabsOrganizerSection) — a plain jump row.
   { key: 'tabsOrganizer', label: 'Tabs Organizer', anchor: 'section-tabs-organizer', listKey: 'tabs', plain: true },
   {

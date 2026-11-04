@@ -288,11 +288,14 @@ export default function PositionSettingsPage() {
           <h1 className="text-xl font-bold text-foreground">{SECTIONS.find((s) => s.key === openSection)?.label || 'Position Settings'}</h1>
           {/* <p className="text-[13px] text-muted">Arrange your own dashboard — its market places, the tab strip, and on each tab its title cards, graphs and columns. Only you see it.</p> */}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {dirty && <span className="text-[12px] font-medium text-link">Unsaved changes</span>}
-          <IconButton icon={Undo2} label="Reset all" title="Put everything back to the template's own arrangement, and save it" tone="outline" onClick={() => setConfirmReset(true)} disabled={savingLayout} />
-          <IconButton icon={Save} label="Save all" title={allProblem || 'Save every change on this page'} tone="action" onClick={() => commit({ top: topDirty, tabIds: dirtyTabIds })} disabled={savingLayout || !dirty || !!allProblem} />
-        </div>
+        {/* Arrangement actions — not on Orders (saved rows, deleted there), which they don't touch. */}
+        {openSection !== 'orders' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {dirty && <span className="text-[12px] font-medium text-link">Unsaved changes</span>}
+            <IconButton icon={Undo2} label="Reset all" title="Put everything back to the template's own arrangement, and save it" tone="outline" onClick={() => setConfirmReset(true)} disabled={savingLayout} />
+            <IconButton icon={Save} label="Save all" title={allProblem || 'Save every change on this page'} tone="action" onClick={() => commit({ top: topDirty, tabIds: dirtyTabIds })} disabled={savingLayout || !dirty || !!allProblem} />
+          </div>
+        )}
       </header>
       {openSection === 'accounts' && <AccountNamesSection marketplaces={templates.map((t) => ({ id: t.id, name: t.marketplaceName }))} />}
       {openSection === 'marketsTabs' && (

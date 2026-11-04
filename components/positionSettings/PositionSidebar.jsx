@@ -41,7 +41,7 @@ function TabList({ tabs, selectedId, active, dirtyTabIds, onPick }) {
   }, [q, tabs]);
 
   return (
-    <div className="border-b border-divider px-2 py-2">
+    <div className="border-b border-divider px-2 py-2 hidden">
       <div className="relative mb-1.5">
         <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-subtle" />
         <input
