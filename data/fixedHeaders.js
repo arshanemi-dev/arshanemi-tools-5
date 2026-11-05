@@ -102,6 +102,11 @@ export const normName = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+
 
 export const isFixedHeader = (h) => !!h?.fixedKey && BY_KEY.has(h.fixedKey);
 
+// The type a built-in header has when it isn't worked out by a formula —
+// what the Edit popup's "Work it out with a formula" switch goes back to.
+// null for any other header.
+export const fixedHeaderType = (h) => BY_KEY.get(h?.fixedKey)?.type ?? null;
+
 // Why this header is locked, for the Edit popup. '' for any other header.
 export function fixedHeaderHint(h) {
   const def = BY_KEY.get(h?.fixedKey);

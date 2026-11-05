@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '@/components/admin/Modal';
 import { AGGREGATE_BUILTIN_NAMES, HEADER_DESCRIPTION_MAX_CHARS, HEADER_DESCRIPTION_MAX_WORDS, capWords, makeHeader, wordCount } from '@/data/templateSchema';
-import { fixedHeaderHint } from '@/data/fixedHeaders';
+import { fixedHeaderHint, fixedHeaderType, isReviewField } from '@/data/fixedHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
@@ -26,6 +26,15 @@ export default function HeaderEditModal({ open, header = null, headers = [], usa
   const reserved = !!form.reserved;
   const fixedHint = fixedHeaderHint(form); // '' unless it's a built-in Account Name / SKU Cost header
   const canSave = form.name.trim().length > 0;
+  // A built-in header (Master SKU, the costs, Account Name) can be worked out
+  // by a formula instead of filled by the dashboard — its name stays locked.
+  // Not Review / Reason: those are picked by hand on the dashboard.
+  const builtInType = fixedHeaderType(form);
+  const canUseFormula = !!builtInType && !isReviewField(form);
+  const usesFormula = form.type === 'formula';
+  const setUsesFormula = (on) => set(on
+    ? { type: 'formula', format: builtInType === 'text' ? 'text' : form.format || 'money' }
+    : { type: builtInType, formula: '', format: builtInType === 'text' ? 'text' : form.format === 'text' ? 'money' : form.format || 'money' });
 
   const others = headers.filter((h) => h.id !== form.id);
   const refNames = [...others.map((h) => h.name), ...AGGREGATE_BUILTIN_NAMES];
@@ -115,6 +124,25 @@ export default function HeaderEditModal({ open, header = null, headers = [], usa
         <TypeToggle value={form.type} disabled={reserved} onChange={setType} />
       </div>
 
+      {canUseFormula && (
+        <label className="flex items-start gap-2 rounded-lg border border-divider bg-card px-3 py-2 text-xs text-foreground">
+          <input
+            type="checkbox"
+            checked={usesFormula}
+            onChange={(e) => setUsesFormula(e.target.checked)}
+            className="mt-0.5 accent-[var(--color-action)]"
+          />
+          <span>
+            <span className="font-medium">Work it out with a formula</span>
+            <span className="block text-[11px] text-subtle">
+              {usesFormula
+                ? 'Its value comes from the formula below — the dashboard no longer gives it an input box.'
+                : 'Off: filled by the dashboard as usual. On: the Formula section opens below.'}
+            </span>
+          </span>
+        </label>
+      )}
+
       <div className="flex flex-wrap items-center gap-4">
         {form.type !== 'date' && (
           <label className="flex items-center gap-1.5 text-xs text-muted">
@@ -161,7 +189,7 @@ export default function HeaderEditModal({ open, header = null, headers = [], usa
         <p className="text-[11px] text-subtle">Required header — every marketplace must map it to a sheet column before it can be published live. Its name and type are locked.</p>
       )}
       {fixedHint && (
-        <p className="text-[11px] text-subtle">Built-in header. {fixedHint} Its name and type are locked.</p>
+        <p className="text-[11px] text-subtle">Built-in header. {usesFormula ? 'Worked out by the formula above.' : fixedHint} {canUseFormula ? 'Its name is locked.' : 'Its name and type are locked.'}</p>
       )}
       {form.source === 'default' && form.primitive && (
         <p className="text-[11px] text-subtle">
