@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { marketplaceColumns, withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
 import { formulaUsages, headerNameProblem, headerUsages, withHeaderUpdate, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
@@ -13,6 +13,7 @@ import HeaderEditModal from './HeaderEditModal';
 import HeaderGroupsRow from './HeaderGroupsRow';
 import { groupIdOf } from '@/lib/profitLoss/headerGroups';
 import ListSearchSort from './ListSearchSort';
+import { downloadHeadersWorkbook } from '@/lib/sheet/headersWorkbook';
 
 // Header — Our Headers (the global config's own headers) and their mapping
 // onto every marketplace's saved sheet headers:
@@ -174,6 +175,25 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     addToast(`${removed} auto-imported header${removed === 1 ? '' : 's'} removed${kept ? ` · ${kept} in use kept as your headers` : ''} — Save New Version to keep this`);
   };
 
+  // Download Excel — every header, documented, a sheet per category
+  // (lib/sheet/headersWorkbook.js). What's on screen, saved or not.
+  const [downloading, setDownloading] = useState(false);
+  const downloadExcel = async () => {
+    setDownloading(true);
+    try {
+      await downloadHeadersWorkbook({
+        config,
+        marketplaces: marketplaces || [],
+        headerGroups: groupsReady ? headerGroups.headerGroups : null,
+        isHidden: groupsReady ? headerGroups.isHidden : () => false,
+      });
+    } catch {
+      addToast('Could not build the headers Excel', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const mpCount = marketplaces?.length ?? 0;
   const saving = !!mappingSaver?.saving;
   const btn = 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium';
@@ -214,6 +234,15 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           {checked.size > 0 && (
             <button type="button" onClick={() => setChecked(new Set())} className="rounded-full px-2 py-1 text-[12px] text-subtle hover:text-foreground">Clear ticks</button>
           )}
+          <button
+            type="button"
+            onClick={downloadExcel}
+            disabled={downloading || !headers.length}
+            title="Download every header as Excel — a sheet per category, with formulas, descriptions, mappings and where each is used"
+            className={`${btn} ml-auto border-divider-light text-foreground hover:bg-card-hover disabled:opacity-40`}
+          >
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />} Download Excel
+          </button>
         </div>
 
         <p className="px-4 text-[11.5px] text-subtle">
