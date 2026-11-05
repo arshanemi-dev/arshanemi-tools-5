@@ -538,10 +538,28 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // A table row's own transactions — opening a "+N more" cell (DetailsTable)
   // shows them under it, one row each, worked out in the worker on demand
   // with the same filters as the table.
-  const loadRowChildren = useCallback(async (groupKey) => {
-    const result = await calculations.run('children', { config, rows: reviewedRows, skuCosts, options: viewOptions, groupKey });
-    return unpackRows(result).rows;
-  }, [calculations, config, reviewedRows, skuCosts, viewOptions]);
+  // A row's own transactions ("+N more" opened). Rows asked for in the same
+  // moment — a whole page opening by itself — go to the worker as ONE
+  // 'childrenMany' job instead of a job per row.
+  const childBatch = useRef(null);
+  const loadRowChildren = useCallback((groupKey) => new Promise((resolve, reject) => {
+    if (!childBatch.current) {
+      const batch = { waiting: new Map() };
+      childBatch.current = batch;
+      queueMicrotask(() => {
+        childBatch.current = null;
+        const groupKeys = [...batch.waiting.keys()];
+        calculations.run('childrenMany', { config, rows: reviewedRows, skuCosts, options: viewOptions, groupKeys }).then(
+          (byKey) => batch.waiting.forEach((ends, key) => ends.forEach((e) => e.resolve(unpackRows(byKey[key]).rows))),
+          (error) => batch.waiting.forEach((ends) => ends.forEach((e) => e.reject(error))),
+        );
+      });
+    }
+    const key = String(groupKey);
+    const ends = childBatch.current.waiting.get(key) || [];
+    ends.push({ resolve, reject });
+    childBatch.current.waiting.set(key, ends);
+  }), [calculations, config, reviewedRows, skuCosts, viewOptions]);
 
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
@@ -816,6 +834,26 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     setReviewEdited(true);
   }, [orderIdHeader, reviewHeaders]);
 
+  // The same for an Overview row — a group of orders (`txns` — its node's
+  // [{ orderId, txnId }], resolveTemplate transactionsOf): a Yes / No picked
+  // there is set on every one of them, and so is a Reason typed there.
+  const onReviewManyChange = useCallback((txns, patch) => {
+    if (!orderIdHeader || !txns?.length) return;
+    setReviewOverrides((prev) => {
+      let next = prev;
+      for (const { orderId, txnId } of txns) {
+        const before = reviewOverrideOf(next, orderId, txnId);
+        next = withReviewOverride(next, orderId, txnId, {
+          // a Reason box only opens on a row that is all Yes
+          review: patch.review ?? before?.review ?? 'yes',
+          reviewReason: patch.reviewReason ?? before?.reviewReason ?? '',
+        });
+      }
+      return next;
+    });
+    setReviewEdited(true);
+  }, [orderIdHeader]);
+
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
   // date-filtered view) by default, or every uploaded row with no date
@@ -1064,6 +1102,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyKeys={dirtySkuKeys}
                 dirtyCostCells={dirtyCostCells}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
+                review={orderIdHeader ? { onChangeMany: onReviewManyChange } : null}
                 fillHeight
               />
             ) : (

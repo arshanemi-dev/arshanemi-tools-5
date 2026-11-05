@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
+import { ReasonInput, ReviewSelect } from './ReviewCells';
 import styles from './DataTable.module.css';
 import TableText from './TableText';
 import TablePager, { DEFAULT_PAGE_SIZE } from './TablePager';
@@ -14,8 +15,9 @@ import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, isRealSku, isTextCostField } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
+import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
@@ -52,6 +54,9 @@ export default function OverviewTreeTable({
   // Every header of the template — what a ratio formula's Total reads
   // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
   headers = null,
+  // { onChangeMany(txns, patch) } makes the Review / Reason columns a Yes /
+  // No pick and a reason box on every node that lists its orders (`txns`).
+  review = null,
 }) {
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
@@ -141,7 +146,9 @@ export default function OverviewTreeTable({
 
   const skuLevels = new Set(levels.map((h, i) => (h.primitive === 'sku' ? i : -1)).filter((i) => i >= 0));
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
-  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, description: h.description || '', type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h) }));
+  const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, description: h.description || '', type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h), reviewField: review && isReviewField(h) ? h.fixedKey : null }));
+  // The node's own Review, which its Reason box opens on.
+  const reviewId = columns.find((h) => h.fixedKey === REVIEW_KEY)?.id ?? null;
   // The standalone Cost column (a SKU's COGS) steps aside when the COGS
   // header's own column is here to type into.
   const showCost = skuLevels.size > 0 && !cols.some((c) => c.costField === 'cogs');
@@ -152,6 +159,7 @@ export default function OverviewTreeTable({
       onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
+      text={isTextCostField(field)}
       fill={onCostFill ? { col: field, sku, start: startFill } : null}
     />
   );
@@ -349,6 +357,19 @@ export default function OverviewTreeTable({
                       return (
                         <td key={c.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
                           {costInput(n.value, c.costField, c.label)}
+                        </td>
+                      );
+                    }
+                    // Review / Reason on a node: set on every order in it
+                    // (DashboardWorkspace onReviewManyChange).
+                    if (c.reviewField && n.txns?.length) {
+                      const isYes = n.cells[reviewId]?.raw === 'Yes';
+                      const what = `${c.label} for ${n.value} (${n.txns.length} order${n.txns.length === 1 ? '' : 's'})`;
+                      return (
+                        <td key={c.key} className="px-3 py-1.5 whitespace-nowrap">
+                          {c.reviewField === REVIEW_KEY
+                            ? <ReviewSelect value={cell.raw} label={what} onChange={(v) => review.onChangeMany(n.txns, { review: v })} />
+                            : <ReasonInput key={`${n.key}:${isYes}`} value={cell.raw} enabled={isYes} label={what} onCommit={(text) => review.onChangeMany(n.txns, { reviewReason: text.trim() })} />}
                         </td>
                       );
                     }

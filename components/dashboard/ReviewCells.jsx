@@ -8,18 +8,22 @@ const COMMIT_MS = 600; // a pause in typing this long hands the reason over
 // confirmation — data/fixedHeaders.js Review + Reason, kept on the order's
 // own row (DashboardWorkspace.onReviewChange) and saved with it.
 
-// Review: Yes / No, No until someone picks Yes.
+// Review: Yes / No, No until someone picks Yes. On a group of orders (an
+// Overview row) whose orders differ — "3/10 Yes" — that is shown as the
+// pick until Yes or No is chosen for all of them.
 export function ReviewSelect({ value, onChange, label }) {
   const yes = value === 'Yes';
+  const mixed = !yes && value != null && value !== '' && value !== 'No';
   return (
     <select
-      value={yes ? 'yes' : 'no'}
-      onChange={(e) => onChange(e.target.value)}
+      value={yes ? 'yes' : mixed ? 'mixed' : 'no'}
+      onChange={(e) => { if (e.target.value !== 'mixed') onChange(e.target.value); }}
       aria-label={label}
       className={`rounded-lg border px-2 py-1 text-sm font-medium focus:border-accent focus:outline-none ${
         yes ? 'border-action/40 bg-action-soft text-action' : 'border-divider bg-background text-muted'
       }`}
     >
+      {mixed && <option value="mixed" disabled>{String(value)}</option>}
       <option value="no">No</option>
       <option value="yes">Yes</option>
     </select>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, PanelLeftOpen } from 'lucide-react';
 import KpiCardRow from './KpiCardRow';
@@ -53,7 +53,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null, review = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -76,28 +76,38 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   const setHeadersSection = (next) => onSetTabSection(tabId, 'headers', { ...next, picks: [...(tab?.headerIds || [])] });
   const headersArrange = useArrangeableList(ov.headers || [], headersSection, setHeadersSection);
 
-  const [expanded, setExpanded] = useState(() => new Set());
+  // Every level opens by default (SKU ID → Size → Account Name all showing),
+  // so what's kept is what the user CLOSED: a node is open unless it's in
+  // `collapsed`. New nodes — a fresh upload, another filter — come in open
+  // too, instead of everything snapping shut on each change.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const allParentKeys = useMemo(() => keysToDepth(ov.tree || [], Infinity), [ov.tree]);
+  const expanded = useMemo(() => new Set(allParentKeys.filter((k) => !collapsed.has(k))), [allParentKeys, collapsed]);
   // `tick` only moves on a sidebar focus — that's what makes the table
   // jump/scroll to the row; a click inside the table just marks it active.
   const [active, setActive] = useState({ key: null, tick: 0 });
   const [navOpen, setNavOpen] = useState(true);
 
   const toggle = useCallback((key) => {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }, []);
-  const expandToDepth = (depth) => setExpanded(new Set(keysToDepth(tree, depth)));
+  // Open levels 1…depth+1, close the rest (the nav's Expand / Collapse all).
+  const expandToDepth = (depth) => {
+    const open = new Set(keysToDepth(tree, depth));
+    setCollapsed(new Set(allParentKeys.filter((k) => !open.has(k))));
+  };
   // Sidebar label click: open the path down to it, open/close the node
   // itself like a dropdown, and bring its row into view in the table.
   const focusFromNav = (key) => {
     const reclick = active.key === key;
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
-      ancestorKeys(key).forEach((k) => next.add(k));
-      if (reclick && next.has(key)) next.delete(key); else next.add(key);
+      ancestorKeys(key).forEach((k) => next.delete(k));
+      if (reclick && !next.has(key)) next.add(key); else next.delete(key);
       return next;
     });
     setActive((a) => ({ key, tick: a.tick + 1 }));
@@ -240,6 +250,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               pagerSlot={pagerSlot}
               fillHeight={fillHeight}
               headers={config.headers}
+              review={review}
             />
           </div>
         </div>

@@ -36,6 +36,17 @@ export const FIXED_HEADERS = [
     hint: 'Filled with the Market Place_Brand picked on the dashboard before an upload.',
   },
   {
+    // Text, not a cost — typed per SKU in its own input box on the
+    // dashboard, and a column of the SKU Cost sheet like the costs.
+    key: 'masterSku',
+    id: 'hdr_master_sku',
+    name: 'Master SKU',
+    type: 'text',
+    skuCost: true,
+    sheetAliases: ['Parent SKU', 'Master SKU Code'],
+    hint: 'Typed per SKU on the dashboard (or the SKU Cost sheet) — the master / parent SKU this SKU belongs to.',
+  },
+  {
     key: 'cogs',
     id: 'hdr_cogs_product_cost',
     name: 'Product Cost',

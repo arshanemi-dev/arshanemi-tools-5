@@ -13,7 +13,7 @@ import useFillHeight from './useFillHeight';
 import useHeldOrder from './useHeldOrder';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, isRealSku, isTextCostField } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
@@ -222,6 +222,7 @@ export default function DetailsTable({
       onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
       dirty={dirtyCells.has(costCellKey(sku, field))}
       label={`${name} for ${sku}`}
+      text={isTextCostField(field)}
       fill={onCostFill ? { col: field, sku, start: startFill } : null}
     />
   );
@@ -242,17 +243,42 @@ export default function DetailsTable({
   // Opened rows: key → { status: 'loading' | 'done' | 'error', rows }.
   const [opened, setOpened] = useState(() => new Map());
   useEffect(() => { (() => setOpened(new Map()))(); }, [rows]);
-  const toggleChildren = (key) => {
-    if (opened.has(key)) {
-      setOpened((cur) => { const next = new Map(cur); next.delete(key); return next; });
-      return;
-    }
+  // Rows the user closed — every other "+N more" row on the page opens by
+  // itself (below), and one closed by hand stays closed.
+  const [closedByUser, setClosedByUser] = useState(() => new Set());
+  const openChildren = (key) => {
     setOpened((cur) => new Map(cur).set(key, { status: 'loading', rows: [] }));
     loadChildren(key).then(
       (kids) => setOpened((cur) => (cur.has(key) ? new Map(cur).set(key, { status: 'done', rows: kids }) : cur)),
       () => setOpened((cur) => (cur.has(key) ? new Map(cur).set(key, { status: 'error', rows: [] }) : cur)),
     );
   };
+  const toggleChildren = (key) => {
+    if (opened.has(key)) {
+      setOpened((cur) => { const next = new Map(cur); next.delete(key); return next; });
+      setClosedByUser((cur) => new Set(cur).add(key));
+      return;
+    }
+    setClosedByUser((cur) => { const next = new Set(cur); next.delete(key); return next; });
+    openChildren(key);
+  };
+  // Open by default: every row on THIS page with a "+N more" cell in a
+  // shown column (just this page — opening thousands of rows at once would
+  // be all work and no view). Rows asked for together load as one job
+  // (DashboardWorkspace loadRowChildren).
+  const autoOpenKeys = loadChildren
+    ? pageRows
+      .filter((r) => !opened.has(r.key) && !closedByUser.has(r.key))
+      .filter((r) => displayCols.some((c) => c.kind === 'header' && !c.costField && !c.reviewField && MORE_RE.test(String(r.cells[c.key]?.display ?? ''))))
+      .map((r) => r.key)
+    : [];
+  const autoOpenSig = autoOpenKeys.join('\u0000');
+  useEffect(() => {
+    if (!autoOpenSig) return;
+    autoOpenSig.split('\u0000').forEach(openChildren);
+    // openChildren only reads loadChildren, which autoOpenSig already follows
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSig]);
   const colSpan = displayCols.length + (selectable ? 1 : 0);
 
   // "Select all" scopes to the current page, like Delete already scopes to

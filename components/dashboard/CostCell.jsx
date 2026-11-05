@@ -33,7 +33,9 @@ const sameCost = (text, value) => (isBlank(text) ? !Number.isFinite(value) : Num
 // the box's corner (shown on hover / focus) to drag up or down and copy this
 // box's value into the boxes passed over — see useCostFill.js, which also
 // marks the range being dragged over (`data-fill-on`, tinted here).
-export default function CostCell({ value, onCommit, label, dirty = false, fill = null }) {
+// `text` = a text field (the Master SKU): any text is taken as typed, and
+// the box is wider.
+export default function CostCell({ value, onCommit, label, dirty = false, fill = null, text: isText = false }) {
   const [text, setText] = useState(null); // what's being typed; null = showing `value`
   const timer = useRef(null);
   const waiting = useRef(null); // typed text not handed over yet
@@ -60,9 +62,10 @@ export default function CostCell({ value, onCommit, label, dirty = false, fill =
     timer.current = setTimeout(flush, COMMIT_MS);
   };
 
-  const saved = Number.isFinite(value) ? String(value) : '';
-  const bad = text != null && !isBlank(text) && !isNumber(text);
-  const unsaved = !bad && (dirty || (text != null && !sameCost(text, value)));
+  const saved = isText ? (typeof value === 'string' ? value : '') : Number.isFinite(value) ? String(value) : '';
+  const bad = !isText && text != null && !isBlank(text) && !isNumber(text);
+  const same = (t) => (isText ? t.trim() === saved : sameCost(t, value));
+  const unsaved = !bad && (dirty || (text != null && !same(text)));
 
   const fillable = !!(fill && onCommit);
   // Hand over what's typed first, so the grabbed box is saved with the same
@@ -82,7 +85,7 @@ export default function CostCell({ value, onCommit, label, dirty = false, fill =
       <span className="relative inline-flex">
         <input
           type="text"
-          inputMode="decimal"
+          inputMode={isText ? 'text' : 'decimal'}
           autoComplete="off"
           value={text ?? saved}
           readOnly={!onCommit}
@@ -92,8 +95,8 @@ export default function CostCell({ value, onCommit, label, dirty = false, fill =
           placeholder="—"
           aria-label={label}
           aria-invalid={bad || undefined}
-          title={bad ? 'Not a number — nothing is changed' : unsaved ? 'Edited — not saved yet' : 'Default price for this SKU — used for orders uploaded from now on'}
-          className={`w-24 rounded-lg border px-2 py-1 text-sm tabular-nums focus:outline-none group-data-[fill-on]/fill:border-dashed group-data-[fill-on]/fill:border-action group-data-[fill-on]/fill:bg-action-soft ${
+          title={bad ? 'Not a number — nothing is changed' : unsaved ? 'Edited — not saved yet' : isText ? 'Master SKU for this SKU' : 'Default price for this SKU — used for orders uploaded from now on'}
+          className={`${isText ? 'w-40' : 'w-24 tabular-nums'} rounded-lg border px-2 py-1 text-sm focus:outline-none group-data-[fill-on]/fill:border-dashed group-data-[fill-on]/fill:border-action group-data-[fill-on]/fill:bg-action-soft ${
             bad ? 'border-neg bg-background' : unsaved ? 'border-link bg-link/10' : 'border-divider bg-background focus:border-accent'
           }`}
         />
