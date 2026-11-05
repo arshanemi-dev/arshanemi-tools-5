@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
 import { ReasonInput, ReviewSelect } from './ReviewCells';
@@ -54,6 +55,13 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // once it is Yes. `patch` = { review: 'yes' | 'no' } or { reviewReason }.
 // Elsewhere they show as text (a SKU's Review reads "3/10 Yes").
 //
+// `loadChildren(rowKey)` → a Promise of that row's own transactions (rows
+// with the same cells). A row stands for many orders, so a column whose
+// orders differ shows "first +N more"; clicking such a cell opens the row
+// like a hierarchy — its transactions listed under it, one each, every
+// column at its own value — and clicking again closes it. Opened rows close
+// when the table's rows are worked out again (a filter, a cost, an upload).
+//
 // Row selection (the checkboxes) is controlled by the caller, not local
 // state, and only shown when it passes `selectedKeys` — the dashboard
 // doesn't (saved rows are deleted in Position Settings › Orders).
@@ -77,10 +85,62 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // order until the user sorts, filters, or presses "Sort rows again" — which
 // shows once the order is out of date.
 
+// "first value +N more" — a column whose orders differ in this row.
+const MORE_RE = /\s\+\d+ more$/;
+// How many of an opened row's transactions are listed under it at most.
+const CHILD_LIMIT = 200;
+
+// One opened row's transactions, under it: indented, tinted, read-only.
+function ChildRows({ state, cols, selectable, colSpan }) {
+  if (state.status !== 'done') {
+    return (
+      <tr data-child="true">
+        <td colSpan={colSpan} className="px-3 py-2 text-[12px] text-muted">
+          {state.status === 'loading'
+            ? <span className="inline-flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Opening…</span>
+            : <span className="text-neg">Could not open this row — try again.</span>}
+        </td>
+      </tr>
+    );
+  }
+  const shown = state.rows.slice(0, CHILD_LIMIT);
+  return (
+    <>
+      {shown.map((child) => (
+        <tr key={child.key} data-child="true" className="text-[12.5px]">
+          {selectable && <td aria-hidden="true" />}
+          {cols.map((col, i) => {
+            if (col.kind === 'cost') return <td key="__cost__" />;
+            const cell = child.cells[col.key] || {};
+            const neg = col.signed && Number(cell.raw) < 0;
+            return (
+              <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${neg ? 'text-neg' : 'text-foreground'} ${i === 0 ? 'border-l-4 border-l-link/50 pl-5' : ''}`}>
+                <TableText>{cell.display ?? ''}</TableText>
+              </td>
+            );
+          })}
+        </tr>
+      ))}
+      {state.rows.length > CHILD_LIMIT && (
+        <tr data-child="true">
+          <td colSpan={colSpan} className="px-3 py-1.5 text-[12px] text-muted">
+            Showing {CHILD_LIMIT} of {state.rows.length} — the Transactions page lists every one.
+          </td>
+        </tr>
+      )}
+      {!state.rows.length && (
+        <tr data-child="true">
+          <td colSpan={colSpan} className="px-3 py-1.5 text-[12px] text-muted">No orders to show for this row.</td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 export default function DetailsTable({
   columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
-  pagerSlot = null, fillHeight = false, review = null,
+  pagerSlot = null, fillHeight = false, review = null, loadChildren = null,
   // Every header of the template — what a ratio formula's Total reads
   // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
   headers = null,
@@ -178,6 +238,22 @@ export default function DetailsTable({
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
   const pageRows = view.slice(pageStart, pageStart + pageSize);
+
+  // Opened rows: key → { status: 'loading' | 'done' | 'error', rows }.
+  const [opened, setOpened] = useState(() => new Map());
+  useEffect(() => { (() => setOpened(new Map()))(); }, [rows]);
+  const toggleChildren = (key) => {
+    if (opened.has(key)) {
+      setOpened((cur) => { const next = new Map(cur); next.delete(key); return next; });
+      return;
+    }
+    setOpened((cur) => new Map(cur).set(key, { status: 'loading', rows: [] }));
+    loadChildren(key).then(
+      (kids) => setOpened((cur) => (cur.has(key) ? new Map(cur).set(key, { status: 'done', rows: kids }) : cur)),
+      () => setOpened((cur) => (cur.has(key) ? new Map(cur).set(key, { status: 'error', rows: [] }) : cur)),
+    );
+  };
+  const colSpan = displayCols.length + (selectable ? 1 : 0);
 
   // "Select all" scopes to the current page, like Delete already scopes to
   // whatever's selected — selecting hundreds of off-screen rows in one click
@@ -292,8 +368,8 @@ export default function DetailsTable({
               </tr>
             )}
             {pageRows.map((r) => (
+              <Fragment key={r.key}>
               <tr
-                key={r.key}
                 data-selected={selected.has(r.key)}
                 data-dirty={dirty.has(r.key)}
                 className="transition-colors"
@@ -331,6 +407,7 @@ export default function DetailsTable({
                     );
                   }
                   const neg = col.signed && Number(cell.raw) < 0;
+                  const many = !!loadChildren && MORE_RE.test(String(cell.display ?? ''));
                   return (
                     <td
                       key={col.key}
@@ -342,11 +419,26 @@ export default function DetailsTable({
                           : 'text-foreground'
                       }`}
                     >
-                      <TableText>{cell.display ?? ''}</TableText>
+                      {many ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleChildren(r.key)}
+                          aria-expanded={opened.has(r.key)}
+                          title={opened.has(r.key) ? 'Close this row' : 'Open this row — every order in it, one row each'}
+                          className="inline-flex items-center gap-1 rounded px-1 text-link hover:bg-link/10"
+                        >
+                          {opened.has(r.key) ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
+                          <TableText>{cell.display}</TableText>
+                        </button>
+                      ) : <TableText>{cell.display ?? ''}</TableText>}
                     </td>
                   );
                 })}
               </tr>
+              {opened.has(r.key) && (
+                <ChildRows state={opened.get(r.key)} cols={displayCols} selectable={selectable} colSpan={colSpan} />
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -535,6 +535,14 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     transactions: !!orderIdHeader,
   }), [calculations, config, reviewedRows, skuCosts, viewOptions, orderIdHeader]);
 
+  // A table row's own transactions — opening a "+N more" cell (DetailsTable)
+  // shows them under it, one row each, worked out in the worker on demand
+  // with the same filters as the table.
+  const loadRowChildren = useCallback(async (groupKey) => {
+    const result = await calculations.run('children', { config, rows: reviewedRows, skuCosts, options: viewOptions, groupKey });
+    return unpackRows(result).rows;
+  }, [calculations, config, reviewedRows, skuCosts, viewOptions]);
+
   // Every mapped (non-computed) header's per-SKU value the FULL dataset
   // currently has — persisted (debounced, merge-only-where-non-empty; see
   // extractedDataStore.js) so a header this session's upload doesn't happen
@@ -1074,6 +1082,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myDetailsInline={false}
                 allHeaders
                 fillHeight
+                loadChildren={loadRowChildren}
               />
             )}
           </div>

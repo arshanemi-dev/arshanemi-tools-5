@@ -52,6 +52,13 @@
   background-color: var(--color-card-hover);
 }
 
+/* An opened row's transactions (DetailsTable ChildRows) — a light blue tint
+   under their row, whatever stripe they land on. */
+.table > tbody > tr[data-child='true'],
+.table > tbody > tr[data-child='true']:hover {
+  background-color: color-mix(in srgb, var(--color-link) 6%, var(--color-background));
+}
+
 .table > tbody > tr[data-active='true'],
 .table > tbody > tr[data-dirty='true'] {
   background-color: color-mix(in srgb, var(--color-link) 12%, var(--color-background));

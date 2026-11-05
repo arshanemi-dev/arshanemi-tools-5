@@ -44,7 +44,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // `myDetailsInline={false}` means no slot = no My Details. Template
 // Settings' preview leaves both out: its button sits above the table. The
 // pager stays in the table's footer (no page passes `pagerSlot` now).
-export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, myDetailsInline = true, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null }) {
+export default function TabView({ config, tab, resolved, myColumns, onMyColumnsChange, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, totalCount = null, viewPillsSlot = null, myDetailsInline = true, pagerSlot = null, allHeaders = false, fillHeight = false, cardsSlot = null, loadChildren = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -160,6 +160,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
             pagerSlot={pagerSlot}
             fillHeight={fillHeight}
             headers={config.headers}
+            loadChildren={loadChildren}
           />
         </>
       )}
