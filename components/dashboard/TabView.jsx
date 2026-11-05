@@ -7,6 +7,7 @@ import DetailsViewPills from './DetailsViewPills';
 import DetailsTable from './DetailsTable';
 import HiddenItemsChip from './HiddenItemsChip';
 import { emptySection } from '@/lib/profitLoss/layoutSections';
+import { isSkuHeader } from '@/lib/profitLoss/skuCosts';
 import { myDetailColumns, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { useArrangeableList } from '@/lib/profitLoss/useArrangeableList';
 import { partItems, partLayout } from '@/lib/profitLoss/tabParts';
@@ -80,7 +81,8 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
   // Costs are typed per SKU, so only into a table whose rows are SKUs — the
   // grouping unless the marketplace names another header to group by.
   const groupBy = (config.headers || []).find((h) => h.id === config.marketplace?.groupByHeaderId);
-  const rowsAreSkus = !groupBy || groupBy.primitive === 'sku';
+  // Sku Name, or a formula copying it ("SKU ID" = [Sku Name]) — rows are SKUs either way.
+  const rowsAreSkus = !groupBy || isSkuHeader(groupBy, config.headers || []);
 
   const tabHeaderDefs = firstHeaderDef ? [firstHeaderDef, ...headersArrange.visible] : headersArrange.visible;
 

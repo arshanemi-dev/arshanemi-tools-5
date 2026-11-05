@@ -15,7 +15,7 @@ import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku, isTextCostField } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, isRealSku, isSkuHeader, isTextCostField } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
@@ -144,7 +144,8 @@ export default function OverviewTreeTable({
   };
   walk(pageNodes, null);
 
-  const skuLevels = new Set(levels.map((h, i) => (h.primitive === 'sku' ? i : -1)).filter((i) => i >= 0));
+  // A level whose value IS the SKU — Sku Name, or a formula copying it ("SKU ID").
+  const skuLevels = new Set(levels.map((h, i) => (isSkuHeader(h, headers || []) ? i : -1)).filter((i) => i >= 0));
   const treeCol = { key: TREE_COL, id: TREE_COL, label: levels.map((h) => h.name).join(' › ') || 'Hierarchy', type: 'text' };
   const cols = columns.map((h) => ({ id: h.id, key: h.id, label: h.name, description: h.description || '', type: h.format === 'text' ? 'text' : 'num', numeric: isNumberHeader(h), signed: !!h.signed, costField: costFieldOf(h), reviewField: review && isReviewField(h) ? h.fixedKey : null }));
   // The node's own Review, which its Reason box opens on.
