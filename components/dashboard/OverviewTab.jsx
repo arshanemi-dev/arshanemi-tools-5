@@ -250,6 +250,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               pagerSlot={pagerSlot}
               fillHeight={fillHeight}
               headers={config.headers}
+              totalRules={tab?.totals || null}
               review={review}
             />
           </div>

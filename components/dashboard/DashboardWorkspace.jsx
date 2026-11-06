@@ -28,7 +28,7 @@ import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
 import { stripSectionOf } from '@/lib/profitLoss/positionDraft';
 import { partShownIds } from '@/lib/profitLoss/tabParts';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
-import { normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { costKey, normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
@@ -785,7 +785,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   }, [addToast, applyCostSheet, calculations]);
 
   const onDownloadSkuTemplate = useCallback(async () => {
-    try { await downloadSkuCostTemplate(canonicalRows.map((r) => r.sku), skuCosts); }
+    // Every SKU (all accounts) plus every SKU + Account Name the uploads have.
+    try { await downloadSkuCostTemplate(canonicalRows.flatMap((r) => (r.company ? [r.sku, costKey(r.sku, r.company)] : [r.sku])), skuCosts); }
     catch { addToast('Could not download the SKU cost template', 'error'); }
   }, [canonicalRows, skuCosts, addToast]);
 

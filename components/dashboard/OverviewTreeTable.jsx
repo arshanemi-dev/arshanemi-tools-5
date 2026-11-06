@@ -15,9 +15,9 @@ import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku, isSkuHeader, isTextCostField } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
-import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
+import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
@@ -54,6 +54,8 @@ export default function OverviewTreeTable({
   // Every header of the template — what a ratio formula's Total reads
   // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
   headers = null,
+  // The Overview tab's own Total-row rules (tableTotals.js).
+  totalRules = null,
   // { onChangeMany(txns, patch) } makes the Review / Reason columns a Yes /
   // No pick and a reason box on every node that lists its orders (`txns`).
   review = null,
@@ -89,7 +91,7 @@ export default function OverviewTreeTable({
   const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped
   // The Total row, over the top level only — each node already adds up its
   // children, so counting them too would count everything twice.
-  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
+  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id), totalRules), [headers, columns, view, totalRules]);
   // One column's checklist: its value on every row of every level that the
   // OTHER columns' filters leave — and its Min / Max range: the numbers
   // those same rows span (a parent's subtotal is a row like any other).
@@ -154,16 +156,41 @@ export default function OverviewTreeTable({
   // header's own column is here to type into.
   const showCost = skuLevels.size > 0 && !cols.some((c) => c.costField === 'cogs');
   const dirtyCells = dirtyCostCells || new Set();
-  const costInput = (sku, field, name) => (
-    <CostCell
-      value={skuCosts[sku]?.[field]}
-      onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
-      dirty={dirtyCells.has(costCellKey(sku, field))}
-      label={`${name} for ${sku}`}
-      text={isTextCostField(field)}
-      fill={onCostFill ? { col: field, sku, start: startFill } : null}
-    />
-  );
+  // What a node's input boxes edit — or null (no boxes): a SKU node, its SKU
+  // in its Account Name when the node is one account (else for every
+  // account); an Account Name node under a SKU level, that SKU in that
+  // account. → { sku, key } (key = skuCosts' key — rowCostKey).
+  const costTarget = (n) => {
+    if (!skuLevels.size || n.value === BLANK_VALUE) return null;
+    let sku = null;
+    let account = '';
+    if (skuLevels.has(n.depth)) {
+      sku = n.value;
+      account = n.company;
+    } else if (levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY) {
+      const at = [...skuLevels].filter((i) => i < n.depth).pop();
+      if (at == null) return null;
+      sku = n.path[at];
+      account = n.value;
+    }
+    if (!sku || sku === BLANK_VALUE || !isRealSku(sku)) return null;
+    return { sku, key: rowCostKey(sku, account) };
+  };
+  const costInput = (target, field, name) => {
+    const { sku, key } = target;
+    const account = key !== sku ? ` (${costKeyParts(key).accountName})` : '';
+    return (
+      <CostCell
+        value={skuCosts[key]?.[field]}
+        fallback={account ? skuCosts[sku]?.[field] : null}
+        onCommit={onCostChange && ((text) => { order.hold(); onCostChange(key, field, text); })}
+        dirty={dirtyCells.has(costCellKey(key, field))}
+        label={`${name} for ${sku}${account}`}
+        text={isTextCostField(field)}
+        fill={onCostFill ? { col: field, sku: key, start: startFill } : null}
+      />
+    );
+  };
   const colSpan = cols.length + (showCost ? 2 : 1) + (selectable ? 1 : 0); // (checkbox +) hierarchy (+ cost) + headers
 
   // A sort or filter the user picks is a new order — the held one goes.
@@ -292,9 +319,9 @@ export default function OverviewTreeTable({
               const forced = filtering && n.openedByMatch;
               const isActive = activeKey === n.key;
               const inherited = !selected.has(n.key) && n.depth > 0 && ancestorKeys(n.key).some((k) => selected.has(k));
-              const isSkuRow = skuLevels.has(n.depth);
-              const canType = isSkuRow && isRealSku(n.value) && n.value !== BLANK_VALUE; // a real SKU to keep the cost under
-              const isDirty = isSkuRow && dirty.has(n.value);
+              const target = costTarget(n);
+              const canType = !!target; // a real SKU (and account) to keep the cost under
+              const isDirty = !!target && dirty.has(target.sku);
               return (
                 <tr
                   key={n.key}
@@ -349,7 +376,7 @@ export default function OverviewTreeTable({
                   </td>
                   {showCost && (
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {canType && costInput(n.value, 'cogs', 'Cost')}
+                      {canType && costInput(target, 'cogs', 'Cost')}
                     </td>
                   )}
                   {cols.map((c) => {
@@ -357,7 +384,7 @@ export default function OverviewTreeTable({
                     if (c.costField && canType) {
                       return (
                         <td key={c.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
-                          {costInput(n.value, c.costField, c.label)}
+                          {costInput(target, c.costField, c.label)}
                         </td>
                       );
                     }

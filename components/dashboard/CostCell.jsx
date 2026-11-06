@@ -35,7 +35,10 @@ const sameCost = (text, value) => (isBlank(text) ? !Number.isFinite(value) : Num
 // marks the range being dragged over (`data-fill-on`, tinted here).
 // `text` = a text field (the Master SKU): any text is taken as typed, and
 // the box is wider.
-export default function CostCell({ value, onCommit, label, dirty = false, fill = null, text: isText = false }) {
+// `fallback` = the value this box falls back to when it has none of its own
+// (the SKU's value for every account, on a box for one Account Name) —
+// shown greyed as the placeholder.
+export default function CostCell({ value, onCommit, label, dirty = false, fill = null, text: isText = false, fallback = null }) {
   const [text, setText] = useState(null); // what's being typed; null = showing `value`
   const timer = useRef(null);
   const waiting = useRef(null); // typed text not handed over yet
@@ -92,7 +95,7 @@ export default function CostCell({ value, onCommit, label, dirty = false, fill =
           onChange={(e) => onType(e.target.value)}
           onBlur={() => { flush(); setText(null); }}
           onKeyDown={(e) => { if (e.key === 'Enter') flush(); }}
-          placeholder="—"
+          placeholder={fallback != null && String(fallback) !== '' ? String(fallback) : '—'}
           aria-label={label}
           aria-invalid={bad || undefined}
           title={bad ? 'Not a number — nothing is changed' : unsaved ? 'Edited — not saved yet' : isText ? 'Master SKU for this SKU' : 'Default price for this SKU — used for orders uploaded from now on'}

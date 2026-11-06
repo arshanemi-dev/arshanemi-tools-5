@@ -11,6 +11,7 @@ import HierarchyLevelsEditor from './HierarchyLevelsEditor';
 import HeaderPickerStrip from './HeaderPickerStrip';
 import SectionHead from './SectionHead';
 import Field from './Field';
+import TotalRulesEditor from './TotalRulesEditor';
 import NameField from './NameField';
 
 // image 2 · Overview Tab — one or more "Header Wise Overview" pivots. Every
@@ -114,6 +115,12 @@ export default function OverviewTabSection({ draft, activeId: activeIdProp, onAc
                   <HeaderPickerStrip label="Header" options={otherHeaderOpts} selectedIds={active.headerIds || []} onChange={(headerIds) => patchItem('overviewTabs', active.id, { headerIds })} />
                 )}
               </Field>
+
+              {levelIds.length > 0 && (
+                <Field label="Total row" hint="how each column's Total is worked out">
+                  <TotalRulesEditor headers={config.headers || []} headerIds={active.headerIds || []} rules={active.totals} onChange={(totals) => patchItem('overviewTabs', active.id, { totals })} />
+                </Field>
+              )}
             </>
           )}
       </div>

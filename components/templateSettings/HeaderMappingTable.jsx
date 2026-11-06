@@ -6,6 +6,16 @@ import ColumnFilterButton from '@/components/dashboard/ColumnFilterButton';
 import { isColumnMapped, mappedColumnsByHeader, marketplaceColumns } from '@/lib/profitLoss/marketplaceHeaders';
 import { DEFAULT_LIST_SORT, sortItems } from '@/lib/profitLoss/listSort';
 import { isFixedHeader } from '@/data/fixedHeaders';
+import { headerSource } from '@/lib/profitLoss/headerSource';
+
+// The "Our Headers" column's chip colour per source (headerSource).
+const SOURCE_TONE = {
+  formula: 'border-link/30 bg-link/10 text-link',
+  engine: 'border-divider bg-card text-foreground',
+  dashboard: 'border-action/40 bg-action-soft text-action',
+  sheet: 'border-divider bg-background text-muted',
+  missing: 'border-neg/30 bg-neg/5 text-neg',
+};
 
 const OUR_COL = '__our__';
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -205,9 +215,20 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       </td>
     );
   };
+  // The "Our Headers" cell: where this header's value comes from.
+  const sourceCell = (h) => {
+    const src = headerSource(h, isMerged(h));
+    return (
+      <td className={`max-w-[18rem] border border-divider px-2 py-1.5 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
+        <span title={src.detail} className={`inline-block max-w-full truncate rounded-md border px-1.5 py-0.5 text-[11.5px] ${SOURCE_TONE[src.kind] || SOURCE_TONE.sheet}`}>
+          {src.label}
+        </span>
+      </td>
+    );
+  };
   const sectionRow = (label) => (
     <tr>
-      <td colSpan={1 + columns.length} className="border border-divider bg-card px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{label}</td>
+      <td colSpan={2 + columns.length} className="border border-divider bg-card px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{label}</td>
     </tr>
   );
 
@@ -225,8 +246,9 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
         <thead className="sticky top-0 z-10 bg-background text-muted">
           <tr>
             <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
-              <ColumnHead label="Our Header" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
+              <ColumnHead label="Our Headers Mapped By" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
             </th>
+            <th className="min-w-[12rem] border border-divider px-2 py-1.5 font-normal" title="Where each header's value comes from">Our Headers</th>
             {columns.map((c) => (
               <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">
                 <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
@@ -239,6 +261,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {mergedRows.map((h) => (
             <tr key={h.id}>
               {ourCell(h, 'bg-background')}
+              {sourceCell(h)}
               {columns.map((c) => {
                 const cols = c.mapped.get(h.id) || [];
                 return (
@@ -275,6 +298,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {Array.from({ length: raggedCount }, (_, i) => (
             <tr key={`u${i}`}>
               {ourUnmapped[i] ? ourCell(ourUnmapped[i], 'bg-background') : <td className="sticky left-0 z-[1] border border-divider bg-background" />}
+              {ourUnmapped[i] ? sourceCell(ourUnmapped[i]) : <td className="border border-divider" />}
               {columns.map((c, ci) => {
                 const o = colUnmapped[ci][i];
                 if (!o) {
@@ -303,7 +327,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
 
           {!mergedRows.length && !raggedCount && (
             <tr>
-              <td colSpan={1 + columns.length} className="px-3 py-6 text-center text-[12px] text-subtle">
+              <td colSpan={2 + columns.length} className="px-3 py-6 text-center text-[12px] text-subtle">
                 {!headers.length ? 'No headers yet — press Add to create one.'
                   : groupFilter && !groupFilter.size ? 'No headers in this group yet — Assign headers adds them.'
                     : 'Nothing matches the filters.'}

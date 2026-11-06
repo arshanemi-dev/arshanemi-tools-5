@@ -13,7 +13,7 @@ import useFillHeight from './useFillHeight';
 import useHeldOrder from './useHeldOrder';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku, isTextCostField } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
@@ -144,6 +144,9 @@ export default function DetailsTable({
   // Every header of the template — what a ratio formula's Total reads
   // (lib/profitLoss/tableTotals.js); defaults to just the columns shown.
   headers = null,
+  // The tab's own Total-row rules ({ [headerId]: { mode, formula } } —
+  // tableTotals.js); none = Auto for every column.
+  totalRules = null,
 }) {
   const cols = columns.map((h, i) => ({
     id: h.id,
@@ -216,19 +219,27 @@ export default function DetailsTable({
   const changeFilters = (update) => { order.release(); setFilters(update); };
 
   const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the cost boxes
-  const costInput = (sku, field, name) => (
-    <CostCell
-      value={skuCosts[sku]?.[field]}
-      onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
-      dirty={dirtyCells.has(costCellKey(sku, field))}
-      label={`${name} for ${sku}`}
-      text={isTextCostField(field)}
-      fill={onCostFill ? { col: field, sku, start: startFill } : null}
-    />
-  );
+  // A row's box edits its Account Name's value when the row is one account
+  // (rowCostKey), else its SKU's for every account — and shows the SKU's
+  // value greyed when that account has none of its own.
+  const costInput = (row, field, name) => {
+    const sku = rowCostKey(row.key, row.company);
+    const account = sku !== row.key ? ` (${row.company})` : '';
+    return (
+      <CostCell
+        value={skuCosts[sku]?.[field]}
+        fallback={account ? skuCosts[row.key]?.[field] : null}
+        onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
+        dirty={dirtyCells.has(costCellKey(sku, field))}
+        label={`${name} for ${row.key}${account}`}
+        text={isTextCostField(field)}
+        fill={onCostFill ? { col: field, sku, start: startFill } : null}
+      />
+    );
+  };
 
   // The Total row: every filtered row, every page — not just this one.
-  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id)), [headers, columns, view]);
+  const totals = useMemo(() => tableTotals(headers || columns, view, columns.map((h) => h.id), totalRules), [headers, columns, view, totalRules]);
 
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
@@ -410,7 +421,7 @@ export default function DetailsTable({
                   if (col.kind === 'cost') {
                     return (
                       <td key="__cost__" className="px-3 py-2.5 whitespace-nowrap">
-                        {isRealSku(r.key) && costInput(r.key, 'cogs', 'Cost')}
+                        {isRealSku(r.key) && costInput(r, 'cogs', 'Cost')}
                       </td>
                     );
                   }
@@ -418,7 +429,7 @@ export default function DetailsTable({
                   if (col.costField && isRealSku(r.key)) {
                     return (
                       <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''}`}>
-                        {costInput(r.key, col.costField, col.label)}
+                        {costInput(r, col.costField, col.label)}
                       </td>
                     );
                   }

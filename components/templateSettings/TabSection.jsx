@@ -10,6 +10,7 @@ import SectionHead from './SectionHead';
 import Field from './Field';
 import NameField from './NameField';
 import IconPicker from './IconPicker';
+import TotalRulesEditor from './TotalRulesEditor';
 
 // image 2 · Tab — each entry in the user's sidebar. Compose + order its Title
 // Cards, Graphs and Headers, and set the KPI grid width. Every tab that
@@ -121,6 +122,10 @@ export default function TabSection({ draft, activeId: activeIdProp, onActiveId }
 
               <Field label="Headers" hint={`table columns — ${active.headerIds.length}`}>
                 <HeaderPickerStrip label="Header" options={headerOpts} selectedIds={active.headerIds} onChange={(headerIds) => patchItem('tabs', active.id, { headerIds })} />
+              </Field>
+
+              <Field label="Total row" hint="how each column's Total is worked out">
+                <TotalRulesEditor headers={config.headers || []} headerIds={active.headerIds} rules={active.totals} onChange={(totals) => patchItem('tabs', active.id, { totals })} />
               </Field>
             </>
           )}

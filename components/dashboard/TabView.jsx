@@ -162,6 +162,7 @@ export default function TabView({ config, tab, resolved, myColumns, onMyColumnsC
             pagerSlot={pagerSlot}
             fillHeight={fillHeight}
             headers={config.headers}
+            totalRules={tab?.totals || null}
             loadChildren={loadChildren}
           />
         </>
