@@ -2,10 +2,19 @@
 
 import { useState } from 'react';
 import { AGGREGATE_BUILTIN_NAMES } from '@/data/templateSchema';
-import { countCall } from '@/lib/profitLoss/formula';
+import { aggregateCall, describeCall } from '@/lib/profitLoss/formula';
 import SearchSelect from '@/components/dashboard/SearchSelect';
 
-const MODES = [['all', 'All'], ['filter', 'Filter']];
+// What each operator does, for its picker.
+const FNS = [
+  ['SUM', 'Sum', 'Add up the numbers'],
+  ['COUNT', 'Count', 'Count the rows that have a value'],
+  ['AVG', 'Average', 'Average of the numbers'],
+  ['MIN', 'Min', 'Smallest number'],
+  ['MAX', 'Max', 'Largest number'],
+  ['VALUE', 'Value', 'Take the value itself (text too)'],
+];
+const MODES = [['all', 'All rows'], ['filter', 'Only where…']];
 
 // "Delivered, Shipped" (or one per line) → ['Delivered', 'Shipped'].
 const splitValues = (text) => String(text || '').split(/[,\n]/).map((v) => v.trim()).filter(Boolean);
@@ -16,38 +25,59 @@ export function quotedList(values) {
   return q.length > 1 ? `${q.slice(0, -1).join(', ')} or ${q[q.length - 1]}` : q[0] || '';
 }
 
-// The Count builder FormulaEditor opens under its token strip: which header
-// to count, and whether to count every row that has a value ("All", the
-// default) or only the rows whose value is one of the typed ones ("Filter" —
-// Status → Delivered gives a per-status count). Insert hands the finished
-// COUNT(...) text back to drop into the formula at the cursor. Mount it with
+const selectClass = 'flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-divider bg-background px-2 text-left text-[12.5px] text-foreground hover:bg-card-hover focus:border-accent focus:outline-none';
+
+// The builder FormulaEditor opens under its token strip for the aggregate
+// operators (lib/profitLoss/formula.js): which operator, which header to
+// take, and whether over every row of the group ("All rows") or only the
+// rows where a header — that one, or another — has one of the typed values
+// ("Only where…"):
+//   Sum of Settlement, only where Status is Delivered → SUM([Settlement], [Status], "Delivered")
+//   Count of Status, only where Status is RTO         → COUNT([Status], "RTO")
+// Insert hands the finished text back to drop in at the cursor. Mount it with
 // a `key` per open so it starts from the header picked in the Header List.
-export default function CountFilterPanel({ columns = [], initialColumn = '', onInsert, onClose }) {
+export default function CountFilterPanel({ columns = [], initialColumn = '', initialFn = 'COUNT', onInsert, onClose }) {
   const options = columns.filter((n) => !AGGREGATE_BUILTIN_NAMES.includes(n));
+  const [fn, setFn] = useState(initialFn);
   const [column, setColumn] = useState(options.includes(initialColumn) ? initialColumn : '');
   const [mode, setMode] = useState('all');
+  const [where, setWhere] = useState('');
   const [text, setText] = useState('');
 
   const values = mode === 'filter' ? splitValues(text) : [];
-  const ready = !!column && (mode === 'all' || values.length > 0);
-  const insert = () => { if (ready) onInsert(countCall(column, values)); };
-  const name = column || 'the header';
+  const whereName = where || column; // the condition header — the same one unless another is picked
+  const ready = !!column && (mode === 'all' || (!!whereName && values.length > 0));
+  // COUNT's short form when the condition is the counted header itself.
+  const call = mode === 'filter'
+    ? { fn, name: column, where: fn === 'COUNT' && whereName === column ? null : whereName, values }
+    : { fn, name: column, where: null, values: [] };
+  const insert = () => { if (ready) onInsert(aggregateCall(call.fn, call.name, call.where, call.values)); };
+  const strong = (t) => <span className="font-medium text-foreground">{t}</span>;
 
   return (
     <div className="space-y-2.5 rounded-xl border border-accent/40 bg-accent/5 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold text-foreground">Count</span>
+        <select
+          value={fn}
+          onChange={(e) => setFn(e.target.value)}
+          aria-label="Operator"
+          title={FNS.find(([id]) => id === fn)?.[2]}
+          className="h-8 rounded-lg border border-divider bg-background px-2 text-[12.5px] font-semibold text-foreground focus:border-accent focus:outline-none"
+        >
+          {FNS.map(([id, label, hint]) => <option key={id} value={id} title={hint}>{label}</option>)}
+        </select>
+        <span className="text-[12.5px] text-muted">of</span>
         <SearchSelect
           value={column}
           options={options.map((n) => ({ value: n, label: n }))}
           onChange={setColumn}
           placeholder="Pick a header…"
           searchPlaceholder="Search headers…"
-          ariaLabel="Header to count"
+          ariaLabel="Header to take"
           className="min-w-[11rem]"
-          triggerClass="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-divider bg-background px-2 text-left text-[12.5px] text-foreground hover:bg-card-hover focus:border-accent focus:outline-none"
+          triggerClass={selectClass}
         />
-        <div role="radiogroup" aria-label="Which values to count" className="inline-flex gap-1.5">
+        <div role="radiogroup" aria-label="Which rows" className="inline-flex gap-1.5">
           {MODES.map(([id, label]) => (
             <button
               key={id}
@@ -66,22 +96,37 @@ export default function CountFilterPanel({ columns = [], initialColumn = '', onI
       </div>
 
       {mode === 'filter' && (
-        <input
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } }}
-          placeholder="Values to count, comma separated — e.g. Delivered, Shipped"
-          aria-label="Values to count"
-          className="h-9 w-full rounded-lg border border-divider bg-background px-3 text-[13px] text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12.5px] text-muted">where</span>
+          <SearchSelect
+            value={where}
+            options={options.map((n) => ({ value: n, label: n }))}
+            onChange={setWhere}
+            placeholder={column ? `${column} (same header)` : 'Pick a header…'}
+            searchPlaceholder="Search headers…"
+            ariaLabel="Condition header"
+            className="min-w-[11rem]"
+            triggerClass={selectClass}
+          />
+          <span className="text-[12.5px] text-muted">is</span>
+          <input
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); insert(); } }}
+            placeholder="Delivered, Shipped"
+            aria-label="Values to match"
+            className="h-8 min-w-[12rem] flex-1 rounded-lg border border-divider bg-background px-2 text-[12.5px] text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
+          />
+        </div>
       )}
 
       <p className="text-[11.5px] leading-relaxed text-muted">
-        {mode === 'all' && <>Counts every row that has a value in <span className="font-medium text-foreground">{name}</span>.</>}
-        {mode === 'filter' && (values.length
-          ? <>Counts only the rows where <span className="font-medium text-foreground">{name}</span> is {quotedList(values)}.</>
-          : <>Type the value(s) of <span className="font-medium text-foreground">{name}</span> to count — every other row is left out.</>)}
+        {!column && 'Pick the header to take.'}
+        {column && (mode === 'filter' && !values.length
+          ? <>Type the value(s) of {strong(whereName)} to match — every other row is left out.</>
+          : <>{strong(describeCall(call))}</>)}
+        {column && <> <code className="text-[11px]">{aggregateCall(call.fn, call.name, call.where, call.values)}</code></>}
         {mode === 'filter' && <> Capital letters and spacing don&rsquo;t matter; <code>*</code> stands for any text (<code>*return*</code>).</>}
       </p>
 

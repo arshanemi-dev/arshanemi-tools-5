@@ -59,7 +59,7 @@ function countFilterSeeds(headers, titleCards) {
   ];
   const seeds = new Map();
   for (const call of formulas.flatMap(aggregateCalls)) {
-    const key = call.name.toLowerCase();
+    const key = (call.where || call.name).toLowerCase(); // the header the values are matched on
     const values = call.values.map((v) => v.replace(/\*/g, '').trim()).filter(Boolean);
     if (values.length) seeds.set(key, [...new Set([...(seeds.get(key) || []), ...values])]);
   }
