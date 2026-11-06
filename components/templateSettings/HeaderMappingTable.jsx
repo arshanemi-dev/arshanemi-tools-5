@@ -21,8 +21,8 @@ const matches = (text, q) => !q || norm(text).includes(norm(q));
 
 function ColumnHead({ label, sub, filter, onFilter, getOptions, onOpenChange, sortDir, onSort }) {
   return (
-    <div className="flex items-center gap-1 whitespace-nowrap">
-      <span className="font-normal">{label}</span>
+    <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+      <span className="min-w-0 truncate font-normal" title={label}>{label}</span>
       {sub && <span className="text-[10.5px] font-normal text-subtle">· {sub}</span>}
       <ColumnFilterButton label={label} filter={filter} getOptions={getOptions} onChange={onFilter} onOpenChange={onOpenChange} size={13} sortDir={sortDir} onSort={onSort} />
     </div>
@@ -253,7 +253,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     const on = checked.has(key);
     return (
       <div key={o.id} className={`border-b border-divider px-2 py-1.5 last:border-b-0 ${on ? 'bg-action-soft/60' : ''}`}>
-        <label className="flex cursor-pointer items-center gap-2" title={o.name}>
+        <label className="flex min-w-0 cursor-pointer items-center gap-2" title={o.name}>
           <Check checked={on} onChange={() => onToggleCheck(key)} label={`Select ${o.name} (Our Headers)`} />
           <span className={`min-w-0 truncate ${on ? 'text-foreground' : 'text-muted'}`}>{o.name || 'Untitled'}</span>
         </label>
@@ -266,7 +266,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     const on = checked.has(key);
     return (
       <div key={o.key} className={`border-b border-divider px-2 py-1.5 last:border-b-0 ${on ? 'bg-action-soft/60' : ''}`}>
-        <label className="flex cursor-pointer items-center gap-2" title={o.label}>
+        <label className="flex min-w-0 cursor-pointer items-center gap-2" title={o.label}>
           <Check checked={on} onChange={() => onToggleCheck(key)} label={`Select ${o.label} (${c.name})`} />
           <span className="min-w-0">
             <span className="block truncate text-[10.5px] leading-tight text-subtle">{o.path}</span>
@@ -276,10 +276,25 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       </div>
     );
   };
-  // A column's own scroll box in the Unmapped row — each list scrolls by
-  // itself, so a long one doesn't stretch the others or the whole table.
+  // What's ticked in one column, pinned above its own list — so a tick
+  // stays in sight however far that list (or another) is scrolled. × unticks.
+  const tickedBar = (items) => (items.length ? (
+    <div className="flex min-w-0 flex-wrap items-center gap-1 overflow-hidden border-b border-divider bg-action-soft/40 px-1.5 py-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-action">Ticked · {items.length}</span>
+      {items.map(({ key, label, title, onRemove }) => (
+        <span key={key} className="inline-flex max-w-full items-center gap-0.5 rounded-md border border-action/40 bg-background px-1.5 py-px text-[11.5px] text-foreground">
+          <span className="min-w-0 truncate" title={title || label}>{label}</span>
+          <button type="button" onClick={onRemove} aria-label={`Untick ${title || label}`} className="shrink-0 rounded p-0.5 text-subtle hover:bg-neg/10 hover:text-neg">
+            <X size={10} />
+          </button>
+        </span>
+      ))}
+    </div>
+  ) : null);
+  // A column's own scroll box in the Unmapped part — each list scrolls by
+  // itself, never along with another one or with the Mapped rows above.
   const scrollList = (items, empty = null) => (
-    <div className="max-h-[18rem] overflow-y-auto overscroll-contain">
+    <div className="max-h-[18rem] overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]">
       {items.length ? items : <p className="px-2 py-1.5 text-[11.5px] text-subtle">{empty}</p>}
     </div>
   );
@@ -287,6 +302,26 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     <tr>
       <td colSpan={2 + columns.length} className="border border-divider bg-card px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{label}</td>
     </tr>
+  );
+
+  // The ticks per column (only unmapped items can be ticked).
+  const activeHeader = headers.find((h) => h.id === activeId) || null;
+  const oursTicked = headers.filter((h) => checked.has(colKey(OURS_ID, h.id)))
+    .map((h) => ({ key: h.id, label: h.name, onRemove: () => onToggleCheck(colKey(OURS_ID, h.id)) }));
+  const colTicked = (c) => c.unmapped.filter((o) => checked.has(colKey(c.id, o.key)))
+    .map((o) => ({ key: o.key, label: o.name, title: o.label, onRemove: () => onToggleCheck(colKey(c.id, o.key)) }));
+
+  // The Mapped table and the Unmapped lists are two tables with the same
+  // fixed column widths, so they line up; they share only the sideways
+  // scroll. Up and down, the Mapped rows scroll together in their own box,
+  // and each Unmapped list scrolls by itself.
+  const tableWidth = { width: `${18 + 14 * (1 + columns.length)}rem`, minWidth: '100%' };
+  const colGroup = (
+    <colgroup>
+      <col style={{ width: '18rem' }} />
+      <col style={{ width: '14rem' }} />
+      {columns.map((c) => <col key={c.id} style={{ width: '14rem' }} />)}
+    </colgroup>
   );
 
   return (
@@ -297,90 +332,105 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           <button type="button" onClick={() => setFilters({})} className="font-semibold text-link hover:underline">Clear all filters</button>
         </div>
       )}
-      {/* taller while a filter menu is open, so the menu isn't cut off by this scroll area */}
-      <div data-table-scroll className={`max-h-[32rem] overflow-auto border-y border-divider ${menuOpen ? 'min-h-[25rem]' : 'min-h-[14rem]'}`}>
-      <table className="w-full border-collapse text-left text-[13px]">
-        <thead className="sticky top-0 z-10 bg-background text-muted">
-          <tr>
-            <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
-              <ColumnHead label="Our Headers Mapped By" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
-            </th>
-            <th className="min-w-[12rem] border border-divider px-2 py-1.5" title="Our Headers mapped into another Our Header — tick them and one Our Header, then Mapped">
-              <ColumnHead label="Our Headers" sub={`${headers.length}`} filter={filters[OURS_ID]} onFilter={setFilter(OURS_ID)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={oursSort} onSort={setOursSort} />
-            </th>
-            {columns.map((c) => (
-              <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">
-                <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {mergedRows.length > 0 && sectionRow(`Mapped · ${mergedRows.length}`)}
-          {mergedRows.map((h) => (
-            <tr key={h.id}>
-              {ourCell(h, 'bg-background')}
-              {oursMappedCell(h)}
-              {columns.map((c) => {
-                const cols = c.mapped.get(h.id) || [];
-                return (
-                  <td key={c.id} className={`border border-divider px-1.5 py-1 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
-                    {cols.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {cols.map((s) => (
-                          <span key={s.label} className="inline-flex max-w-full items-center gap-1 rounded-md border border-action/40 bg-action-soft px-1.5 py-0.5 text-[12px] text-foreground">
-                            <span className="min-w-0 truncate" title={s.label}>
-                              <span className="text-[10.5px] text-subtle">{s.path} › </span>{s.name}
-                            </span>
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => onUnmap(c.id, h.id, s)}
-                              aria-label={`Unmap ${s.label} from ${h.name}`}
-                              className="shrink-0 rounded p-0.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:opacity-40"
-                            >
-                              <X size={11} />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[12px] text-subtle">—</span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+      <div className="overflow-x-auto border-y border-divider">
+        <div className="w-max min-w-full pb-2">
+          {/* Mapped — its rows scroll together, under the column heads; taller
+              while a filter menu is open, so the menu isn't cut off. */}
+          <div data-table-scroll className={`max-h-[22rem] overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${menuOpen ? 'min-h-[25rem]' : ''}`}>
+            <table className="table-fixed border-collapse text-left text-[13px] [&_td]:overflow-hidden" style={tableWidth}>
+              {colGroup}
+              <thead className="sticky top-0 z-10 bg-background text-muted">
+                <tr>
+                  <th className="border border-divider bg-background px-2 py-1.5">
+                    <ColumnHead label="Our Headers Mapped By" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
+                  </th>
+                  <th className="border border-divider bg-background px-2 py-1.5" title="Our Headers mapped into another Our Header — tick them and one Our Header, then Mapped">
+                    <ColumnHead label="Our Headers" sub={`${headers.length}`} filter={filters[OURS_ID]} onFilter={setFilter(OURS_ID)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={oursSort} onSort={setOursSort} />
+                  </th>
+                  {columns.map((c) => (
+                    <th key={c.id} className="border border-divider bg-background px-2 py-1.5">
+                      <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sectionRow(`Mapped · ${mergedRows.length} — these rows scroll together`)}
+                {mergedRows.map((h) => (
+                  <tr key={h.id}>
+                    {ourCell(h, 'bg-background')}
+                    {oursMappedCell(h)}
+                    {columns.map((c) => {
+                      const cols = c.mapped.get(h.id) || [];
+                      return (
+                        <td key={c.id} className={`border border-divider px-1.5 py-1 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
+                          {cols.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {cols.map((s) => (
+                                <span key={s.label} className="inline-flex max-w-full items-center gap-1 rounded-md border border-action/40 bg-action-soft px-1.5 py-0.5 text-[12px] text-foreground">
+                                  <span className="min-w-0 truncate" title={s.label}>
+                                    <span className="text-[10.5px] text-subtle">{s.path} › </span>{s.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => onUnmap(c.id, h.id, s)}
+                                    aria-label={`Unmap ${s.label} from ${h.name}`}
+                                    className="shrink-0 rounded p-0.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:opacity-40"
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[12px] text-subtle">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                {!mergedRows.length && (
+                  <tr>
+                    <td colSpan={2 + columns.length} className="px-3 py-3 text-center text-[12px] text-subtle">
+                      {!headers.length ? 'No headers yet — press Add to create one.'
+                        : groupFilter && !groupFilter.size ? 'No headers in this group yet — Assign headers adds them.'
+                          : 'Nothing mapped yet (or nothing matches the filters).'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-          {anyUnmapped && sectionRow('Unmapped — each list scrolls by itself')}
+          {/* Unmapped — every column its own list, each scrolling by itself,
+              with what's ticked in it pinned on top. */}
           {anyUnmapped && (
-            <tr>
-              <td className="sticky left-0 z-[1] border border-divider bg-background p-0 align-top">
-                {scrollList(ourUnmapped.map((h) => ourCell(h, 'bg-background', true)), 'Every Our Header is mapped.')}
-              </td>
-              <td className="border border-divider p-0 align-top">
-                {scrollList(oursList.map(oursPickItem), 'Nothing matches the filter.')}
-              </td>
-              {columns.map((c, ci) => (
-                <td key={c.id} className="border border-divider p-0 align-top">
-                  {scrollList(colUnmapped[ci].map((o) => colPickItem(c, o)), !c.total ? 'No headers saved — Market Place › file › Save All Sheets' : 'All mapped.')}
-                </td>
-              ))}
-            </tr>
+            <table className="table-fixed border-collapse text-left text-[13px] [&_td]:overflow-hidden" style={tableWidth}>
+              {colGroup}
+              <tbody>
+                {sectionRow('Unmapped — each list scrolls by itself')}
+                <tr>
+                  <td className="border border-divider bg-background p-0 align-top">
+                    {tickedBar(activeHeader ? [{ key: activeHeader.id, label: activeHeader.name, onRemove: () => onSelect(null) }] : [])}
+                    {scrollList(ourUnmapped.map((h) => ourCell(h, 'bg-background', true)), 'Every Our Header is mapped.')}
+                  </td>
+                  <td className="border border-divider p-0 align-top">
+                    {tickedBar(oursTicked)}
+                    {scrollList(oursList.map(oursPickItem), 'Nothing matches the filter.')}
+                  </td>
+                  {columns.map((c, ci) => (
+                    <td key={c.id} className="border border-divider p-0 align-top">
+                      {tickedBar(colTicked(c))}
+                      {scrollList(colUnmapped[ci].map((o) => colPickItem(c, o)), !c.total ? 'No headers saved — Market Place › file › Save All Sheets' : 'All mapped.')}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
           )}
-
-          {!mergedRows.length && !anyUnmapped && (
-            <tr>
-              <td colSpan={2 + columns.length} className="px-3 py-6 text-center text-[12px] text-subtle">
-                {!headers.length ? 'No headers yet — press Add to create one.'
-                  : groupFilter && !groupFilter.size ? 'No headers in this group yet — Assign headers adds them.'
-                    : 'Nothing matches the filters.'}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+        </div>
       </div>
     </>
   );
