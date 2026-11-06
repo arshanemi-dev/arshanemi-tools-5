@@ -6,16 +6,11 @@ import ColumnFilterButton from '@/components/dashboard/ColumnFilterButton';
 import { isColumnMapped, mappedColumnsByHeader, marketplaceColumns } from '@/lib/profitLoss/marketplaceHeaders';
 import { DEFAULT_LIST_SORT, sortItems } from '@/lib/profitLoss/listSort';
 import { isFixedHeader } from '@/data/fixedHeaders';
-import { headerSource } from '@/lib/profitLoss/headerSource';
-
-// The "Our Headers" column's chip colour per source (headerSource).
-const SOURCE_TONE = {
-  formula: 'border-link/30 bg-link/10 text-link',
-  engine: 'border-divider bg-card text-foreground',
-  dashboard: 'border-action/40 bg-action-soft text-action',
-  sheet: 'border-divider bg-background text-muted',
-  missing: 'border-neg/30 bg-neg/5 text-neg',
-};
+// The "Our Headers" column: Our Headers mapped into another Our Header
+// (header.fromHeaders — its value is the first of them with one; see
+// resolveTemplate rowValueReader). Its ticks share `checked` with the
+// marketplace columns, under this id in place of a marketplace's.
+export const OURS_ID = '__ours__';
 
 const OUR_COL = '__our__';
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -124,7 +119,8 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, all: all.map((o) => o.label), unmapped: all.filter((o) => !isColumnMapped(t.config, o, knownIds)) };
     }), [marketplaces, knownIds]);
 
-  const isMerged = (h) => columns.some((c) => (c.mapped.get(h.id) || []).length);
+  const fromOurs = (h) => (h.fromHeaders || []).map((id) => headers.find((x) => x.id === id)).filter(Boolean);
+  const isMerged = (h) => fromOurs(h).length > 0 || columns.some((c) => (c.mapped.get(h.id) || []).length);
   const ourAllowed = allowed(OUR_COL);
   const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name)) && (!groupFilter || groupFilter.has(h.id));
   const colAllowed = columns.map((c) => allowed(c.id));
@@ -150,7 +146,8 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   });
   const ourSortDir = ourSort === 'name-asc' ? 'asc' : ourSort === 'name-desc' ? 'desc' : null;
   const sortOur = (dir) => { setColSort(null); onOurSort(dir ? `name-${dir}` : DEFAULT_LIST_SORT); };
-  const raggedCount = Math.max(ourUnmapped.length, ...colUnmapped.map((l) => l.length), columns.some((c) => !c.total) ? 1 : 0);
+  const oursList = ordered;
+  const raggedCount = Math.max(ourUnmapped.length, oursList.length, ...colUnmapped.map((l) => l.length), columns.some((c) => !c.total) ? 1 : 0);
 
   // "required" = must be mapped (Order Id / Transaction Id); "fixed" = the
   // other built-in headers (Account Name, the SKU Cost ones — data/fixedHeaders.js).
@@ -215,14 +212,45 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       </td>
     );
   };
-  // The "Our Headers" cell: where this header's value comes from.
-  const sourceCell = (h) => {
-    const src = headerSource(h, isMerged(h));
+  // A Mapped row's "Our Headers" cell: the Our Headers mapped into it, × to unmap.
+  const oursMappedCell = (h) => {
+    const from = fromOurs(h);
     return (
-      <td className={`max-w-[18rem] border border-divider px-2 py-1.5 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
-        <span title={src.detail} className={`inline-block max-w-full truncate rounded-md border px-1.5 py-0.5 text-[11.5px] ${SOURCE_TONE[src.kind] || SOURCE_TONE.sheet}`}>
-          {src.label}
-        </span>
+      <td className={`border border-divider px-1.5 py-1 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
+        {from.length ? (
+          <div className="flex flex-wrap gap-1">
+            {from.map((src) => (
+              <span key={src.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-link/30 bg-link/10 px-1.5 py-0.5 text-[12px] text-foreground">
+                <span className="min-w-0 truncate" title={src.name}>{src.name}</span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onUnmap(OURS_ID, h.id, src.id)}
+                  aria-label={`Unmap ${src.name} from ${h.name}`}
+                  className="shrink-0 rounded p-0.5 text-subtle hover:bg-neg/10 hover:text-neg disabled:opacity-40"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-[12px] text-subtle">—</span>
+        )}
+      </td>
+    );
+  };
+  // An "Our Headers" cell lower down: one Our Header to tick.
+  const oursPickCell = (o) => {
+    if (!o) return <td className="border border-divider" />;
+    const key = colKey(OURS_ID, o.id);
+    const on = checked.has(key);
+    return (
+      <td className={`border border-divider px-2 py-1.5 ${on ? 'bg-action-soft/60' : ''}`}>
+        <label className="flex cursor-pointer items-center gap-2" title={o.name}>
+          <Check checked={on} onChange={() => onToggleCheck(key)} label={`Select ${o.name} (Our Headers)`} />
+          <span className={`min-w-0 truncate ${on ? 'text-foreground' : 'text-muted'}`}>{o.name || 'Untitled'}</span>
+        </label>
       </td>
     );
   };
@@ -248,7 +276,9 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
             <th className="sticky left-0 z-20 min-w-[16rem] border border-divider bg-background px-2 py-1.5">
               <ColumnHead label="Our Headers Mapped By" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
             </th>
-            <th className="min-w-[12rem] border border-divider px-2 py-1.5 font-normal" title="Where each header's value comes from">Our Headers</th>
+            <th className="min-w-[12rem] border border-divider px-2 py-1.5 font-normal" title="Our Headers mapped into another Our Header — tick them and one Our Header, then Mapped">
+              Our Headers <span className="text-[10.5px] text-subtle">· {headers.length}</span>
+            </th>
             {columns.map((c) => (
               <th key={c.id} className="min-w-[12rem] border border-divider px-2 py-1.5">
                 <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
@@ -261,7 +291,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {mergedRows.map((h) => (
             <tr key={h.id}>
               {ourCell(h, 'bg-background')}
-              {sourceCell(h)}
+              {oursMappedCell(h)}
               {columns.map((c) => {
                 const cols = c.mapped.get(h.id) || [];
                 return (
@@ -298,7 +328,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
           {Array.from({ length: raggedCount }, (_, i) => (
             <tr key={`u${i}`}>
               {ourUnmapped[i] ? ourCell(ourUnmapped[i], 'bg-background') : <td className="sticky left-0 z-[1] border border-divider bg-background" />}
-              {ourUnmapped[i] ? sourceCell(ourUnmapped[i]) : <td className="border border-divider" />}
+              {oursPickCell(oursList[i])}
               {columns.map((c, ci) => {
                 const o = colUnmapped[ci][i];
                 if (!o) {

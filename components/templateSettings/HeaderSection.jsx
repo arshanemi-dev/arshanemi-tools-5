@@ -8,7 +8,7 @@ import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
 import { useToast } from '@/components/admin/Toast';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SectionHead from './SectionHead';
-import HeaderMappingTable from './HeaderMappingTable';
+import HeaderMappingTable, { OURS_ID } from './HeaderMappingTable';
 import HeaderEditModal from './HeaderEditModal';
 import HeaderGroupsRow from './HeaderGroupsRow';
 import { groupIdOf } from '@/lib/profitLoss/headerGroups';
@@ -107,10 +107,26 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   // Mapped — every ticked marketplace column (a File › Sheet › Header)
   // merges into the ticked Our Header, read from that sheet only.
   const mapChecked = async () => {
-    if (!active || !checked.size || !mappingSaver) return;
+    if (!active || !checked.size) return;
+    // Ticked Our Headers (the Our Headers column) map into it in the draft —
+    // saved with the version, like the header itself.
+    const ours = [...checked].map((key) => JSON.parse(key)).filter(([mid]) => mid === OURS_ID).map(([, id]) => id).filter((id) => id !== active.id);
+    if (ours.length) {
+      if (active.type === 'formula' || active.primitive) {
+        addToast(`“${active.name}” is ${active.type === 'formula' ? 'a Formula' : 'worked out by the engine'} — map Our Headers into a Number / Text / Date header instead`, 'error');
+      } else {
+        setConfig((c) => ({
+          ...c,
+          headers: (c.headers || []).map((h) => (h.id === active.id ? { ...h, fromHeaders: [...new Set([...(h.fromHeaders || []), ...ours])] } : h)),
+        }));
+        addToast(`${ours.length} Our Header${ours.length === 1 ? '' : 's'} mapped to “${active.name}” — Save New Version to keep it`);
+      }
+    }
+    if (!mappingSaver) { setChecked(new Set()); return; }
     const byMarketplace = new Map();
     for (const key of checked) {
       const [mid, columnKey] = JSON.parse(key);
+      if (mid === OURS_ID) continue;
       const t = (marketplaces || []).find((x) => x.id === mid);
       const column = t ? marketplaceColumns(t.config).find((c) => c.key === columnKey) : null;
       if (column) byMarketplace.set(mid, [...(byMarketplace.get(mid) || []), column]);
@@ -121,7 +137,17 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     if (done) addToast(`${done} header${done === 1 ? '' : 's'} mapped to “${active.name}”`);
   };
   // × on a mapped box — that one file › sheet › column (`target`).
-  const unmap = (mid, headerId, target) => mappingSaver?.update(mid, (cfg) => withoutMapping(cfg, headerId, target));
+  // In the Our Headers column, `target` is the Our Header's id.
+  const unmap = (mid, headerId, target) => {
+    if (mid === OURS_ID) {
+      setConfig((c) => ({
+        ...c,
+        headers: (c.headers || []).map((h) => (h.id === headerId ? { ...h, fromHeaders: (h.fromHeaders || []).filter((id) => id !== target) } : h)),
+      }));
+      return undefined;
+    }
+    return mappingSaver?.update(mid, (cfg) => withoutMapping(cfg, headerId, target));
+  };
 
   // A rename (here or in the table) rewrites every formula that named the
   // old name — withHeaderUpdate — so a name another header already has is
@@ -226,7 +252,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
             type="button"
             onClick={mapChecked}
             disabled={!active || !checked.size || saving}
-            title={!active ? 'Tick one Our Header first' : !checked.size ? 'Tick the marketplace headers to map' : undefined}
+            title={!active ? 'Tick one Our Header first' : !checked.size ? 'Tick the marketplace headers or Our Headers to map' : undefined}
             className="inline-flex items-center gap-1.5 rounded-full bg-action px-4 py-1.5 text-[13px] font-semibold text-white hover:bg-action-hover disabled:opacity-40"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />} Mapped
@@ -252,7 +278,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
               ? 'No marketplaces yet — add one under Market Place to map its headers here.'
               : active && checked.size
                 ? <>Map <span className="font-semibold text-foreground">{checked.size}</span> ticked header{checked.size === 1 ? '' : 's'} into <span className="font-semibold text-foreground">{active.name}</span>.</>
-                : 'Tick one Our Header and any marketplace headers, then press Mapped. × on a box unmaps it.'}
+                : 'Tick one Our Header and any marketplace headers or Our Headers, then press Mapped. × on a box unmaps it.'}
         </p>
 
         {autoImported.length > 0 && (
