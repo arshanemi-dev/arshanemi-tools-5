@@ -4,20 +4,6 @@ import { rowLookup } from './aliases.js';
 // Fallback when auto-detection fails. `mapping` is a {canonicalField: headerName}
 // object the user builds in the column-mapper UI; `toCanonical` is called with
 // each row and the mapping bound. Sensible column-name guesses are pre-filled.
-export const CANONICAL_FIELDS = [
-  { key: 'orderId', label: 'Order ID', required: true },
-  { key: 'sku', label: 'SKU', required: true },
-  { key: 'orderDate', label: 'Order date' },
-  { key: 'settlementDate', label: 'Settlement / payout date' },
-  { key: 'qty', label: 'Quantity' },
-  { key: 'status', label: 'Order status' },
-  { key: 'grossSale', label: 'Gross sale amount' },
-  { key: 'settlement', label: 'Net settlement / payout' },
-  { key: 'commission', label: 'Commission fee' },
-  { key: 'shippingLogistics', label: 'Shipping / logistics fee' },
-  { key: 'tcs', label: 'TCS' },
-  { key: 'tds', label: 'TDS' },
-];
 
 const GUESSES = {
   orderId: ['order id', 'order_id', 'sub order id', 'order item id', 'transaction id'],

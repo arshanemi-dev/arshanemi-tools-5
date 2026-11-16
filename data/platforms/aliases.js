@@ -46,11 +46,6 @@ export function headerNormSet(headerRow = []) {
   return set;
 }
 
-// Does a set of normalised headers contain every name in `needed`?
-export function headersHaveAll(normSet, needed) {
-  return needed.every((n) => normSet.has(normHeader(n)));
-}
-
 // Does it contain at least one of `anyOf`?
 export function headersHaveAny(normSet, anyOf) {
   return anyOf.some((n) => normSet.has(normHeader(n)));

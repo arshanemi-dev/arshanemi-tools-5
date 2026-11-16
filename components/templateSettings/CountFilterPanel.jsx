@@ -19,12 +19,6 @@ const MODES = [['all', 'All rows'], ['filter', 'Only where…']];
 // "Delivered, Shipped" (or one per line) → ['Delivered', 'Shipped'].
 const splitValues = (text) => String(text || '').split(/[,\n]/).map((v) => v.trim()).filter(Boolean);
 
-// “A”, “B” or “C”
-export function quotedList(values) {
-  const q = values.map((v) => `“${v}”`);
-  return q.length > 1 ? `${q.slice(0, -1).join(', ')} or ${q[q.length - 1]}` : q[0] || '';
-}
-
 const selectClass = 'flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-divider bg-background px-2 text-left text-[12.5px] text-foreground hover:bg-card-hover focus:border-accent focus:outline-none';
 
 // The builder FormulaEditor opens under its token strip for the aggregate

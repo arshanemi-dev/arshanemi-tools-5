@@ -22,7 +22,6 @@ export const CONFIG_SCHEMA_VERSION = 1;
 // shown as a local date (lib/profitLoss/dates.js); formulas can subtract two
 // of them into days.
 export const HEADER_TYPES = ['formula', 'number', 'text', 'alphanumeric', 'date'];
-export const VALUE_TYPES = ['formula', 'number', 'text']; // title-card / series measure
 export const CHART_TYPES = ['line', 'bar', 'area', 'pie'];
 export const CHART_LABELS = { line: 'Line chart', bar: 'Bar chart', area: 'Area chart', pie: 'Pie chart' };
 export const FORMATS = ['money', 'int', 'pct', 'text'];
@@ -38,8 +37,6 @@ export const MAX_CARDS_PER_ROW = 99;
 // on top of the template's own headers — see data/defaultHeaders.js
 // AGGREGATE_BUILTINS. Kept here too so validateGlobalConfig accepts them as refs.
 export const AGGREGATE_BUILTIN_NAMES = ['Ads %', 'SKU Count', 'Settled SKU Count', 'Row Count'];
-
-export const FILE_SLOT_KINDS = ['payment', 'order', 'aux'];
 
 // ── reserved global headers ─────────────────────────────────────────────────
 // Every marketplace must map both to a sheet column before it can be

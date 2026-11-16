@@ -200,22 +200,6 @@ export const SKU_COLUMNS = [
   { key: 'cancelledQty', label: 'Canceled', type: 'int' },
 ];
 
-// The default "My Details" column set for anonymous / never-saved users.
-export const DEFAULT_MY_COLUMNS = [
-  'sku', 'totalOrderQty', 'settleOrderQty', 'profitLoss', 'returnPct', 'cogs', 'adsCost',
-];
-
-// ── KPI cards (exact order + labels from the reference) ────────────────────
-export const KPI_CARDS = [
-  { key: 'order', label: 'Order', meta: 'count', value: 'value', money: true },
-  { key: 'return', label: 'Return', meta: 'count', value: 'value', money: true },
-  { key: 'canceled', label: 'Canceled', meta: 'count', value: 'value', money: true },
-  { key: 'rto', label: 'RTO', meta: 'count', value: 'value', money: true },
-  { key: 'ads', label: 'Ads Cost', meta: 'pct', metaSuffix: '%', value: 'value', money: true },
-  { key: 'profitLoss', label: 'Profit/Loss', meta: 'count', value: 'value', money: true, signed: true },
-  { key: 'cogs', label: 'COGS', meta: 'count', value: 'value', money: true },
-];
-
 export function emptySummary() {
   return {
     order: { count: 0, value: 0 },
