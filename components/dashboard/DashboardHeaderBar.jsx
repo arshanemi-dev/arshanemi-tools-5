@@ -36,10 +36,14 @@ export default function DashboardHeaderBar({
   actionsDisabled = false,
   onExportExcel,
   onExportPdf,
+  leadingSlotRef = null,
 }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       {/* <h1 className="text-2xl font-bold tracking-tight text-foreground">.</h1> */}
+      {/* The open tab's own controls go here, before the filters (an Overview
+          tab's Open all / Close all — OverviewTab portals them in). */}
+      {leadingSlotRef && <div ref={leadingSlotRef} className="contents" />}
       <ValueFilter label="Account Names" allLabel="All Account Names" options={companyOptions} value={company} onChange={onCompanyChange} />
       <DateRangeFilter value={dateRange} onChange={onDateChange} />
       {/* <IconButton icon={RotateCcw} label="Reset" title="Reset filters" tone="ghost" onClick={onReset} /> */}

@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, PanelLeftOpen } from 'lucide-react';
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, PanelLeftOpen } from 'lucide-react';
 import KpiCardRow from './KpiCardRow';
 import GraphStrip from './GraphStrip';
 import DetailsViewPills from './DetailsViewPills';
@@ -53,7 +53,7 @@ function SectionLabel({ text, hidden, onShow }) {
 // itself just shows ov.headers — DashboardWorkspace already had
 // resolveTemplate compute the tree for exactly the ticked ones. Template
 // Settings' preview passes none of this and shows the tab's own picks.
-export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null, review = null }) {
+export default function OverviewTab({ config, tab, resolved, editMode = false, layout = {}, onSetTabSection = () => {}, skuCosts, onCostChange, onCostFill, selectedKeys, onToggleRow, onToggleAll, dirtyKeys, dirtyCostCells, pagerSlot = null, myColumns = null, onMyColumnsChange = null, viewPillsSlot = null, fillHeight = false, cardsSlot = null, review = null, expandSlot = null, aboveTable = null }) {
   // Every hook below must run unconditionally (same order every render), so
   // the `!tab` bail-out happens at the return instead of up here.
   const tabId = tab?.id ?? null;
@@ -76,38 +76,39 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   const setHeadersSection = (next) => onSetTabSection(tabId, 'headers', { ...next, picks: [...(tab?.headerIds || [])] });
   const headersArrange = useArrangeableList(ov.headers || [], headersSection, setHeadersSection);
 
-  // Every level opens by default (SKU ID → Size → Account Name all showing),
-  // so what's kept is what the user CLOSED: a node is open unless it's in
-  // `collapsed`. New nodes — a fresh upload, another filter — come in open
-  // too, instead of everything snapping shut on each change.
-  const [collapsed, setCollapsed] = useState(() => new Set());
+  // Every level starts closed — only the top level shows — and what's kept
+  // is what the user OPENED. Open all / Close all above the table (and the
+  // nav's per-level expand) set it in one go. Keys a fresh upload or filter
+  // no longer has simply match nothing, so what stays open stays open.
+  const [opened, setOpened] = useState(() => new Set());
   const allParentKeys = useMemo(() => keysToDepth(ov.tree || [], Infinity), [ov.tree]);
-  const expanded = useMemo(() => new Set(allParentKeys.filter((k) => !collapsed.has(k))), [allParentKeys, collapsed]);
+  const expanded = useMemo(() => new Set(allParentKeys.filter((k) => opened.has(k))), [allParentKeys, opened]);
+  const allOpen = allParentKeys.length > 0 && expanded.size === allParentKeys.length;
+  const noneOpen = expanded.size === 0;
+  const openAll = () => setOpened(new Set(allParentKeys));
+  const closeAll = () => setOpened(new Set());
   // `tick` only moves on a sidebar focus — that's what makes the table
   // jump/scroll to the row; a click inside the table just marks it active.
   const [active, setActive] = useState({ key: null, tick: 0 });
   const [navOpen, setNavOpen] = useState(true);
 
   const toggle = useCallback((key) => {
-    setCollapsed((prev) => {
+    setOpened((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }, []);
-  // Open levels 1…depth+1, close the rest (the nav's Expand / Collapse all).
-  const expandToDepth = (depth) => {
-    const open = new Set(keysToDepth(tree, depth));
-    setCollapsed(new Set(allParentKeys.filter((k) => !open.has(k))));
-  };
+  // Open levels 1…depth+1, close the rest (the nav's per-level expand).
+  const expandToDepth = (depth) => setOpened(new Set(keysToDepth(tree, depth)));
   // Sidebar label click: open the path down to it, open/close the node
   // itself like a dropdown, and bring its row into view in the table.
   const focusFromNav = (key) => {
     const reclick = active.key === key;
-    setCollapsed((prev) => {
+    setOpened((prev) => {
       const next = new Set(prev);
-      ancestorKeys(key).forEach((k) => next.delete(k));
-      if (reclick && !next.has(key)) next.add(key); else next.delete(key);
+      ancestorKeys(key).forEach((k) => next.add(k));
+      if (reclick && next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
     setActive((a) => ({ key, tick: a.tick + 1 }));
@@ -142,6 +143,32 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
     />
   );
 
+  // Open all / Close all — on the dashboard portaled into the header bar,
+  // before the Account Names filter (`expandSlot`); in Template Settings'
+  // preview, above the table.
+  const expandButtons = levels.length > 1 && allParentKeys.length > 0 && (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-divider bg-card text-[12px] font-medium">
+      <button
+        type="button"
+        onClick={openAll}
+        disabled={allOpen}
+        title="Open every level"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-muted hover:bg-card-hover hover:text-foreground disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ChevronsUpDown size={13} /> Open all
+      </button>
+      <button
+        type="button"
+        onClick={closeAll}
+        disabled={noneOpen}
+        title="Close everything back to the top level"
+        className="inline-flex items-center gap-1.5 border-l border-divider px-3 py-1.5 text-muted hover:bg-card-hover hover:text-foreground disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ChevronsDownUp size={13} /> Close all
+      </button>
+    </div>
+  );
+
   // The Title Cards. On the dashboard they portal up into `cardsSlot` —
   // above the header bar (DashboardWorkspace) — so the header bar sits
   // between them and the graphs / table; the preview keeps them here.
@@ -160,6 +187,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
   return (
     <div className={`@container ${fillHeight ? 'flex flex-1 flex-col gap-2' : 'space-y-5'}`}>
       {pills && createPortal(pills, viewPillsSlot)}
+      {expandButtons && expandSlot && createPortal(expandButtons, expandSlot)}
       {cards && (cardsSlot ? createPortal(cards, cardsSlot) : cards)}
 
       {graphsArrange.visible.length > 0 && (
@@ -202,6 +230,7 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               <PanelLeftOpen size={13} /> Hierarchy
             </button>
           )}
+          {!expandSlot && expandButtons}
           {editMode && ov.headers?.length > 0 && (
             <HiddenItemsChip hidden={headersArrange.hidden} onShow={headersArrange.show} />
           )}
@@ -227,7 +256,9 @@ export default function OverviewTab({ config, tab, resolved, editMode = false, l
               onHide={() => setNavOpen(false)}
             />
           )}
-          <div className={`min-w-0 flex-1 ${fillHeight ? 'flex flex-col @lg:self-stretch' : ''}`}>
+          <div className={`min-w-0 flex-1 ${fillHeight ? 'flex flex-col gap-2 @lg:self-stretch' : ''}`}>
+            {/* e.g. the dashboard's "Fetching data" bar, right on the table header */}
+            {aboveTable}
             <OverviewTreeTable
               levels={levels}
               columns={headersArrange.visible}

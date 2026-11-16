@@ -215,7 +215,16 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const [uploads, setUploads] = useState([]); // { id, slotId, fileName, platform, rows }
   const [busy, setBusy] = useState(false);
   const [restorePaging, setRestorePaging] = useState(null);
-  const [restoring, setRestoring] = useState(true);
+  // The header bar's spot before its filters (DashboardHeaderBar
+  // leadingSlotRef) — an Overview tab puts its Open all / Close all there.
+  const [headerLeadSlot, setHeaderLeadSlot] = useState(null);
+  const [restoreFetching, setRestoreFetching] = useState(true);
+  // Saved rows fetched but not handed to the calculation yet (see
+  // addRestoredRows / the flush effect below the view calculation).
+  const restoreBuffer = useRef([]);
+  const [restoreBuffered, setRestoreBuffered] = useState(0);
+  // Still loading saved data: pages being fetched, or fetched ones not shown yet.
+  const restoring = restoreFetching || restoreBuffered > 0;
   const [restoreError, setRestoreError] = useState(null);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   // The most recently uploaded raw File (any slot, or the SKU Cost button) —
@@ -393,15 +402,30 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // just the active marketplace.
   // How the pages are fetched and added (page 1 at once, the rest a few at a
   // time, in order) is lib/profitLoss/loadAllPages.js.
+  //
+  // Progressive: fetched rows wait in `restoreBuffer` and go on screen one
+  // batch at a time — the next batch only once the merge + view calculation
+  // of the previous one has finished (flushRestoredRows, below). Handing every
+  // page straight over restarted the calculation on each one and threw the
+  // unfinished result away, so nothing showed until the very last page.
   const addRestoredRows = useCallback((rows) => {
     markRowsStored(rows); // they came from the hub — nothing to save back
-    setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
-      ? prev.map((u) => (u.slotId === RESTORED_SLOT_ID ? { ...u, rows: [...u.rows, ...rows] } : u))
-      : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
+    const buffer = restoreBuffer.current;
+    for (const row of rows) buffer.push(row);
+    setRestoreBuffered(buffer.length);
   }, [markRowsStored]);
+  const flushRestoredRows = useCallback(() => {
+    const rows = restoreBuffer.current;
+    if (!rows.length) return;
+    restoreBuffer.current = [];
+    setRestoreBuffered(0);
+    setUploads((prev) => (prev.some((u) => u.slotId === RESTORED_SLOT_ID)
+      ? prev.map((u) => (u.slotId === RESTORED_SLOT_ID ? { ...u, rows: u.rows.concat(rows) } : u))
+      : [...prev, { id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }]));
+  }, []);
   useEffect(() => {
     if (!loggedIn) {
-      Promise.resolve().then(() => setRestoring(false));
+      Promise.resolve().then(() => setRestoreFetching(false));
       return;
     }
     let cancelled = false;
@@ -415,9 +439,11 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       }
     };
     (async () => {
-      setRestoring(true);
+      setRestoreFetching(true);
       setRestoreError(null);
       setRestorePaging(null);
+      restoreBuffer.current = [];
+      setRestoreBuffered(0);
       setUploads((prev) => prev.filter((upload) => upload.slotId !== RESTORED_SLOT_ID));
       try {
         const result = await loadAllPages({
@@ -431,7 +457,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       } catch {
         if (!cancelled) setRestoreError('Saved data could not be loaded. Retry before uploading or exporting.');
       } finally {
-        if (!cancelled) setRestoring(false);
+        if (!cancelled) setRestoreFetching(false);
       }
     })();
     return () => { cancelled = true; controller.abort(); };
@@ -524,6 +550,49 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   // The Transactions table's columns — every header not switched to Hidden.
   const transactionHeaders = useMemo(() => (transactionResolved.headers || []).filter(isShown), [transactionResolved]);
   const calculating = merged.pending || computed.pending;
+  // Hand the next batch of saved rows over once the screen shows the last one.
+  useEffect(() => {
+    // (A failed merge never lets the view run — don't wait on it forever.)
+    if (!restoreBuffered || merged.pending || (computed.pending && !merged.error)) return;
+    Promise.resolve().then(flushRestoredRows);
+  }, [restoreBuffered, merged.pending, merged.error, computed.pending, flushRestoredRows]);
+  // Saved rows on screen so far (for the loading bar).
+  const restoredShown = useMemo(() => uploads.find((u) => u.slotId === RESTORED_SLOT_ID)?.rows.length || 0, [uploads]);
+  // Saved data streaming in — shown right above the open tab's table header
+  // (TabView / OverviewTab `aboveTable`, Transactions inline). What's on
+  // screen already works; the bar shows rows on screen (solid) and rows
+  // downloaded (faint).
+  const savedLoadingBar = (() => {
+    if (!restoring || restoreError) return null;
+    const total = restorePaging?.totalCount || 0;
+    const fetched = total ? Math.min(restorePaging.page * RESTORE_PAGE_SIZE, total) : 0;
+    const pct = (n) => (total ? Math.min(100, Math.round((n / total) * 100)) : 0);
+    const fmt = (n) => n.toLocaleString('en-IN');
+    return (
+      <div role="status" aria-live="polite" className="shrink-0 overflow-hidden rounded-lg bg-action-soft text-[13px] text-action">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-1.5">
+          <Loader2 size={14} className="shrink-0 animate-spin" />
+          <span className="font-medium">
+            {!total
+              ? 'Fetching your saved data…'
+              : restoredShown
+                ? `Fetching data — showing ${fmt(restoredShown)} of ${fmt(total)} rows`
+                : `Fetching data — preparing the first ${fmt(Math.min(RESTORE_PAGE_SIZE, total))} of ${fmt(total)} rows…`}
+          </span>
+          {total > 0 && restoredShown > 0 && (
+            <span className="text-[12px] opacity-80">· title cards and totals update as rows arrive</span>
+          )}
+          {total > 0 && <span className="ml-auto text-[12px] font-semibold tabular-nums">{pct(restoredShown)}%</span>}
+        </div>
+        {total > 0 && (
+          <div className="relative h-1 w-full bg-action/15">
+            <div className="absolute inset-y-0 left-0 bg-action/35 transition-[width] duration-300" style={{ width: `${pct(fetched)}%` }} />
+            <div className="absolute inset-y-0 left-0 bg-action transition-[width] duration-300" style={{ width: `${pct(restoredShown)}%` }} />
+          </div>
+        )}
+      </div>
+    );
+  })();
   const calculationError = merged.error || computed.error;
   const [exporting, setExporting] = useState(false);
 
@@ -822,6 +891,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const onReviewChange = useCallback((cells, patch) => {
     const orderId = String(cells[RESERVED_HEADER_IDS.orderId]?.raw ?? '').trim();
     if (!orderId || !orderIdHeader) return;
+    if (restoring) { addToast('Your saved data is still loading — set Review once it finishes', 'error'); return; }
     const txnId = String(cells[RESERVED_HEADER_IDS.transactionId]?.raw ?? '').trim();
     setReviewOverrides((prev) => {
       const before = reviewOverrideOf(prev, orderId, txnId);
@@ -833,13 +903,15 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       return withReviewOverride(prev, orderId, txnId, state);
     });
     setReviewEdited(true);
-  }, [orderIdHeader, reviewHeaders]);
+  }, [orderIdHeader, reviewHeaders, restoring, addToast]);
 
   // The same for an Overview row — a group of orders (`txns` — its node's
   // [{ orderId, txnId }], resolveTemplate transactionsOf): a Yes / No picked
   // there is set on every one of them, and so is a Reason typed there.
   const onReviewManyChange = useCallback((txns, patch) => {
     if (!orderIdHeader || !txns?.length) return;
+    // A group's Yes / No covers every order in it — wait until they're all here.
+    if (restoring) { addToast('Your saved data is still loading — set Review once it finishes', 'error'); return; }
     setReviewOverrides((prev) => {
       let next = prev;
       for (const { orderId, txnId } of txns) {
@@ -853,7 +925,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       return next;
     });
     setReviewEdited(true);
-  }, [orderIdHeader]);
+  }, [orderIdHeader, restoring, addToast]);
 
   // ── build the "current tab" view for export + save ──────────────────────
   // Takes which resolved snapshot to read from — `resolved` (the live,
@@ -1011,6 +1083,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
               onExportPdf={() => doExport('pdf')}
               onOpenHistory={() => setHistoryOpen(true)}
               saveProps={{ buildPayload: buildSavePayload, rowCount: canonicalRows.length, disabled: busy || restoring || !!restoreError || calculating || !!calculationError }}
+              leadingSlotRef={setHeaderLeadSlot}
             />
           )}
         />
@@ -1031,7 +1104,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
               look identical to "nothing was ever uploaded", with no clue
               why. Settlement exports are almost always older than the
               default 7-day window. */}
-          {!calculating && !calculationError && hasData && canonicalRows.length > 0 && !showTransactions && resolved.rowCount === 0 && (
+          {!calculating && !restoring && !calculationError && hasData && canonicalRows.length > 0 && !showTransactions && resolved.rowCount === 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neg/10 px-3 py-2 text-[13px] text-neg">
               <span>
                 {canonicalRows.length} row{canonicalRows.length === 1 ? '' : 's'} uploaded, but none fall in the selected date range.
@@ -1052,14 +1125,6 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
 
 
 
-          {restoring && (
-            <div className="mt-4 flex items-center gap-2 rounded-lg bg-action-soft px-3 py-2 text-[13px] text-action">
-              <Loader2 size={14} className="shrink-0 animate-spin" />
-              <span>
-                {restorePaging ? `Loading your saved data — ${Math.min(restorePaging.page * RESTORE_PAGE_SIZE, restorePaging.totalCount)} of ${restorePaging.totalCount} rows… Totals are provisional.` : 'Loading your saved data…'}
-              </span>
-            </div>
-          )}
           {restoreError && (
             <div role="alert" className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-neg/10 px-3 py-2 text-sm text-neg">
               <span>{restoreError}</span>
@@ -1071,7 +1136,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           {/* The save of an upload whose window was hidden, or of rows written back outside one. */}
           {(!uploadStage || uploadStage.hidden) && <SavingRowsLine saving={rowSave} onRetry={retryRowSave} />}
 
-          <div aria-busy={calculating} inert={calculating || !!calculationError || restoring || !!restoreError || undefined} className={`mt-2 flex flex-1 flex-col ${calculating ? 'opacity-60' : ''}`}>
+          {/* While saved rows stream in, the screen stays readable and
+              scrollable between batches — no dimming or lock on each
+              recalculation (exports / uploads / save stay disabled above). */}
+          <div aria-busy={calculating || restoring} inert={(calculating && !restoring) || !!calculationError || !!restoreError || undefined} className={`mt-2 flex flex-1 flex-col transition-opacity ${calculating && !restoring ? 'opacity-60' : ''}`}>
             {/* Even with nothing uploaded yet, the active tab's title cards /
                 graphs / table headers render from the template config in
                 their zero/empty state — only the rows are empty. */}
@@ -1081,6 +1149,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 <p className="text-sm text-muted">
                   One row per Order-Id{transactionIdHeader ? ' + Transaction-Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
                 </p>
+                {savedLoadingBar}
                 <DetailsTable
                   columns={transactionHeaders}
                   rows={transactionRows}
@@ -1104,6 +1173,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 dirtyCostCells={dirtyCostCells}
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 review={orderIdHeader ? { onChangeMany: onReviewManyChange } : null}
+                expandSlot={headerLeadSlot}
+                aboveTable={savedLoadingBar}
                 fillHeight
               />
             ) : (
@@ -1122,6 +1193,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myDetailsInline={false}
                 allHeaders
                 fillHeight
+                aboveTable={savedLoadingBar}
                 loadChildren={loadRowChildren}
               />
             )}
