@@ -19,6 +19,9 @@ import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextC
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
+// How far each deeper level (and its colour bar) steps in from its parent.
+const LEVEL_STEP_PX = 14;
+
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
 const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; // its colour set per value — black, or red when negative
@@ -304,7 +307,8 @@ export default function OverviewTreeTable({
                       <button
                         type="button"
                         onClick={() => setChildLimits((prev) => ({ ...prev, [item.parentKey]: item.limit + CHILD_PAGE }))}
-                        className={`w-full border-l-4 py-1.5 pr-3 text-left text-[12px] font-medium text-link hover:underline ${st.stripe} ${st.indent}`}
+                        className={`block border-l-4 py-1.5 pl-7 pr-3 text-left text-[12px] font-medium text-link hover:underline ${st.stripe}`}
+                        style={{ marginLeft: item.depth * LEVEL_STEP_PX }}
                       >
                         Show {Math.min(CHILD_PAGE, item.rest)} more <span className="text-subtle">({item.rest} left)</span>
                       </button>
@@ -346,7 +350,10 @@ export default function OverviewTreeTable({
                     </td>
                   )}
                   <td className="sticky left-0 z-[1] bg-inherit p-0">
-                    <div className={`flex items-center gap-1 border-l-4 py-2 ${st.stripe}`}>
+                    <div
+                      className={`flex items-center gap-1 border-l-4 py-2 pl-1 pr-2 ${st.stripe}`}
+                      style={{ marginLeft: n.depth * LEVEL_STEP_PX }}
+                    >
                       {hasKids ? (
                         <button
                           type="button"
