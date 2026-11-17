@@ -108,7 +108,11 @@ function Check({ checked, onChange, label, disabled }) {
 // `shownMarketplaceIds` (null = all) — the Market Places row's ticks: only
 // those marketplaces get a column (a header mapped in a hidden one still
 // counts as mapped).
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, oursColumns = null, shownMarketplaceIds = null, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
+// `showMapped` / `showUnmapped` — the Show toggles: a hidden block gives its
+// height to the other (the column heads and their filters always stay).
+// `full` — the section is in Full Page: with both blocks on, each takes a
+// share of the screen height instead of a fixed box.
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, oursColumns = null, shownMarketplaceIds = null, showMapped = true, showUnmapped = true, full = false, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
   const [colSort, setColSort] = useState(null); // { id, dir } — the marketplace column the table is sorted on
   const [oursSorts, setOursSorts] = useState({}); // { [ours column key]: 'asc' | 'desc' } — each Our Headers column's own list
   const [filters, setFilters] = useState({}); // { [column]: { values: [header name, ...] } | null }
@@ -323,7 +327,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   // A column's own scroll box in the Unmapped part — each list scrolls by
   // itself, never along with another one or with the Mapped rows above.
   const scrollList = (items, empty = null) => (
-    <div className="max-h-[18rem] overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]">
+    <div className={`${!showMapped ? 'max-h-[calc(100vh-16rem)] min-h-[18rem]' : full ? 'max-h-[34vh]' : 'max-h-[18rem]'} overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]`}>
       {items.length ? items : <p className="px-2 py-1.5 text-[11.5px] text-subtle">{empty}</p>}
     </div>
   );
@@ -366,7 +370,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
         <div className="w-max min-w-full pb-2">
           {/* Mapped — its rows scroll together, under the column heads; taller
               while a filter menu is open, so the menu isn't cut off. */}
-          <div data-table-scroll className={`max-h-[22rem] overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${menuOpen ? 'min-h-[32rem]' : ''}`}>
+          <div data-table-scroll className={`${!showMapped ? '' : !showUnmapped ? 'max-h-[calc(100vh-14rem)] min-h-[22rem]' : full ? 'max-h-[38vh]' : 'max-h-[22rem]'} overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${menuOpen ? 'min-h-[32rem]' : ''}`}>
             <table className="table-fixed border-collapse text-left text-[13px] [&_td]:overflow-hidden" style={tableWidth}>
               {colGroup}
               <thead className="sticky top-0 z-10 bg-background text-muted">
@@ -395,8 +399,8 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {sectionRow(`Mapped · ${mergedRows.length} — these rows scroll together`)}
+              {showMapped && <tbody>
+                {sectionRow(`Mapped · ${mergedRows.length}`)}
                 {mergedRows.map((h) => (
                   <tr key={h.id}>
                     {ourCell(h, 'bg-background')}
@@ -441,17 +445,17 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                     </td>
                   </tr>
                 )}
-              </tbody>
+              </tbody>}
             </table>
           </div>
 
           {/* Unmapped — every column its own list, each scrolling by itself,
               with what's ticked in it pinned on top. */}
-          {anyUnmapped && (
+          {showUnmapped && anyUnmapped && (
             <table className="table-fixed border-collapse text-left text-[13px] [&_td]:overflow-hidden" style={tableWidth}>
               {colGroup}
               <tbody>
-                {sectionRow('Unmapped — each list scrolls by itself')}
+                {sectionRow('Unmapped')}
                 <tr>
                   <td className="border border-divider bg-background p-0 align-top">
                     {tickedBar(activeHeader ? [{ key: activeHeader.id, label: activeHeader.name, onRemove: () => onSelect(null) }] : [])}

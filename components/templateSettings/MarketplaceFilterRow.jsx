@@ -6,9 +6,9 @@ import { Chip } from './HeaderGroupsRow';
 // every marketplace ticked by default: the mapping table shows one column
 // per ticked marketplace. A view choice only — nothing here is saved.
 // `items` = [{ id, name, count }] (count = its sheet headers);
-// `selectedIds`, `onToggle(id)`, `onAll(on)`.
-export default function MarketplaceFilterRow({ items = [], selectedIds = [], onToggle, onAll }) {
-  if (!items.length) return null;
+// `selectedIds`, `onToggle(id)`, `onAll(on)`; `end` = controls at the line's right end.
+export default function MarketplaceFilterRow({ items = [], selectedIds = [], onToggle, onAll, end = null }) {
+  if (!items.length && !end) return null;
   const selected = new Set(selectedIds);
   const allOn = items.every((m) => selected.has(m.id));
   const someOn = items.some((m) => selected.has(m.id));
@@ -16,13 +16,18 @@ export default function MarketplaceFilterRow({ items = [], selectedIds = [], onT
 
   return (
     <div className="flex flex-wrap items-center gap-2 px-4">
-      <span className="w-24 shrink-0 text-[12.5px] font-semibold text-foreground">Market Places</span>
-      <Chip active={allOn} mixed={!allOn && someOn} onClick={() => onAll(!allOn)} count={total}>All</Chip>
-      {items.map((m) => (
-        <Chip key={m.id} active={selected.has(m.id)} onClick={() => onToggle(m.id)} count={m.count}>
-          {m.name}
-        </Chip>
-      ))}
+      {items.length > 0 && (
+        <>
+          <span className="w-24 shrink-0 text-[12.5px] font-semibold text-foreground">Market Places</span>
+          <Chip active={allOn} mixed={!allOn && someOn} onClick={() => onAll(!allOn)} count={total}>All</Chip>
+          {items.map((m) => (
+            <Chip key={m.id} active={selected.has(m.id)} onClick={() => onToggle(m.id)} count={m.count}>
+              {m.name}
+            </Chip>
+          ))}
+        </>
+      )}
+      {end && <div className="ml-auto flex flex-wrap items-center gap-2">{end}</div>}
     </div>
   );
 }

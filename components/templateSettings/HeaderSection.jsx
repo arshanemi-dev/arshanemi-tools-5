@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { FileSpreadsheet, Link2, Loader2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { FileSpreadsheet, Link2, Loader2, Maximize2, Minimize2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { marketplaceColumns, withAddedMappings, withoutHeaderMappings, withoutMapping } from '@/lib/profitLoss/marketplaceHeaders';
 import { formulaUsages, headerNameProblem, headerUsages, withHeaderUpdate, withoutAutoImported, withoutHeader } from '@/lib/profitLoss/headerUsage';
 import { DEFAULT_LIST_SORT, matchesQuery } from '@/lib/profitLoss/listSort';
@@ -10,7 +10,7 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SectionHead from './SectionHead';
 import HeaderMappingTable, { OURS_ID } from './HeaderMappingTable';
 import HeaderEditModal from './HeaderEditModal';
-import HeaderGroupsRow, { GroupManageControls } from './HeaderGroupsRow';
+import HeaderGroupsRow, { Chip, GroupManageControls } from './HeaderGroupsRow';
 import MarketplaceFilterRow from './MarketplaceFilterRow';
 import { groupIdOf } from '@/lib/profitLoss/headerGroups';
 import ListSearchSort from './ListSearchSort';
@@ -42,6 +42,8 @@ import { downloadHeadersWorkbook } from '@/lib/sheet/headersWorkbook';
 // one "Our Headers (<group>)" column per ticked group; a header in one of the
 // admin's own groups is tagged with it) and every Our Header's Show / Hide switch
 // (hidden = never a dashboard column).
+const VIEW_KEY = 'pl-template-header-view'; // the Show: Mapped / Unmapped toggles
+
 export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null, headerGroups = null }) {
   const { addToast } = useToast();
   const { config, setConfig, addItem } = draft;
@@ -121,6 +123,44 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
     (t) => (t.config?.fileSlots || []).flatMap((s) => (s.mappings || []).map((m) => m.headerId)),
   )), [marketplaces]);
   const autoImported = headers.filter((h) => h.source === 'extracted');
+
+  // Show: Mapped / Unmapped — hide a block to give the other its room. At
+  // least one stays on; the choice is remembered in this browser.
+  const [view, setView] = useState({ mapped: true, unmapped: true });
+  useEffect(() => { // after mount, so the server's and the browser's first render match
+    try {
+      const v = JSON.parse(window.localStorage.getItem(VIEW_KEY) || 'null');
+      if (v && (v.mapped || v.unmapped)) setView({ mapped: !!v.mapped, unmapped: !!v.unmapped }); // eslint-disable-line react-hooks/set-state-in-effect
+    } catch { /* no storage — keep the default */ }
+  }, []);
+  const toggleView = (k) => setView((prev) => {
+    const next = { ...prev, [k]: !prev[k] };
+    if (!next.mapped && !next.unmapped) return prev;
+    try { window.localStorage.setItem(VIEW_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
+  // Full Page — the section covers the whole screen (over the sidebar and
+  // the Save Version bar) for room to work; Minimize or Esc goes back. Esc
+  // first closes an open dropdown / popup, only then the full page.
+  const [full, setFull] = useState(false);
+  const popupOpen = !!modal || !!deleteId;
+  useEffect(() => {
+    if (!full) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || popupOpen || document.querySelector('#section-header .dropdown-panel-in')) return;
+      setFull(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [full, popupOpen]);
+
+  const isMappedHeader = (h) => (h.fromHeaders || []).length > 0 || mappedIds.has(h.id);
+  const mappedCount = headers.filter(isMappedHeader).length;
   const deleteTarget = headers.find((h) => h.id === deleteId) || null;
   const deleteUsages = deleteTarget ? headerUsages(config, deleteTarget) : [];
   // A header a formula still names isn't deleted: the confirm says which
@@ -269,10 +309,22 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const btn = 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium';
 
   return (
-    <div id="section-header" className="scroll-mt-24">
-      <SectionHead title="Header" />
+    <div id="section-header" className={full ? 'fixed inset-0 z-[60] flex flex-col bg-background p-3 sm:p-4' : 'scroll-mt-24'}>
+      <SectionHead
+        title="Header"
+        right={(
+          <button
+            type="button"
+            onClick={() => setFull((v) => !v)}
+            title={full ? 'Back to the normal page (Esc)' : 'Cover the whole screen — hides the sidebar and the Save Version bar'}
+            className="inline-flex items-center gap-1.5 rounded-full border border-divider-light px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-card-hover"
+          >
+            {full ? <><Minimize2 size={14} /> Minimize</> : <><Maximize2 size={14} /> Full Page</>}
+          </button>
+        )}
+      />
 
-      <div className="space-y-4 rounded-xl border border-divider bg-background py-4">
+      <div className={`space-y-4 rounded-xl border border-divider bg-background py-4 ${full ? 'min-h-0 flex-1 overflow-y-auto' : ''}`}>
         {/* Toolbar — Add always; Edit / Delete once an Our Header is ticked; then Mapped */}
         <div className="flex flex-wrap items-center gap-2 px-4">
           <button type="button" onClick={() => setModal({ mode: 'add' })} className={`${btn} border-dashed border-divider-light text-action hover:bg-action-soft`}>
@@ -355,6 +407,13 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
             selectedIds={shownMarketplaceIds}
             onToggle={toggleMarketplace}
             onAll={setAllMarketplaces}
+            end={(
+              <>
+                <span className="text-[12.5px] font-semibold text-foreground">Show</span>
+                <Chip active={view.mapped} onClick={() => toggleView('mapped')} count={mappedCount}>Mapped</Chip>
+                <Chip active={view.unmapped} onClick={() => toggleView('unmapped')} count={headers.length - mappedCount}>Unmapped</Chip>
+              </>
+            )}
           />
         </div>
 
@@ -375,6 +434,9 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           groupFilter={groupFilter}
           oursColumns={oursColumns}
           shownMarketplaceIds={shownMarketplaceIds}
+          showMapped={view.mapped}
+          showUnmapped={view.unmapped}
+          full={full}
           groupTag={groupTag}
           isHiddenOf={groupsReady ? headerGroups.isHidden : null}
           onToggleHidden={groupsReady ? toggleHidden : null}
