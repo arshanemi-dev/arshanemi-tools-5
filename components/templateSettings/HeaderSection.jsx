@@ -10,7 +10,8 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import SectionHead from './SectionHead';
 import HeaderMappingTable, { OURS_ID } from './HeaderMappingTable';
 import HeaderEditModal from './HeaderEditModal';
-import HeaderGroupsRow from './HeaderGroupsRow';
+import HeaderGroupsRow, { GroupManageControls } from './HeaderGroupsRow';
+import MarketplaceFilterRow from './MarketplaceFilterRow';
 import { groupIdOf } from '@/lib/profitLoss/headerGroups';
 import ListSearchSort from './ListSearchSort';
 import { downloadHeadersWorkbook } from '@/lib/sheet/headersWorkbook';
@@ -36,9 +37,10 @@ import { downloadHeadersWorkbook } from '@/lib/sheet/headersWorkbook';
 // footer's Save New Version (GlobalVersion.jsx): the headers, the mappings
 // (per marketplace, into that marketplace's entry of the draft —
 // `mappingSaver`), and `headerGroups` = useHeaderGroups (TemplateBuilder) —
-// the "Our Groups" row above the table (HeaderGroupsRow; picking a group
-// narrows the table to its headers, a header in one of the admin's own
-// groups is tagged with it) and every Our Header's Show / Hide switch
+// the "Our Groups" row above the table (HeaderGroupsRow; multi-select, all
+// ticked by default — the table shows only the ticked groups' headers, with
+// one "Our Headers (<group>)" column per ticked group; a header in one of the
+// admin's own groups is tagged with it) and every Our Header's Show / Hide switch
 // (hidden = never a dashboard column).
 export default function HeaderSection({ draft, activeId: activeIdProp, onActiveId, marketplaces = null, mappingSaver = null, headerGroups = null }) {
   const { addToast } = useToast();
@@ -53,12 +55,54 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   const [deleteId, setDeleteId] = useState(null); // header awaiting the delete confirm (row or toolbar)
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState(DEFAULT_LIST_SORT);
-  const [groupId, setGroupId] = useState(null); // the Our Groups filter — null = All
+  // The Our Groups row is multi-select: every group starts ticked (so does a
+  // new one) — this holds the ones switched OFF.
+  const [offGroups, setOffGroups] = useState(() => new Set());
   const groupsReady = !!headerGroups && !headerGroups.loading && !headerGroups.error;
-  const pickedGroup = groupsReady ? headerGroups.groups.find((g) => g.id === groupId) || null : null;
-  const groupFilter = pickedGroup
-    ? new Set(headers.filter((h) => groupIdOf(headerGroups.headerGroups, h.id) === pickedGroup.id).map((h) => h.id))
+  const allGroups = groupsReady ? headerGroups.groups : [];
+  const onGroups = allGroups.filter((g) => !offGroups.has(g.id));
+  const allGroupsOn = onGroups.length === allGroups.length;
+  const groupOfHeader = (id) => groupIdOf(headerGroups?.headerGroups, id);
+  // One "Our Headers (<group>)" column per ticked group, each listing only
+  // that group's headers.
+  const oursColumns = groupsReady
+    ? onGroups.map((g) => ({ id: g.id, name: g.name, ids: new Set(headers.filter((h) => groupOfHeader(h.id) === g.id).map((h) => h.id)) }))
     : null;
+  // The first column shows only headers of the ticked groups (null = all).
+  const groupFilter = groupsReady && !allGroupsOn
+    ? new Set(oursColumns.flatMap((c) => [...c.ids]))
+    : null;
+  const toggleGroup = (id) => setOffGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const setAllGroups = (on) => setOffGroups(on ? new Set() : new Set(allGroups.map((g) => g.id)));
+
+  // The Market Places row — multi-select too, every marketplace ticked by
+  // default (a new one as well); this holds the ones switched OFF. Hiding one
+  // also drops its ticks, so Mapped never maps a header you can't see.
+  const [offMarketplaces, setOffMarketplaces] = useState(() => new Set());
+  const marketplaceItems = useMemo(() => [...(marketplaces || [])]
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+    .map((t) => ({ id: t.id, name: t.marketplaceName || 'Marketplace', count: marketplaceColumns(t.config).length })), [marketplaces]);
+  const shownMarketplaceIds = marketplaceItems.filter((m) => !offMarketplaces.has(m.id)).map((m) => m.id);
+  const dropTicksOf = (ids) => setChecked((prev) => {
+    const next = new Set([...prev].filter((key) => !ids.includes(JSON.parse(key)[0])));
+    return next.size === prev.size ? prev : next;
+  });
+  const toggleMarketplace = (id) => {
+    if (!offMarketplaces.has(id)) dropTicksOf([id]);
+    setOffMarketplaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const setAllMarketplaces = (on) => {
+    if (!on) dropTicksOf(marketplaceItems.map((m) => m.id));
+    setOffMarketplaces(on ? new Set() : new Set(marketplaceItems.map((m) => m.id)));
+  };
   // The group a header is in, shown beside its name — unless it's General.
   const groupTag = (id) => {
     if (!groupsReady) return '';
@@ -260,6 +304,12 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           {checked.size > 0 && (
             <button type="button" onClick={() => setChecked(new Set())} className="rounded-full px-2 py-1 text-[12px] text-subtle hover:text-foreground">Clear ticks</button>
           )}
+          {groupsReady && (
+            <>
+              <span className="mx-1 hidden h-6 w-px bg-divider sm:block" />
+              <GroupManageControls g={headerGroups} headers={headers} />
+            </>
+          )}
           <button
             type="button"
             onClick={downloadExcel}
@@ -271,15 +321,11 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           </button>
         </div>
 
-        <p className="px-4 text-[11.5px] text-subtle">
-          {marketplaces === null
-            ? 'Loading marketplaces…'
-            : !mpCount
-              ? 'No marketplaces yet — add one under Market Place to map its headers here.'
-              : active && checked.size
-                ? <>Map <span className="font-semibold text-foreground">{checked.size}</span> ticked header{checked.size === 1 ? '' : 's'} into <span className="font-semibold text-foreground">{active.name}</span>.</>
-                : 'Tick one Our Header and any marketplace headers or Our Headers, then press Mapped. × on a box unmaps it.'}
-        </p>
+        {(marketplaces === null || !mpCount) && (
+          <p className="px-4 text-[11.5px] text-subtle">
+            {marketplaces === null ? 'Loading marketplaces…' : 'No marketplaces yet — add one under Market Place to map its headers here.'}
+          </p>
+        )}
 
         {autoImported.length > 0 && (
           <div className="mx-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
@@ -293,7 +339,24 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           </div>
         )}
 
-        {headerGroups && <HeaderGroupsRow g={headerGroups} headers={headers} activeId={pickedGroup?.id ?? null} onActive={setGroupId} />}
+        {/* Two lines: Categories, then Market Places */}
+        <div className="space-y-2">
+          {headerGroups && (
+            <HeaderGroupsRow
+              g={headerGroups}
+              headers={headers}
+              selectedIds={onGroups.map((g) => g.id)}
+              onToggle={toggleGroup}
+              onAll={setAllGroups}
+            />
+          )}
+          <MarketplaceFilterRow
+            items={marketplaceItems}
+            selectedIds={shownMarketplaceIds}
+            onToggle={toggleMarketplace}
+            onAll={setAllMarketplaces}
+          />
+        </div>
 
         <ListSearchSort
           className="px-4"
@@ -310,6 +373,8 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           headers={headers}
           ourQuery={query}
           groupFilter={groupFilter}
+          oursColumns={oursColumns}
+          shownMarketplaceIds={shownMarketplaceIds}
           groupTag={groupTag}
           isHiddenOf={groupsReady ? headerGroups.isHidden : null}
           onToggleHidden={groupsReady ? toggleHidden : null}

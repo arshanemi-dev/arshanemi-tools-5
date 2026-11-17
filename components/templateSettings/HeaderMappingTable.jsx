@@ -20,11 +20,12 @@ export const colKey = (marketplaceId, columnKey) => JSON.stringify([marketplaceI
 const matches = (text, q) => !q || norm(text).includes(norm(q));
 
 function ColumnHead({ label, sub, filter, onFilter, getOptions, onOpenChange, sortDir, onSort }) {
+  // `wide` — the filter's list in 3 columns, so long header lists show at a glance.
   return (
     <div className="flex min-w-0 items-center gap-1 whitespace-nowrap">
       <span className="min-w-0 truncate font-normal" title={label}>{label}</span>
       {sub && <span className="text-[10.5px] font-normal text-subtle">· {sub}</span>}
-      <ColumnFilterButton label={label} filter={filter} getOptions={getOptions} onChange={onFilter} onOpenChange={onOpenChange} size={13} sortDir={sortDir} onSort={onSort} />
+      <ColumnFilterButton label={label} filter={filter} getOptions={getOptions} onChange={onFilter} onOpenChange={onOpenChange} size={13} sortDir={sortDir} onSort={onSort} wide />
     </div>
   );
 }
@@ -98,9 +99,18 @@ function Check({ checked, onChange, label, disabled }) {
 // groups, shown beside it. `isHiddenOf(id)` / `onToggleHidden(id)` drive
 // each Our Header's Show / Hide switch (left out while they're null — the
 // groups not loaded yet).
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
+//
+// `oursColumns` ([{ id, name, ids: Set }] — one per ticked group, or null
+// before the groups load) splits the "Our Headers" column into one column
+// per group: "Our Headers (General)", "Our Headers (Meesho)"… each listing,
+// filtering, sorting and showing the mapped boxes of its own group only.
+// Their ticks all share the OURS_ID key, so Mapped works the same.
+// `shownMarketplaceIds` (null = all) — the Market Places row's ticks: only
+// those marketplaces get a column (a header mapped in a hidden one still
+// counts as mapped).
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, oursColumns = null, shownMarketplaceIds = null, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
   const [colSort, setColSort] = useState(null); // { id, dir } — the marketplace column the table is sorted on
-  const [oursSort, setOursSort] = useState(null); // 'asc' | 'desc' | null — the Our Headers column's own list
+  const [oursSorts, setOursSorts] = useState({}); // { [ours column key]: 'asc' | 'desc' } — each Our Headers column's own list
   const [filters, setFilters] = useState({}); // { [column]: { values: [header name, ...] } | null }
   const [menuOpen, setMenuOpen] = useState(false); // a filter menu is open — the table makes room for it
   const setFilter = (col) => (f) => setFilters((prev) => ({ ...prev, [col]: f }));
@@ -112,27 +122,41 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
 
   // Oldest marketplace first — the list itself is sorted by last update, which
   // would shuffle the columns every time a mapping saves.
-  const columns = useMemo(() => [...(marketplaces || [])]
+  const allColumns = useMemo(() => [...(marketplaces || [])]
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .map((t) => {
       const mapped = mappedColumnsByHeader(t.config, knownIds);
       const all = marketplaceColumns(t.config); // File › Sheet › Header, every sheet's own
       return { id: t.id, name: t.marketplaceName || 'Marketplace', mapped, total: all.length, all: all.map((o) => o.label), unmapped: all.filter((o) => !isColumnMapped(t.config, o, knownIds)) };
     }), [marketplaces, knownIds]);
+  const shownKey = shownMarketplaceIds ? shownMarketplaceIds.join('|') : null;
+  const columns = useMemo(
+    () => (shownKey == null ? allColumns : allColumns.filter((c) => shownKey.split('|').includes(c.id))),
+    [allColumns, shownKey],
+  );
 
   const fromOurs = (h) => (h.fromHeaders || []).map((id) => headers.find((x) => x.id === id)).filter(Boolean);
-  const isMerged = (h) => fromOurs(h).length > 0 || columns.some((c) => (c.mapped.get(h.id) || []).length);
+  const isMerged = (h) => fromOurs(h).length > 0 || allColumns.some((c) => (c.mapped.get(h.id) || []).length);
   const ourAllowed = allowed(OUR_COL);
   const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name)) && (!groupFilter || groupFilter.has(h.id));
   const colAllowed = columns.map((c) => allowed(c.id));
-  const oursAllowed = allowed(OURS_ID); // the Our Headers column's filter (header names)
+  // The Our Headers columns — one per ticked group, or a single one for all.
+  const oursCols = (oursColumns || [{ id: '', name: '', ids: null }]).map((oc) => ({
+    ...oc,
+    key: oc.id ? `${OURS_ID}:${oc.id}` : OURS_ID, // its filter / sort key
+    label: oc.name ? `Our Headers (${oc.name})` : 'Our Headers',
+    has: (h) => !oc.ids || oc.ids.has(h.id),
+  }));
   const sortCol = colSort ? columns.find((c) => c.id === colSort.id) : null;
   const sign = colSort?.dir === 'desc' ? -1 : 1;
   const byText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   const mappedIn = (h) => (sortCol.mapped.get(h.id) || [])[0]?.label;
   const mergedMatches = ordered.filter((h) => isMerged(h)
     && ourShown(h)
-    && (!oursAllowed || fromOurs(h).some((src) => oursAllowed.has(src.name)))
+    && oursCols.every((oc) => {
+      const a = allowed(oc.key); // that column's filter (header names)
+      return !a || fromOurs(h).some((src) => oc.has(src) && a.has(src.name));
+    })
     && columns.every((c, ci) => !colAllowed[ci] || (c.mapped.get(h.id) || []).some((s) => colAllowed[ci].has(s.label))));
   const mergedRows = sortCol
     ? [...mergedMatches].sort((a, b) => {
@@ -149,11 +173,15 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   });
   const ourSortDir = ourSort === 'name-asc' ? 'asc' : ourSort === 'name-desc' ? 'desc' : null;
   const sortOur = (dir) => { setColSort(null); onOurSort(dir ? `name-${dir}` : DEFAULT_LIST_SORT); };
-  // The Our Headers column's list to tick: every Our Header (the same list as
-  // the first column), narrowed by its own filter, in its own sort order.
-  const oursFiltered = ordered.filter((h) => !oursAllowed || oursAllowed.has(h.name));
-  const oursList = oursSort ? [...oursFiltered].sort((a, b) => (oursSort === 'desc' ? -1 : 1) * byText(a.name, b.name)) : oursFiltered;
-  const anyUnmapped = ourUnmapped.length > 0 || oursList.length > 0 || colUnmapped.some((l) => l.length) || columns.some((c) => !c.total);
+  // Each Our Headers column's list to tick: every Our Header of its group,
+  // narrowed by its own filter, in its own sort order.
+  const oursLists = oursCols.map((oc) => {
+    const a = allowed(oc.key);
+    const dir = oursSorts[oc.key];
+    const list = ordered.filter((h) => oc.has(h) && (!a || a.has(h.name)));
+    return dir ? [...list].sort((x, y) => (dir === 'desc' ? -1 : 1) * byText(x.name, y.name)) : list;
+  });
+  const anyUnmapped = ourUnmapped.length > 0 || oursLists.some((l) => l.length) || colUnmapped.some((l) => l.length) || columns.some((c) => !c.total);
 
   // "required" = must be mapped (Order Id / Transaction Id); "fixed" = the
   // other built-in headers (Account Name, the SKU Cost ones — data/fixedHeaders.js).
@@ -219,11 +247,12 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       </Tag>
     );
   };
-  // A Mapped row's "Our Headers" cell: the Our Headers mapped into it, × to unmap.
-  const oursMappedCell = (h) => {
-    const from = fromOurs(h);
+  // A Mapped row's "Our Headers (<group>)" cell: that group's Our Headers
+  // mapped into it, × to unmap.
+  const oursMappedCell = (h, oc) => {
+    const from = fromOurs(h).filter(oc.has);
     return (
-      <td className={`border border-divider px-1.5 py-1 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
+      <td key={oc.key} className={`border border-divider px-1.5 py-1 align-top ${h.id === activeId ? 'bg-action-soft/40' : ''}`}>
         {from.length ? (
           <div className="flex flex-wrap gap-1">
             {from.map((src) => (
@@ -298,15 +327,16 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
       {items.length ? items : <p className="px-2 py-1.5 text-[11.5px] text-subtle">{empty}</p>}
     </div>
   );
+  const span = 1 + oursCols.length + columns.length;
   const sectionRow = (label) => (
     <tr>
-      <td colSpan={2 + columns.length} className="border border-divider bg-card px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{label}</td>
+      <td colSpan={span} className="border border-divider bg-card px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{label}</td>
     </tr>
   );
 
   // The ticks per column (only unmapped items can be ticked).
   const activeHeader = headers.find((h) => h.id === activeId) || null;
-  const oursTicked = headers.filter((h) => checked.has(colKey(OURS_ID, h.id)))
+  const oursTicked = (oc) => headers.filter((h) => oc.has(h) && checked.has(colKey(OURS_ID, h.id)))
     .map((h) => ({ key: h.id, label: h.name, onRemove: () => onToggleCheck(colKey(OURS_ID, h.id)) }));
   const colTicked = (c) => c.unmapped.filter((o) => checked.has(colKey(c.id, o.key)))
     .map((o) => ({ key: o.key, label: o.name, title: o.label, onRemove: () => onToggleCheck(colKey(c.id, o.key)) }));
@@ -315,11 +345,11 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   // fixed column widths, so they line up; they share only the sideways
   // scroll. Up and down, the Mapped rows scroll together in their own box,
   // and each Unmapped list scrolls by itself.
-  const tableWidth = { width: `${18 + 14 * (1 + columns.length)}rem`, minWidth: '100%' };
+  const tableWidth = { width: `${18 + 14 * (oursCols.length + columns.length)}rem`, minWidth: '100%' };
   const colGroup = (
     <colgroup>
       <col style={{ width: '18rem' }} />
-      <col style={{ width: '14rem' }} />
+      {oursCols.map((oc) => <col key={oc.key} style={{ width: '14rem' }} />)}
       {columns.map((c) => <col key={c.id} style={{ width: '14rem' }} />)}
     </colgroup>
   );
@@ -336,7 +366,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
         <div className="w-max min-w-full pb-2">
           {/* Mapped — its rows scroll together, under the column heads; taller
               while a filter menu is open, so the menu isn't cut off. */}
-          <div data-table-scroll className={`max-h-[22rem] overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${menuOpen ? 'min-h-[25rem]' : ''}`}>
+          <div data-table-scroll className={`max-h-[22rem] overflow-y-auto overscroll-contain [scrollbar-gutter:stable] ${menuOpen ? 'min-h-[32rem]' : ''}`}>
             <table className="table-fixed border-collapse text-left text-[13px] [&_td]:overflow-hidden" style={tableWidth}>
               {colGroup}
               <thead className="sticky top-0 z-10 bg-background text-muted">
@@ -344,9 +374,20 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                   <th className="border border-divider bg-background px-2 py-1.5">
                     <ColumnHead label="Our Headers Mapped By" sub={`${headers.length}`} filter={filters[OUR_COL]} onFilter={setFilter(OUR_COL)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={sortCol ? null : ourSortDir} onSort={sortOur} />
                   </th>
-                  <th className="border border-divider bg-background px-2 py-1.5" title="Our Headers mapped into another Our Header — tick them and one Our Header, then Mapped">
-                    <ColumnHead label="Our Headers" sub={`${headers.length}`} filter={filters[OURS_ID]} onFilter={setFilter(OURS_ID)} getOptions={() => ordered.map((h) => ({ text: h.name }))} onOpenChange={setMenuOpen} sortDir={oursSort} onSort={setOursSort} />
-                  </th>
+                  {oursCols.map((oc) => (
+                    <th key={oc.key} className="border border-divider bg-background px-2 py-1.5" title={`${oc.label} mapped into another Our Header — tick them and one Our Header, then Mapped`}>
+                      <ColumnHead
+                        label={oc.label}
+                        sub={`${oc.ids ? oc.ids.size : headers.length}`}
+                        filter={filters[oc.key]}
+                        onFilter={setFilter(oc.key)}
+                        getOptions={() => ordered.filter(oc.has).map((h) => ({ text: h.name }))}
+                        onOpenChange={setMenuOpen}
+                        sortDir={oursSorts[oc.key] || null}
+                        onSort={(dir) => setOursSorts((prev) => ({ ...prev, [oc.key]: dir || null }))}
+                      />
+                    </th>
+                  ))}
                   {columns.map((c) => (
                     <th key={c.id} className="border border-divider bg-background px-2 py-1.5">
                       <ColumnHead label={c.name} sub={c.total ? `${c.unmapped.length} unmapped` : 'no headers'} filter={filters[c.id]} onFilter={setFilter(c.id)} getOptions={() => c.all.map((label) => ({ text: label }))} onOpenChange={setMenuOpen} sortDir={sortCol?.id === c.id ? colSort.dir : null} onSort={(dir) => setColSort(dir ? { id: c.id, dir } : null)} />
@@ -359,7 +400,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                 {mergedRows.map((h) => (
                   <tr key={h.id}>
                     {ourCell(h, 'bg-background')}
-                    {oursMappedCell(h)}
+                    {oursCols.map((oc) => oursMappedCell(h, oc))}
                     {columns.map((c) => {
                       const cols = c.mapped.get(h.id) || [];
                       return (
@@ -393,9 +434,9 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                 ))}
                 {!mergedRows.length && (
                   <tr>
-                    <td colSpan={2 + columns.length} className="px-3 py-3 text-center text-[12px] text-subtle">
+                    <td colSpan={span} className="px-3 py-3 text-center text-[12px] text-subtle">
                       {!headers.length ? 'No headers yet — press Add to create one.'
-                        : groupFilter && !groupFilter.size ? 'No headers in this group yet — Assign headers adds them.'
+                        : groupFilter && !groupFilter.size ? 'No headers in the ticked groups — tick a group above, or Assign headers to one.'
                           : 'Nothing mapped yet (or nothing matches the filters).'}
                     </td>
                   </tr>
@@ -416,10 +457,12 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                     {tickedBar(activeHeader ? [{ key: activeHeader.id, label: activeHeader.name, onRemove: () => onSelect(null) }] : [])}
                     {scrollList(ourUnmapped.map((h) => ourCell(h, 'bg-background', true)), 'Every Our Header is mapped.')}
                   </td>
-                  <td className="border border-divider p-0 align-top">
-                    {tickedBar(oursTicked)}
-                    {scrollList(oursList.map(oursPickItem), 'Nothing matches the filter.')}
-                  </td>
+                  {oursCols.map((oc, oi) => (
+                    <td key={oc.key} className="border border-divider p-0 align-top">
+                      {tickedBar(oursTicked(oc))}
+                      {scrollList(oursLists[oi].map(oursPickItem), oc.ids && !oc.ids.size ? 'No headers in this group yet.' : 'Nothing matches the filter.')}
+                    </td>
+                  ))}
                   {columns.map((c, ci) => (
                     <td key={c.id} className="border border-divider p-0 align-top">
                       {tickedBar(colTicked(c))}

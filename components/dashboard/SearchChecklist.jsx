@@ -76,8 +76,10 @@ export function ListSearchBox({ value, onChange, onEnter, placeholder = 'Search�
 // For a list that says who belongs to something (Template Settings' header
 // groups) rather than what to keep: `allowEmpty` lets OK go with nothing
 // ticked, and `narrowOnSearch={false}` makes OK report every ticked option,
-// searched for or not.
-export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true, canSubmit = true, allowEmpty = false, narrowOnSearch = true }) {
+// searched for or not. `columns={3}` lays the list out in three columns
+// (a wider panel — two on a narrow screen) so long lists show more at once.
+export default function SearchChecklist({ label = 'options', options = [], initial = [], onSubmit, onClose, okLabel = 'OK', header = null, footer = null, placeholder = 'Search…', emptyText = 'Nothing to pick.', sortable = true, canSubmit = true, allowEmpty = false, narrowOnSearch = true, columns = 1 }) {
+  const multi = columns > 1;
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
   const [ticked, setTicked] = useState(() => new Set(initial));
@@ -111,16 +113,16 @@ export default function SearchChecklist({ label = 'options', options = [], initi
   const box = 'shrink-0 accent-[var(--color-action)]';
 
   return (
-    <div className="flex w-64 flex-col gap-2 p-1 text-left font-normal whitespace-normal text-foreground">
+    <div className={`flex ${multi ? 'w-[min(42rem,calc(100vw-2rem))]' : 'w-64'} flex-col gap-2 p-1 text-left font-normal whitespace-normal text-foreground`}>
       {typeof header === 'function' ? header(submit) : header}
       <ListSearchBox value={q} onChange={setQ} onEnter={submit} placeholder={placeholder} label={`Search ${label}`} sort={sort} onSort={sortable ? setSort : undefined} />
 
-      <div className="max-h-56 overflow-y-auto rounded-lg border border-divider p-1">
+      <div className={`${multi ? 'max-h-72' : 'max-h-56'} overflow-y-auto rounded-lg border border-divider p-1`}>
         {visible.length === 0 ? (
           <p className="px-2 py-3 text-center text-[12.5px] text-subtle">{options.length ? 'Nothing matches.' : emptyText}</p>
         ) : (
-          <>
-            <label className={`${row} font-medium`}>
+          <div className={multi ? 'grid grid-cols-1 gap-x-1 sm:grid-cols-2 md:grid-cols-3' : ''}>
+            <label className={`${row} font-medium ${multi ? 'col-span-full border-b border-divider' : ''}`}>
               <input type="checkbox" checked={allTicked} onChange={toggleAll} className={box} />
               {searching ? '(Select All Search Results)' : '(Select All)'}
             </label>
@@ -132,9 +134,9 @@ export default function SearchChecklist({ label = 'options', options = [], initi
               </label>
             ))}
             {visible.length > MAX_ROWS && (
-              <p className="px-2 py-1.5 text-[11.5px] text-subtle">Showing {MAX_ROWS} of {visible.length} — search to narrow.</p>
+              <p className="col-span-full px-2 py-1.5 text-[11.5px] text-subtle">Showing {MAX_ROWS} of {visible.length} — search to narrow.</p>
             )}
-          </>
+          </div>
         )}
       </div>
 

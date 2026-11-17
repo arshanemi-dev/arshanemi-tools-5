@@ -12,16 +12,21 @@ const NAME_MAX = 80;
 const KIND_ICON = { general: Lock };
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function Chip({ active, onClick, icon: Icon, children, count }) {
+// A multi-select chip — a tick box inside, on = its headers are in the table.
+export function Chip({ active, mixed = false, onClick, icon: Icon, children, count }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
+      aria-pressed={mixed ? 'mixed' : active}
       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${
         active ? 'border-action bg-action text-white' : 'border-divider-light bg-background text-foreground hover:bg-card-hover'
       }`}
     >
+      <span className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] border ${active ? 'border-white bg-white text-action' : 'border-divider-light bg-background'}`}>
+        {active && <Check size={10} strokeWidth={3} />}
+        {!active && mixed && <span className="h-0.5 w-2 rounded bg-action" />}
+      </span>
       {Icon && <Icon size={12} />}
       {children}
       <span className={`tabular-nums ${active ? 'text-white/80' : 'text-subtle'}`}>{count}</span>
@@ -50,66 +55,100 @@ function NameBox({ initial = '', placeholder, onSave, onCancel }) {
   );
 }
 
-// "Our Groups" — the row above the Our Header table (HeaderSection). Groups
-// sort the headers: every header is in one group — the built-in General,
-// where every header starts (locked: can't be renamed or deleted), or one
-// made here (Add, then Rename / Delete on the picked group). Picking a group
-// filters the table to it (`activeId` / `onActive`, null = All); "Assign
-// headers" ticks which headers belong to it — ticking one moves it here out
-// of its old group, unticking one sends it back to General (a header leaves
-// General only by being put in another group). Whether a header shows on
-// the dashboard is NOT its group — that's its own Show / Hide switch in the
-// table. `g` = useHeaderGroups(); `headers` = the Our Headers in the editor.
-// Every change is part of the Global Settings draft — Save New Version keeps it.
-export default function HeaderGroupsRow({ g, headers = [], activeId, onActive }) {
+// A group name problem, or '' — empty, too long, or already taken.
+function nameProblemOf(groups, name, exceptId = null) {
+  const clean = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return 'Give the group a name';
+  if (clean.length > NAME_MAX) return `A group name can be at most ${NAME_MAX} characters`;
+  if (groups.some((x) => x.id !== exceptId && x.name.toLowerCase() === clean.toLowerCase())) return `There is already a group called “${clean}”`;
+  return '';
+}
+
+// "Categories" — one line above the Our Header table (HeaderSection): the
+// header groups as multi-select chips (`selectedIds`, `onToggle(id)`,
+// `onAll(on)`), all ticked by default — the table shows the ticked groups'
+// headers, one "Our Headers (<group>)" column each — plus Add Group.
+// Every header is in one group: the built-in General (locked) or one made
+// here. Assign / Rename / Delete live in the toolbar (GroupManageControls).
+// `g` = useHeaderGroups(); `headers` = the Our Headers in the editor.
+export default function HeaderGroupsRow({ g, headers = [], selectedIds = [], onToggle, onAll }) {
   const { addToast } = useToast();
   const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const counts = groupCounts(g.headerGroups, headers);
+  const selected = new Set(selectedIds);
+  const allOn = g.groups.length > 0 && g.groups.every((x) => selected.has(x.id));
+  const someOn = g.groups.some((x) => selected.has(x.id));
+
+  const add = async (name) => {
+    const problem = nameProblemOf(g.groups, name);
+    if (problem) { addToast(problem, 'error'); return; }
+    setBusy(true);
+    try { if (await g.create(name.trim())) setAdding(false); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-4">
+      <span className="w-24 shrink-0 text-[12.5px] font-semibold text-foreground">Categories</span>
+      <Chip active={allOn} mixed={!allOn && someOn} onClick={() => onAll(!allOn)} count={headers.length}>All</Chip>
+      {g.groups.map((x) => (
+        <Chip key={x.id} active={selected.has(x.id)} onClick={() => onToggle(x.id)} icon={KIND_ICON[x.kind]} count={counts[x.id] || 0}>
+          {x.name}
+        </Chip>
+      ))}
+      {adding ? (
+        <NameBox placeholder="Group name" onSave={add} onCancel={() => setAdding(false)} />
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-3 py-1 text-[12px] font-medium text-action hover:bg-action-soft">
+          <Plus size={12} /> Add Group
+        </button>
+      )}
+      {busy && <Loader2 size={13} className="animate-spin text-subtle" />}
+    </div>
+  );
+}
+
+// The toolbar's group controls (after Mapped): pick a group, then Assign
+// headers (tick its members — ticking one moves it here out of its old
+// group, unticking one sends it back to General), and Rename / Delete for
+// the admin's own groups. Every change is part of the Global Settings draft
+// — Save New Version keeps it.
+export function GroupManageControls({ g, headers = [] }) {
+  const { addToast } = useToast();
+  const [manageId, setManageId] = useState(GENERAL_GROUP_ID);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const counts = groupCounts(g.headerGroups, headers);
-  const active = g.groups.find((x) => x.id === activeId) || null;
+  const active = g.groups.find((x) => x.id === manageId) || g.groups[0] || null;
   const inGroup = (id) => headers.filter((h) => groupIdOf(g.headerGroups, h.id) === id);
-
-  const nameProblem = (name, exceptId = null) => {
-    const clean = String(name || '').trim().replace(/\s+/g, ' ');
-    if (!clean) return 'Give the group a name';
-    if (clean.length > NAME_MAX) return `A group name can be at most ${NAME_MAX} characters`;
-    if (g.groups.some((x) => x.id !== exceptId && x.name.toLowerCase() === clean.toLowerCase())) return `There is already a group called “${clean}”`;
-    return '';
-  };
   const run = async (fn) => { setBusy(true); try { return await fn(); } finally { setBusy(false); } };
+  if (!active) return null;
 
-  const add = async (name) => {
-    const problem = nameProblem(name);
-    if (problem) { addToast(problem, 'error'); return; }
-    if (await run(() => g.create(name.trim()))) setAdding(false);
-  };
   const rename = async (name) => {
-    const problem = nameProblem(name, active.id);
+    const problem = nameProblemOf(g.groups, name, active.id);
     if (problem) { addToast(problem, 'error'); return; }
     if (await run(() => g.rename(active.id, name.trim()))) setRenaming(false);
   };
   const remove = async () => {
-    if (await run(() => g.remove(active.id))) onActive(null);
+    if (await run(() => g.remove(active.id))) setManageId(GENERAL_GROUP_ID);
     setDeleting(false);
   };
 
-  // The tick list's OK: ticked ones move into the group, unticked members
-  // back to General (General itself has nowhere to send them, so there an
-  // untick changes nothing).
-  const isGeneral = active?.id === GENERAL_GROUP_ID;
+  // The tick list's Save: ticked ones move into the group, unticked members
+  // back to General (in General itself an untick changes nothing).
+  const isGeneral = active.id === GENERAL_GROUP_ID;
   const assign = async (values) => {
     const members = inGroup(active.id).map((h) => h.id);
     const keep = new Set(values);
     const before = new Set(members);
     const added = values.filter((id) => !before.has(id));
     const removed = isGeneral ? [] : members.filter((id) => !keep.has(id));
-    const back = GENERAL_GROUP_ID;
-    const backName = g.groups.find((x) => x.id === back)?.name || 'General';
+    const backName = g.groups.find((x) => x.id === GENERAL_GROUP_ID)?.name || 'General';
     if (!added.length && !removed.length) return;
-    const ok = await run(async () => (await g.assign(added, active.id)) && (await g.assign(removed, back)));
+    const ok = await run(async () => (await g.assign(added, active.id)) && (await g.assign(removed, GENERAL_GROUP_ID)));
     if (ok) {
       addToast([
         added.length && `${plural(added.length, 'header')} moved to “${active.name}”`,
@@ -119,84 +158,64 @@ export default function HeaderGroupsRow({ g, headers = [], activeId, onActive })
   };
 
   return (
-    <div className="mx-4 space-y-2 rounded-lg border border-divider bg-card px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-[12.5px] font-semibold text-foreground">Our Groups</span>
-        <Chip active={!active} onClick={() => onActive(null)} count={headers.length}>All</Chip>
-        {g.groups.map((x) => (
-          <Chip key={x.id} active={x.id === activeId} onClick={() => onActive(x.id === activeId ? null : x.id)} icon={KIND_ICON[x.kind]} count={counts[x.id] || 0}>
-            {x.name}
-          </Chip>
-        ))}
-        {adding ? (
-          <NameBox placeholder="Group name" onSave={add} onCancel={() => setAdding(false)} />
-        ) : (
-          <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-divider-light px-3 py-1 text-[12px] font-medium text-action hover:bg-action-soft">
-            <Plus size={12} /> Add Group
-          </button>
-        )}
-        {busy && <Loader2 size={13} className="animate-spin text-subtle" />}
-      </div>
-
-      {active && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-divider pt-2">
-          {renaming ? (
-            <NameBox initial={active.name} placeholder="Group name" onSave={rename} onCancel={() => setRenaming(false)} />
-          ) : (
-            <span className="text-[12px] text-muted">
-              <span className="font-semibold text-foreground">{active.name}</span> · {plural(counts[active.id] || 0, 'header')}
-              {isGeneral && <span className="text-subtle"> — every header starts here; built in, can&rsquo;t be renamed or deleted</span>}
-            </span>
-          )}
-          <Popover
-            align="left"
-            trigger={(open) => (
-              <span className={`inline-flex cursor-pointer items-center gap-1 rounded-full bg-action px-3 py-1 text-[12px] font-semibold text-white hover:bg-action-hover ${busy ? 'pointer-events-none opacity-50' : ''}`}>
-                Assign headers <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
-              </span>
-            )}
-          >
-            {(close) => (
-              <SearchChecklist
-                label="headers"
-                options={headers.map((h) => {
-                  const other = groupIdOf(g.headerGroups, h.id);
-                  return { value: h.id, label: h.name || 'Untitled', count: other === active.id ? null : g.groups.find((x) => x.id === other)?.name || null };
-                })}
-                initial={inGroup(active.id).map((h) => h.id)}
-                onSubmit={assign}
-                onClose={close}
-                okLabel="Save"
-                allowEmpty
-                narrowOnSearch={false}
-                placeholder="Search headers…"
-                emptyText="No headers yet."
-              />
-            )}
-          </Popover>
-          {active.kind === 'custom' && !renaming && (
-            <>
-              <button type="button" onClick={() => setRenaming(true)} title="Rename this group" className="inline-flex items-center gap-1 rounded-full border border-divider-light px-2.5 py-1 text-[12px] text-foreground hover:bg-card-hover"><Pencil size={12} /> Rename</button>
-              <button type="button" onClick={() => setDeleting(true)} title="Delete this group" className="inline-flex items-center gap-1 rounded-full border border-neg/40 px-2.5 py-1 text-[12px] text-neg hover:bg-neg/10"><Trash2 size={12} /> Delete</button>
-            </>
-          )}
-        </div>
+    <>
+      {renaming ? (
+        <NameBox initial={active.name} placeholder="Group name" onSave={rename} onCancel={() => setRenaming(false)} />
+      ) : (
+        <select
+          value={active.id}
+          onChange={(e) => setManageId(e.target.value)}
+          disabled={busy}
+          aria-label="Group to assign headers to"
+          title="The group Assign headers / Rename / Delete act on"
+          className="rounded-full border border-divider-light bg-background px-2.5 py-1.5 text-[13px] font-medium text-foreground focus:border-accent focus:outline-none"
+        >
+          {g.groups.map((x) => <option key={x.id} value={x.id}>{x.name} ({counts[x.id] || 0})</option>)}
+        </select>
       )}
-
-      <p className="text-[11px] text-subtle">
-        Groups sort your headers — a header is in one group at a time, and starts in General. Whether it shows on the dashboard is its own{' '}
-        <span className="font-semibold text-muted">Show / Hide</span> switch in the table. Groups and switches are saved in the version, like the rest — Save New Version keeps them.
-      </p>
+      <Popover
+        align="left"
+        trigger={(open) => (
+          <span className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-action px-3 py-1.5 text-[13px] font-semibold text-action hover:bg-action-soft ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+            Assign headers <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
+          </span>
+        )}
+      >
+        {(close) => (
+          <SearchChecklist
+            label="headers"
+            options={headers.map((h) => {
+              const other = groupIdOf(g.headerGroups, h.id);
+              return { value: h.id, label: h.name || 'Untitled', count: other === active.id ? null : g.groups.find((x) => x.id === other)?.name || null };
+            })}
+            initial={inGroup(active.id).map((h) => h.id)}
+            onSubmit={assign}
+            onClose={close}
+            okLabel="Save"
+            allowEmpty
+            narrowOnSearch={false}
+            placeholder="Search headers…"
+            emptyText="No headers yet."
+          />
+        )}
+      </Popover>
+      {active.kind === 'custom' && !renaming && (
+        <>
+          <button type="button" onClick={() => setRenaming(true)} title={`Rename group “${active.name}”`} aria-label={`Rename group ${active.name}`} className="rounded-full border border-divider-light p-1.5 text-foreground hover:bg-card-hover"><Pencil size={13} /></button>
+          <button type="button" onClick={() => setDeleting(true)} title={`Delete group “${active.name}”`} aria-label={`Delete group ${active.name}`} className="rounded-full border border-neg/40 p-1.5 text-neg hover:bg-neg/10"><Trash2 size={13} /></button>
+        </>
+      )}
+      {busy && <Loader2 size={13} className="animate-spin text-subtle" />}
 
       <ConfirmDialog
-        open={deleting && !!active}
-        title={`Delete group “${active?.name || ''}”?`}
-        description={!(counts[active?.id] || 0) ? 'It has no headers.'
-          : `Its ${plural(counts[active?.id], 'header')} go${counts[active?.id] === 1 ? 'es' : ''} back to General. Shown and hidden headers stay as they are.`}
+        open={deleting}
+        title={`Delete group “${active.name}”?`}
+        description={!(counts[active.id] || 0) ? 'It has no headers.'
+          : `Its ${plural(counts[active.id], 'header')} go${counts[active.id] === 1 ? 'es' : ''} back to General. Shown and hidden headers stay as they are.`}
         loading={busy}
         onConfirm={remove}
         onCancel={() => setDeleting(false)}
       />
-    </div>
+    </>
   );
 }

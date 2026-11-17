@@ -50,7 +50,7 @@ function RangeBox({ name, value, onChange, hint, onEnter, crossed, label, title 
 // ({ min, max }), or null. `onApply({ values, min, max } | null)`;
 // `onClose()`. `sortDir` ('asc' | 'desc' | null) + `onSort(dir | null)` —
 // leave `onSort` out for a column that can't be sorted.
-export default function ColumnFilterMenu({ label, getOptions, selected = null, getRange = null, range = null, onApply, onClose, sortDir = null, onSort = null }) {
+export default function ColumnFilterMenu({ label, getOptions, selected = null, getRange = null, range = null, onApply, onClose, sortDir = null, onSort = null, columns = 1 }) {
   const [options] = useState(() => getOptions().map((o) => ({ value: o.text, label: o.text === '' ? BLANK_LABEL : o.text, count: o.count, muted: o.text === '' })));
   const [span] = useState(() => (getRange ? getRange() : null));
   const [lo, setLo] = useState(() => boxText(range?.min));
@@ -72,6 +72,7 @@ export default function ColumnFilterMenu({ label, getOptions, selected = null, g
       canSubmit={!crossed}
       emptyText="This column has no values."
       sortable={false}
+      columns={columns}
       header={(submit) => (
         <>
           {onSort && (

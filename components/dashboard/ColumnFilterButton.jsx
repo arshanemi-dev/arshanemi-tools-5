@@ -7,6 +7,7 @@ import ColumnFilterMenu from './ColumnFilterMenu';
 import { rangeText } from '@/lib/profitLoss/columnFilter';
 
 const MENU_WIDTH = 272; // px — the menu's w-64 plus its padding and border
+const WIDE_WIDTH = 680; // px — the `wide` menu (SearchChecklist columns={3}) plus padding and border
 
 // The funnel in a table column header + its spreadsheet-style menu
 // (ColumnFilterMenu — Sort A → Z / Z → A, a Min / Max range on a number
@@ -24,9 +25,11 @@ const MENU_WIDTH = 272; // px — the menu's w-64 plus its padding and border
 // hanging left instead of right near its right edge so it stays in view.
 // `onDark` = the header it sits in is the dark navy band (the dashboard
 // tables) — white idle/hover tones instead of the page's grey ones.
+// `wide` = the value list in 3 columns (a wider menu, for long lists — the
+// Template Settings Header table); it still opens right, or left near the end.
 // `highlight` = red (the dashboard tables' white icon pill, ColumnHeaderCell):
 // solid red while a filter or sort is on.
-export default function ColumnFilterButton({ label, filter, getOptions = () => [], getRange = null, onChange, onOpenChange, size = 12, sortDir = null, onSort = null, onDark = false, highlight = false }) {
+export default function ColumnFilterButton({ label, filter, getOptions = () => [], getRange = null, onChange, onOpenChange, size = 12, sortDir = null, onSort = null, onDark = false, highlight = false, wide = false }) {
   const [align, setAlign] = useState('left');
   const active = !!filter;
   const sorted = sortDir ? `sorted ${sortDir === 'asc' ? 'A → Z' : 'Z → A'}` : '';
@@ -40,9 +43,14 @@ export default function ColumnFilterButton({ label, filter, getOptions = () => [
   const placeMenu = (e) => {
     const at = e.currentTarget.getBoundingClientRect();
     const area = e.currentTarget.closest('[data-table-scroll]')?.getBoundingClientRect();
-    const right = area ? area.right : window.innerWidth;
-    const left = area ? area.left : 0;
-    setAlign(at.left + MENU_WIDTH > right && at.right - MENU_WIDTH >= left ? 'right' : 'left');
+    const right = Math.min(area ? area.right : window.innerWidth, window.innerWidth);
+    const left = Math.max(area ? area.left : 0, 0);
+    const width = Math.min(wide ? WIDE_WIDTH : MENU_WIDTH, window.innerWidth - 32);
+    // Spread to the right; a column near the end spreads left instead — and
+    // when neither side has room, the side with more of it.
+    const roomRight = right - at.left;
+    const roomLeft = at.right - left;
+    setAlign(roomRight >= width ? 'left' : roomLeft >= width || roomLeft > roomRight ? 'right' : 'left');
   };
 
   return (
@@ -77,6 +85,7 @@ export default function ColumnFilterButton({ label, filter, getOptions = () => [
           onClose={close}
           sortDir={sortDir}
           onSort={onSort}
+          columns={wide ? 3 : 1}
         />
       )}
     </Popover>
