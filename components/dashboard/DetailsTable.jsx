@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import ColumnHeaderCell from './ColumnHeaderCell';
 import CostCell from './CostCell';
 import { ReasonInput, ReviewSelect } from './ReviewCells';
@@ -58,10 +58,10 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 //
 // `loadChildren(rowKey)` → a Promise of that row's own transactions (rows
 // with the same cells). A row stands for many orders, so a column whose
-// orders differ shows "first +N more"; clicking such a cell opens the row
-// like a hierarchy — its transactions listed under it, one each, every
-// column at its own value — and clicking again closes it. Opened rows close
-// when the table's rows are worked out again (a filter, a cost, an upload).
+// orders differ is "first +N more" in the data. Nothing is hidden: every
+// such row on the page always shows its transactions under it, one each,
+// every column at its own value (no toggle, no cap), and the cell itself
+// lists every value its orders hold, one per line, once they've loaded.
 //
 // Row selection (the checkboxes) is controlled by the caller, not local
 // state, and only shown when it passes `selectedKeys` — the dashboard
@@ -88,8 +88,6 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 
 // "first value +N more" — a column whose orders differ in this row.
 const MORE_RE = /\s\+\d+ more$/;
-// How many of an opened row's transactions are listed under it at most.
-const CHILD_LIMIT = 200;
 
 // One opened row's transactions, under it: indented, tinted, read-only.
 function ChildRows({ state, cols, selectable, colSpan }) {
@@ -104,10 +102,9 @@ function ChildRows({ state, cols, selectable, colSpan }) {
       </tr>
     );
   }
-  const shown = state.rows.slice(0, CHILD_LIMIT);
   return (
     <>
-      {shown.map((child) => (
+      {state.rows.map((child) => (
         <tr key={child.key} data-child="true" className="text-[12.5px]">
           {selectable && <td aria-hidden="true" />}
           {cols.map((col, i) => {
@@ -122,13 +119,6 @@ function ChildRows({ state, cols, selectable, colSpan }) {
           })}
         </tr>
       ))}
-      {state.rows.length > CHILD_LIMIT && (
-        <tr data-child="true">
-          <td colSpan={colSpan} className="px-3 py-1.5 text-[12px] text-muted">
-            Showing {CHILD_LIMIT} of {state.rows.length} — the Transactions page lists every one.
-          </td>
-        </tr>
-      )}
       {!state.rows.length && (
         <tr data-child="true">
           <td colSpan={colSpan} className="px-3 py-1.5 text-[12px] text-muted">No orders to show for this row.</td>
@@ -257,9 +247,6 @@ export default function DetailsTable({
   // Opened rows: key → { status: 'loading' | 'done' | 'error', rows }.
   const [opened, setOpened] = useState(() => new Map());
   useEffect(() => { (() => setOpened(new Map()))(); }, [rows]);
-  // Rows the user closed — every other "+N more" row on the page opens by
-  // itself (below), and one closed by hand stays closed.
-  const [closedByUser, setClosedByUser] = useState(() => new Set());
   const openChildren = (key) => {
     setOpened((cur) => new Map(cur).set(key, { status: 'loading', rows: [] }));
     loadChildren(key).then(
@@ -267,22 +254,24 @@ export default function DetailsTable({
       () => setOpened((cur) => (cur.has(key) ? new Map(cur).set(key, { status: 'error', rows: [] }) : cur)),
     );
   };
-  const toggleChildren = (key) => {
-    if (opened.has(key)) {
-      setOpened((cur) => { const next = new Map(cur); next.delete(key); return next; });
-      setClosedByUser((cur) => new Set(cur).add(key));
-      return;
+  // A "+N more" cell, written out in full: every distinct value the row's
+  // orders hold in that column, once they've loaded (else the cell as it is).
+  const allValues = (key, colKey, cell) => {
+    const state = opened.get(key);
+    if (state?.status !== 'done' || !state.rows.length) return null;
+    const seen = [];
+    for (const child of state.rows) {
+      const text = String(child.cells[colKey]?.display ?? '').trim();
+      if (text && !seen.includes(text)) seen.push(text);
     }
-    setClosedByUser((cur) => { const next = new Set(cur); next.delete(key); return next; });
-    openChildren(key);
+    return seen.length ? seen : (cell.display ? [String(cell.display)] : null);
   };
-  // Open by default: every row on THIS page with a "+N more" cell in a
-  // shown column (just this page — opening thousands of rows at once would
-  // be all work and no view). Rows asked for together load as one job
-  // (DashboardWorkspace loadRowChildren).
+  // Always open: every row on THIS page with a "+N more" cell in a shown
+  // column (just this page — the next page's open as it's turned to). Rows
+  // asked for together load as one job (DashboardWorkspace loadRowChildren).
   const autoOpenKeys = loadChildren
     ? pageRows
-      .filter((r) => !opened.has(r.key) && !closedByUser.has(r.key))
+      .filter((r) => !opened.has(r.key))
       .filter((r) => displayCols.some((c) => c.kind === 'header' && !c.costField && !c.reviewField && MORE_RE.test(String(r.cells[c.key]?.display ?? ''))))
       .map((r) => r.key)
     : [];
@@ -459,18 +448,9 @@ export default function DetailsTable({
                           : 'text-foreground'
                       }`}
                     >
-                      {many ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleChildren(r.key)}
-                          aria-expanded={opened.has(r.key)}
-                          title={opened.has(r.key) ? 'Close this row' : 'Open this row — every order in it, one row each'}
-                          className="inline-flex items-center gap-1 rounded px-1 text-link hover:bg-link/10"
-                        >
-                          {opened.has(r.key) ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
-                          <TableText>{cell.display}</TableText>
-                        </button>
-                      ) : <TableText>{cell.display ?? ''}</TableText>}
+                      {many && allValues(r.key, col.key, cell)
+                        ? <span className="block whitespace-pre-line [overflow-wrap:anywhere]">{allValues(r.key, col.key, cell).join('\n')}</span>
+                        : <TableText>{cell.display ?? ''}</TableText>}
                     </td>
                   );
                 })}
