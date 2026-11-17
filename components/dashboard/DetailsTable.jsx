@@ -15,6 +15,7 @@ import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewH
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
+import { withContributions } from '@/lib/profitLoss/contribution';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
@@ -138,7 +139,7 @@ function ChildRows({ state, cols, selectable, colSpan }) {
 }
 
 export default function DetailsTable({
-  columns = [], rows = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
+  columns = [], rows: rowsIn = [], editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, disableCostColumn = false, totalCount = null,
   pagerSlot = null, fillHeight = false, review = null, loadChildren = null,
   // Every header of the template — what a ratio formula's Total reads
@@ -148,6 +149,8 @@ export default function DetailsTable({
   // tableTotals.js); none = Auto for every column.
   totalRules = null,
 }) {
+  // "Contribution" columns: each row's (value * 100) / Total — contribution.js.
+  const rows = useMemo(() => withContributions(headers || columns, columns, rowsIn, totalRules), [headers, columns, rowsIn, totalRules]);
   const cols = columns.map((h, i) => ({
     id: h.id,
     key: h.id,

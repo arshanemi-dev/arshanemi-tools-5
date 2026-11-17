@@ -17,6 +17,7 @@ import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPath
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
+import { withContributionsTree } from '@/lib/profitLoss/contribution';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // How far each deeper level (and its colour bar) steps in from its parent.
@@ -51,7 +52,7 @@ const nodeCell = (node, key) => (key === TREE_COL ? { raw: node.value, display: 
 // (useHeldOrder), until a sort, a filter or "Sort rows again".
 // The pager renders in the footer, or wherever `pagerSlot` points.
 export default function OverviewTreeTable({
-  levels = [], columns = [], tree = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
+  levels = [], columns = [], tree: treeIn = [], expanded, onToggle, activeKey, focusTick = 0, onActivate,
   editMode = false, arrange, skuCosts = {}, onCostChange, onCostFill,
   selectedKeys, onToggleRow = () => {}, onToggleAll = () => {}, dirtyKeys, dirtyCostCells, pagerSlot = null, fillHeight = false,
   // Every header of the template — what a ratio formula's Total reads
@@ -63,6 +64,8 @@ export default function OverviewTreeTable({
   // No pick and a reason box on every node that lists its orders (`txns`).
   review = null,
 }) {
+  // "Contribution" columns: each node's (value * 100) / Total — contribution.js.
+  const tree = useMemo(() => withContributionsTree(headers || columns, columns, treeIn, totalRules), [headers, columns, treeIn, totalRules]);
   const [sort, setSort] = useState(null);
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false);
