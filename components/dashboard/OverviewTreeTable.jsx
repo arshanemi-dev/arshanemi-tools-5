@@ -13,15 +13,16 @@ import useFillHeight from './useFillHeight';
 import useHeldOrder from './useHeldOrder';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
-import { BLANK_VALUE, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
+import { BLANK_VALUE, OVERVIEW_LEVEL_INDENT_PX, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributionsTree } from '@/lib/profitLoss/contribution';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
-// How far each deeper level (and its colour bar) steps in from its parent.
-const LEVEL_STEP_PX = 14;
+// How far each deeper level (and its colour bar) steps in from its parent —
+// set in lib/profitLoss/overviewTree.js (OVERVIEW_LEVEL_INDENT_PX).
+const LEVEL_STEP_PX = OVERVIEW_LEVEL_INDENT_PX;
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';

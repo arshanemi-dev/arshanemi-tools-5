@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, ListTree, PanelLeftClose, Search, X } from 'lucide-react';
-import { filterTree } from '@/lib/profitLoss/overviewTree';
+import { OVERVIEW_LEVEL_INDENT_PX, filterTree } from '@/lib/profitLoss/overviewTree';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_BOX, isHighlighted, usePreviewHighlight } from './previewHighlight';
 
@@ -77,7 +77,7 @@ function NavNode({ node, ctx }) {
         )}
       </div>
       {open && (
-        <ul className={`ml-2.5 border-l-2 pl-1 ${st.guide}`}>
+        <ul className={`border-l-2 ${st.guide}`} style={{ marginLeft: 10, paddingLeft: Math.max(4, OVERVIEW_LEVEL_INDENT_PX - 10) }}>
           <NavList nodes={node.children} parentKey={node.key} ctx={ctx} />
         </ul>
       )}
