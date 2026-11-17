@@ -41,7 +41,12 @@ test('active view keeps hidden formula dependencies and matches full totals, cha
   const expected = resolveTemplate(config, fullOptions);
   for (const activeTabId of ['detail', 'overview']) {
     const { resolved } = await runCalculationTask('view', { config, rows, skuCosts, options, activeTabId });
-    assert.deepEqual(resolved.tableRows, expected.tableRows);
+    // A normal tab's table: every sheet row on its own, nothing merged; an
+    // Overview tab keeps the per-SKU rows its tree is built from.
+    const expectedRows = activeTabId === 'overview'
+      ? expected.tableRows
+      : resolveTransactionRows(config, { ...fullOptions, everyRow: true }).rows;
+    assert.deepEqual(resolved.tableRows, expectedRows);
     assert.deepEqual(resolved.aggregate, expected.aggregate);
     assert.deepEqual(resolved.titleCardValues.profit, expected.titleCardValues.profit);
     assert.deepEqual(resolved.graphSeries.chart, expected.graphSeries.chart);
@@ -82,7 +87,9 @@ test('all-date export includes inactive overview tabs and complete financial dat
   const exportOptions = { ...options, dateFrom: null, dateTo: null };
   const result = await runCalculationTask('export', { config, rows, skuCosts, options: exportOptions, transactions: true });
   const expectedOptions = { ...fullOptions, dateFrom: null, dateTo: null };
-  assert.deepEqual(result.full, resolveTemplate(config, expectedOptions));
+  assert.deepEqual(result.full, { ...resolveTemplate(config, expectedOptions), tableRows: resolveTransactionRows(config, { ...expectedOptions, everyRow: true }).rows });
+  // Nothing merged: one table row per sheet row.
+  assert.equal(result.full.tableRows.length, rows.length);
   assert.deepEqual(result.fullTransactions, packRows(resolveTransactionRows(config, expectedOptions)));
   assert.deepEqual(Object.keys(result.full.overviews), ['overview', 'otherOverview']);
 });

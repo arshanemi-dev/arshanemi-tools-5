@@ -216,15 +216,16 @@ export default function DetailsTable({
   // (rowCostKey), else its SKU's for every account — and shows the SKU's
   // value greyed when that account has none of its own.
   const costInput = (row, field, name) => {
-    const sku = rowCostKey(row.key, row.company);
-    const account = sku !== row.key ? ` (${row.company})` : '';
+    const own = row.sku ?? row.key; // an every-row table row carries its SKU
+    const sku = rowCostKey(own, row.company);
+    const account = sku !== own ? ` (${row.company})` : '';
     return (
       <CostCell
         value={skuCosts[sku]?.[field]}
-        fallback={account ? skuCosts[row.key]?.[field] : null}
+        fallback={account ? skuCosts[own]?.[field] : null}
         onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
         dirty={dirtyCells.has(costCellKey(sku, field))}
-        label={`${name} for ${row.key}${account}`}
+        label={`${name} for ${own}${account}`}
         text={isTextCostField(field)}
         fill={onCostFill ? { col: field, sku, start: startFill } : null}
       />
@@ -400,9 +401,9 @@ export default function DetailsTable({
               <Fragment key={r.key}>
               <tr
                 data-selected={selected.has(r.key)}
-                data-dirty={dirty.has(r.key)}
+                data-dirty={dirty.has(r.sku ?? r.key)}
                 className="transition-colors"
-                title={dirty.has(r.key) ? 'Edited — not saved yet' : undefined}
+                title={dirty.has(r.sku ?? r.key) ? 'Edited — not saved yet' : undefined}
               >
                 {selectable && (
                   <td className="px-3 py-2.5">
@@ -413,12 +414,12 @@ export default function DetailsTable({
                   if (col.kind === 'cost') {
                     return (
                       <td key="__cost__" className="px-3 py-2.5 whitespace-nowrap">
-                        {isRealSku(r.key) && costInput(r, 'cogs', 'Cost')}
+                        {isRealSku(r.sku ?? r.key) && costInput(r, 'cogs', 'Cost')}
                       </td>
                     );
                   }
                   const cell = r.cells[col.key] || {};
-                  if (col.costField && isRealSku(r.key)) {
+                  if (col.costField && isRealSku(r.sku ?? r.key)) {
                     return (
                       <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''}`}>
                         {costInput(r, col.costField, col.label)}
