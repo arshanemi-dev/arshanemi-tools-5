@@ -21,7 +21,7 @@ import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
 import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
 import { nextPaint } from '@/lib/profitLoss/nextPaint';
 import { downloadTab } from '@/lib/profitLoss/exportTemplate';
-import { tabExportView, transactionsExportView } from '@/lib/profitLoss/exportView';
+import { tabExportView, tabShownHeaders, transactionsExportView } from '@/lib/profitLoss/exportView';
 import { listCompanies, saveCompany, listExtractedRows } from '@/lib/profitLoss/apiClient';
 import { useDashboardSettings } from '@/lib/profitLoss/useDashboardSettings';
 import { applyLayout, emptySection } from '@/lib/profitLoss/layoutSections';
@@ -33,7 +33,7 @@ import { SIZE_KEY, sizeReader } from '@/lib/profitLoss/rowIdentity';
 import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
+import { ACCOUNT_NAME_KEY, REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
 import { formulaUsages } from '@/lib/profitLoss/headerUsage';
 import { applyReviewOverrides, patchTransactionRows, reviewOverrideOf, withReviewOverride } from '@/lib/profitLoss/reviewOverrides';
 import { unpackRows } from '@/lib/profitLoss/packedRows';
@@ -523,6 +523,23 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   )), [config, myColumnsFor]);
   const overviewHeaderIds = useMemo(() => JSON.parse(overviewHeaderKey), [overviewHeaderKey]);
 
+  // How the open normal tab's rows are told apart: SKU + Size, plus the id
+  // columns the tab SHOWS — its Transaction-Id (else its Order-Id) when it
+  // shows one. A tab showing neither has one row per SKU + Size, its orders
+  // added up (resolveTemplate.js rowKeyIds). Held as a string — only a change
+  // in those two columns recomputes.
+  const rowKeyKey = useMemo(() => {
+    const tab = (config.tabs || []).find((t) => t.id === activeTabId);
+    if (!tab) return '';
+    const shownDefs = tabShownHeaders({ tab, headers: config.headers || [], config, layout, myColumns: myColumnsFor(tab.id, tab.headerIds || []) });
+    const shown = new Set(shownDefs.map((h) => h.id));
+    return [
+      shown.has(RESERVED_HEADER_IDS.transactionId) && 'txn',
+      shown.has(RESERVED_HEADER_IDS.orderId) && 'order',
+      shownDefs.some((h) => h.fixedKey === ACCOUNT_NAME_KEY) && 'account',
+    ].filter(Boolean).join(',') || 'none';
+  }, [config, layout, activeTabId, myColumnsFor]);
+
   const viewOptions = useMemo(() => ({
     ads: applied.ads,
     dateFrom: applied.dateRange.from,
@@ -530,7 +547,8 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     platform: applied.platform,
     company: applied.company,
     overviewHeaderIds,
-  }), [applied, overviewHeaderIds]);
+    rowKeyIds: rowKeyKey ? rowKeyKey.split(',') : [],
+  }), [applied, overviewHeaderIds, rowKeyKey]);
   // The Title Cards / Graphs the open tab shows — its own plus any the user
   // added on Position Settings (tabParts.js) — the only ones worked out.
   // Held as a string so an unrelated layout change doesn't recompute.

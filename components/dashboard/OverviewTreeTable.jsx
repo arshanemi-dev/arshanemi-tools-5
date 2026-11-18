@@ -98,8 +98,9 @@ export default function OverviewTreeTable({
   const filtering = applied.length > 0;
   const fresh = useMemo(() => {
     const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, f]) => cellPasses(f, nodeCell(n, k)))) : tree;
-    return sortTree(kept, { key: sortKey, dir: sortDir });
-  }, [tree, applied, sortKey, sortDir]);
+    // Column by column: the sorted one, then every other in table order.
+    return sortTree(kept, { key: sortKey, dir: sortDir }, colKeys.split('\u0000'));
+  }, [tree, applied, sortKey, sortDir, colKeys]);
   const order = useHeldOrder(tree, fresh, true);
   const view = order.view;
   const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped

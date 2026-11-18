@@ -16,7 +16,7 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 import { costCellKey, costFieldOf, inheritedCost, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributions } from '@/lib/profitLoss/contribution';
-import { compareCellValues, firstColumnSort } from '@/lib/profitLoss/overviewTree';
+import { firstColumnSort, hierarchyComparator } from '@/lib/profitLoss/overviewTree';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
@@ -199,12 +199,14 @@ export default function DetailsTable({
     let out = applied.length
       ? rows.filter((r) => applied.every(([key, f]) => cellPasses(f, r.cells[key])))
       : rows;
+    // Column by column: the sorted one, then every other in table order —
+    // rows tied on one column are ordered by the next (hierarchyComparator).
     if (sortKey) {
-      const dir = sortDir === 'asc' ? 1 : -1;
-      out = [...out].sort((a, b) => compareCellValues(a.cells[sortKey]?.raw, b.cells[sortKey]?.raw, dir));
+      const cmp = hierarchyComparator({ key: sortKey, dir: sortDir }, colKeys.split('\u0000'), (r, k) => r.cells[k]?.raw);
+      out = [...out].sort(cmp);
     }
     return out;
-  }, [rows, applied, sortKey, sortDir]);
+  }, [rows, applied, sortKey, sortDir, colKeys]);
   const order = useHeldOrder(rows, fresh);
   const view = order.view;
   // A sort or filter the user picks is a new order — the held one goes.
