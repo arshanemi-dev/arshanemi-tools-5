@@ -423,7 +423,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           onQuery={setQuery}
           sort={sort}
           onSort={setSort}
-          placeholder="Search headers…"
+          placeholder="Search every column…"
           shown={headers.filter((h) => matchesQuery(h.name, query) && (!groupFilter || groupFilter.has(h.id))).length}
           total={headers.length}
         />

@@ -13,7 +13,7 @@ import useFillHeight from './useFillHeight';
 import useHeldOrder from './useHeldOrder';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, inheritedCost, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributions } from '@/lib/profitLoss/contribution';
 import { compareCellValues, firstColumnSort } from '@/lib/profitLoss/overviewTree';
@@ -215,17 +215,22 @@ export default function DetailsTable({
   // A row's box edits its Account Name's value when the row is one account
   // (rowCostKey), else its SKU's for every account — and shows the SKU's
   // value greyed when that account has none of its own.
+  // A row with a Size edits that SKU + Size's price (skuCosts.js priceKeys)
+  // and shows greyed whatever it falls back to: the size in every account,
+  // the account's, then the SKU's.
   const costInput = (row, field, name) => {
     const own = row.sku ?? row.key; // an every-row table row carries its SKU
-    const sku = rowCostKey(own, row.company);
-    const account = sku !== own ? ` (${row.company})` : '';
+    const size = row.size || '';
+    const sku = rowCostKey(own, row.company, size);
+    const account = rowCostKey(own, row.company) !== own ? ` (${row.company})` : '';
+    const fallback = inheritedCost(skuCosts, sku, own, row.company, size, field);
     return (
       <CostCell
         value={skuCosts[sku]?.[field]}
-        fallback={account ? skuCosts[own]?.[field] : null}
+        fallback={fallback ?? null}
         onCommit={onCostChange && ((text) => { order.hold(); onCostChange(sku, field, text); })}
         dirty={dirtyCells.has(costCellKey(sku, field))}
-        label={`${name} for ${own}${account}`}
+        label={`${name} for ${own}${size ? ` size ${size}` : ''}${account}`}
         text={isTextCostField(field)}
         fill={onCostFill ? { col: field, sku, start: startFill } : null}
       />

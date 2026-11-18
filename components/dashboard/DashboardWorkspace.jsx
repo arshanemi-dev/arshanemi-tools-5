@@ -29,6 +29,8 @@ import { stripSectionOf } from '@/lib/profitLoss/positionDraft';
 import { partShownIds } from '@/lib/profitLoss/tabParts';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { costKey, normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { SIZE_KEY, sizeReader } from '@/lib/profitLoss/rowIdentity';
+import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
@@ -263,6 +265,12 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     () => (config.headers || []).find((h) => h.id === RESERVED_HEADER_IDS.transactionId) || null,
     [config],
   );
+  // The fixed Size header — with the SKU, what keeps rows and prices apart
+  // (lib/profitLoss/rowIdentity.js).
+  const sizeHeader = useMemo(
+    () => (config.headers || []).find((h) => h.fixedKey === SIZE_KEY) || null,
+    [config],
+  );
   // The full logic (normalized cross-file enrichment, then exact Order Id
   // + Transaction Id match/de-dupe) lives in mergeUploadsAcrossSlots — the
   // Sheet Debugger's "Merged" preview tab runs that exact same function
@@ -341,6 +349,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     rows: reviewedRows,
     orderIdHeader,
     transactionIdHeader,
+    sizeHeader,
   });
 
   // Coins per new order and per Marketplace + Brand account a month — every
@@ -795,14 +804,15 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
         // (stampSkuCosts). A default changed after this prices the next
         // upload, never these.
         const skus = new Set(added.flatMap((a) => a.rows.map((r) => r.sku)));
-        const priced = added.map((a) => ({ ...a, rows: stampSkuCosts(a.rows, skuCosts) }));
+        const readSize = sizeReader(sizeHeader, readHeaderFromRow); // priced by SKU + Size
+        const priced = added.map((a) => ({ ...a, rows: stampSkuCosts(a.rows, skuCosts, null, readSize) }));
         const fresh = priced.flatMap((a) => a.rows);
         // The worker merges and calculates the new rows after they are queued.
         setUploadStage((s) => s && { ...s, step: 'adding', rows: fresh.length });
         await nextPaint();
         setUploads((prev) => [
           ...prev.map((u) => {
-            const rows = stampSkuCosts(u.rows, skuCosts, skus);
+            const rows = stampSkuCosts(u.rows, skuCosts, skus, readSize);
             return rows === u.rows ? u : { ...u, rows };
           }),
           ...priced,
@@ -819,7 +829,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // went in (every file was turned down — the toasts say why): no window.
       setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, brand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies]);
+  }, [addToast, config, brand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies, sizeHeader]);
 
   // The window closes by itself a moment after its last step is done — a
   // failed save keeps it open (it offers Try again), and so does one still
@@ -854,10 +864,16 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   }, [addToast, applyCostSheet, calculations]);
 
   const onDownloadSkuTemplate = useCallback(async () => {
-    // Every SKU (all accounts) plus every SKU + Account Name the uploads have.
-    try { await downloadSkuCostTemplate(canonicalRows.flatMap((r) => (r.company ? [r.sku, costKey(r.sku, r.company)] : [r.sku])), skuCosts); }
+    // Every SKU, every SKU + Size, and every SKU + Account Name the uploads
+    // have (a size in one account only once it has a price of its own).
+    const readSize = sizeReader(sizeHeader, readHeaderFromRow);
+    const keys = canonicalRows.flatMap((r) => {
+      const size = readSize(r);
+      return [r.sku, ...(size ? [costKey(r.sku, '', size)] : []), ...(r.company ? [costKey(r.sku, r.company)] : [])];
+    });
+    try { await downloadSkuCostTemplate(keys, skuCosts); }
     catch { addToast('Could not download the SKU cost template', 'error'); }
-  }, [canonicalRows, skuCosts, addToast]);
+  }, [canonicalRows, skuCosts, addToast, sizeHeader]);
 
   const resetFilters = () => {
     const fresh = { dateRange: DEFAULT_RANGE, company: 'all', platform: 'all', ads: DEFAULT_ADS };

@@ -17,7 +17,15 @@ const norm = (s) => String(s ?? '').trim().toLowerCase();
 // A marketplace column's tick key — the marketplace + the column's own key
 // (its file, sheet and header — marketplaceHeaders.js marketplaceColumns).
 export const colKey = (marketplaceId, columnKey) => JSON.stringify([marketplaceId, columnKey]);
-const matches = (text, q) => !q || norm(text).includes(norm(q));
+// The search box: every word typed, in any order, anywhere in the text —
+// spaces / _ / - / . aside ("order id" finds "Order_ID", "sub-order id").
+const squash = (s) => norm(s).replace(/[\s_\-./()]+/g, '');
+export const matches = (text, q) => {
+  const words = norm(q).split(/[\s_\-./()]+/).filter(Boolean);
+  if (!words.length) return true;
+  const t = squash(text);
+  return words.every((w) => t.includes(w));
+};
 
 function ColumnHead({ label, sub, filter, onFilter, getOptions, onOpenChange, sortDir, onSort }) {
   // `wide` — the filter's list in 3 columns, so long header lists show at a glance.
@@ -142,7 +150,14 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   const fromOurs = (h) => (h.fromHeaders || []).map((id) => headers.find((x) => x.id === id)).filter(Boolean);
   const isMerged = (h) => fromOurs(h).length > 0 || allColumns.some((c) => (c.mapped.get(h.id) || []).length);
   const ourAllowed = allowed(OUR_COL);
-  const ourShown = (h) => matches(h.name, ourQuery) && (!ourAllowed || ourAllowed.has(h.name)) && (!groupFilter || groupFilter.has(h.id));
+  // The search box looks in EVERY column: a Mapped row shows when its Our
+  // Header, an Our Header merged into it, or any marketplace column mapped
+  // to it matches; the Unmapped lists are each searched on their own.
+  const rowMatches = (h) => !ourQuery || matches(h.name, ourQuery)
+    || fromOurs(h).some((src) => matches(src.name, ourQuery))
+    || columns.some((c) => (c.mapped.get(h.id) || []).some((s) => matches(s.label, ourQuery)));
+  const inGroup = (h) => (!ourAllowed || ourAllowed.has(h.name)) && (!groupFilter || groupFilter.has(h.id));
+  const ourShown = (h) => matches(h.name, ourQuery) && inGroup(h);
   const colAllowed = columns.map((c) => allowed(c.id));
   // The Our Headers columns — one per ticked group, or a single one for all.
   const oursCols = (oursColumns || [{ id: '', name: '', ids: null }]).map((oc) => ({
@@ -156,7 +171,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   const byText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
   const mappedIn = (h) => (sortCol.mapped.get(h.id) || [])[0]?.label;
   const mergedMatches = ordered.filter((h) => isMerged(h)
-    && ourShown(h)
+    && inGroup(h) && rowMatches(h)
     && oursCols.every((oc) => {
       const a = allowed(oc.key); // that column's filter (header names)
       return !a || fromOurs(h).some((src) => oc.has(src) && a.has(src.name));
@@ -172,7 +187,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     : mergedMatches;
   const ourUnmapped = ordered.filter((h) => !isMerged(h) && ourShown(h));
   const colUnmapped = columns.map((c, ci) => {
-    const list = c.unmapped.filter((o) => !colAllowed[ci] || colAllowed[ci].has(o.label));
+    const list = c.unmapped.filter((o) => (!colAllowed[ci] || colAllowed[ci].has(o.label)) && matches(o.label, ourQuery));
     return sortCol?.id === c.id ? [...list].sort((a, b) => sign * byText(a.label, b.label)) : list;
   });
   const ourSortDir = ourSort === 'name-asc' ? 'asc' : ourSort === 'name-desc' ? 'desc' : null;
@@ -182,7 +197,7 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   const oursLists = oursCols.map((oc) => {
     const a = allowed(oc.key);
     const dir = oursSorts[oc.key];
-    const list = ordered.filter((h) => oc.has(h) && (!a || a.has(h.name)));
+    const list = ordered.filter((h) => oc.has(h) && (!a || a.has(h.name)) && matches(h.name, ourQuery));
     return dir ? [...list].sort((x, y) => (dir === 'desc' ? -1 : 1) * byText(x.name, y.name)) : list;
   });
   const anyUnmapped = ourUnmapped.length > 0 || oursLists.some((l) => l.length) || colUnmapped.some((l) => l.length) || columns.some((c) => !c.total);

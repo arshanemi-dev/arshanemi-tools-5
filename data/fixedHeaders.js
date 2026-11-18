@@ -36,6 +36,17 @@ export const FIXED_HEADERS = [
     hint: 'Filled with the Market Place_Brand picked on the dashboard before an upload.',
   },
   {
+    // With the SKU, what makes every row and every price its own
+    // (lib/profitLoss/rowIdentity.js). Map it to the sheet's size column per
+    // Market Place; unmapped, a column named Size / Variant / Variation is used.
+    key: 'size',
+    id: 'hdr_size',
+    name: 'Size',
+    type: 'text',
+    aliases: ['Product Size', 'Sku Size', 'Variant', 'Variation'],
+    hint: 'The item’s size — map it to the sheet’s Size column (else a Size / Variant column is found by itself). SKU + Size keep every row and every price separate.',
+  },
+  {
     // Text, not a cost — typed per SKU in its own input box on the
     // dashboard, and a column of the SKU Cost sheet like the costs.
     key: 'masterSku',

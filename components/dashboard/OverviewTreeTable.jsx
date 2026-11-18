@@ -15,7 +15,8 @@ import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
 import { BLANK_VALUE, OVERVIEW_LEVEL_INDENT_PX, TREE_COL, ancestorKeys, filterTree, firstColumnSort, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
-import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
+import { costCellKey, costFieldOf, costKeyParts, inheritedCost, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
+import { SIZE_KEY } from '@/lib/profitLoss/rowIdentity';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributionsTree } from '@/lib/profitLoss/contribution';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
@@ -173,32 +174,38 @@ export default function OverviewTreeTable({
   // in its Account Name when the node is one account (else for every
   // account); an Account Name node under a SKU level, that SKU in that
   // account. → { sku, key } (key = skuCosts' key — rowCostKey).
+  // A Size level (the fixed Size header) above or at the node makes it that
+  // SKU + Size's price (skuCosts.js priceKeys).
+  const sizeLevel = levels.findIndex((h) => h.fixedKey === SIZE_KEY);
   const costTarget = (n) => {
     if (!skuLevels.size || n.value === BLANK_VALUE) return null;
     let sku = null;
     let account = '';
+    const skuAbove = () => [...skuLevels].filter((i) => i < n.depth).pop();
     if (skuLevels.has(n.depth)) {
       sku = n.value;
       account = n.company;
-    } else if (levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY) {
-      const at = [...skuLevels].filter((i) => i < n.depth).pop();
+    } else if (levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY || n.depth === sizeLevel) {
+      const at = skuAbove();
       if (at == null) return null;
       sku = n.path[at];
-      account = n.value;
+      account = levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY ? n.value : n.company;
     }
     if (!sku || sku === BLANK_VALUE || !isRealSku(sku)) return null;
-    return { sku, key: rowCostKey(sku, account) };
+    const size = sizeLevel >= 0 && sizeLevel <= n.depth && n.path[sizeLevel] !== BLANK_VALUE ? n.path[sizeLevel] : '';
+    return { sku, size, account, key: rowCostKey(sku, account, size) };
   };
   const costInput = (target, field, name) => {
-    const { sku, key } = target;
-    const account = key !== sku ? ` (${costKeyParts(key).accountName})` : '';
+    const { sku, size, account: company, key } = target;
+    const accountName = costKeyParts(key).accountName;
+    const account = accountName ? ` (${accountName})` : '';
     return (
       <CostCell
         value={skuCosts[key]?.[field]}
-        fallback={account ? skuCosts[sku]?.[field] : null}
+        fallback={inheritedCost(skuCosts, key, sku, company, size, field) ?? null}
         onCommit={onCostChange && ((text) => { order.hold(); onCostChange(key, field, text); })}
         dirty={dirtyCells.has(costCellKey(key, field))}
-        label={`${name} for ${sku}${account}`}
+        label={`${name} for ${sku}${size ? ` size ${size}` : ''}${account}`}
         text={isTextCostField(field)}
         fill={onCostFill ? { col: field, sku: key, start: startFill } : null}
       />

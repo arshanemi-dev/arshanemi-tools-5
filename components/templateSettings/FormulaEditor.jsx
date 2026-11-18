@@ -6,7 +6,35 @@ import { aggregateCalls, describeCall, evaluateFormulaTyped } from '@/lib/profit
 import { fmtTyped } from '@/lib/profitLoss/fmt';
 import CountFilterPanel from './CountFilterPanel';
 
-const TOKENS = ['+', '-', '*', '/', '(', ')', '%'];
+// The token strip, in groups. [shown, inserted, hint]
+const TOKENS = [
+  ['+', '+', 'Add'], ['-', '-', 'Subtract'], ['×', '*', 'Multiply'], ['÷', '/', 'Divide'],
+  ['^', '^', 'Power — [A] ^ 2 is A squared'], ['%', '%', 'Per cent — [MRP] * 18% is 18% of MRP'],
+  ['(', '(', 'Open bracket'], [')', ')', 'Close bracket'], [',', ', ', 'Comma — between a function’s parts'],
+];
+const COMPARISONS = [
+  ['>', ' > ', 'Greater than — 1 when true, 0 when not'], ['<', ' < ', 'Less than'],
+  ['≥', ' >= ', 'Greater than or equal'], ['≤', ' <= ', 'Less than or equal'],
+  ['=', ' = ', 'Equal'], ['≠', ' <> ', 'Not equal'],
+];
+// [label, text before the cursor, text after it, hint]
+const FUNCTIONS = [
+  ['IF', 'IF(', ', , 0)', 'IF(condition, then, else) — IF([Profit] > 0, [Profit], 0)'],
+  ['Round', 'ROUND(', ', 2)', 'ROUND(x, places) — ROUND([Margin], 2)'],
+  ['Abs', 'ABS(', ')', 'ABS(x) — the number without its minus sign'],
+  ['Ceil', 'CEIL(', ')', 'CEIL(x) — rounds up to a whole number'],
+  ['Floor', 'FLOOR(', ')', 'FLOOR(x) — rounds down to a whole number'],
+  ['√', 'SQRT(', ')', 'SQRT(x) — square root'],
+];
+// Across the group's rows — each opens the builder (CountFilterPanel).
+const AGGREGATES = [
+  ['SUM', 'Sum', 'Add up a column across the group — every row, or only where a header has a value (SUMIF)'],
+  ['AVG', 'Avg', 'Average of a column across the group — every row, or only where a header has a value'],
+  ['MIN', 'Min', 'Smallest value of a column across the group'],
+  ['MAX', 'Max', 'Largest value of a column across the group'],
+  ['COUNT', 'Count', "Count a column's values across the group — all of them, or only where a header has a value"],
+  ['VALUE', 'Value', 'Take a column’s value itself (text too) — every distinct value when they differ'],
+];
 
 // The formula builder from the Header design, stacked in three rows: a Header
 // List dropdown (searchable) with Copy / Paste, then the operator token strip, then the
@@ -29,17 +57,21 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
   const [pick, setPick] = useState('');
   const [panelFn, setPanelFn] = useState(null); // 'SUM' | 'COUNT' — which button opened the builder
 
-  const insert = (text) => {
+  // `text` goes in at the cursor and `after` right behind it, the cursor
+  // left between them — a function's "(" … ")" wraps a selection.
+  const insert = (text, after = '') => {
     if (disabled) return;
     const el = inputRef.current;
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
-    const next = value.slice(0, start) + text + value.slice(end);
+    const picked = value.slice(start, end);
+    const wrap = after && picked;
+    const next = value.slice(0, start) + text + (wrap ? picked : '') + after + value.slice(end);
     onChange(next);
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      const pos = start + text.length;
+      const pos = start + text.length + (wrap ? picked.length : 0);
       el.setSelectionRange(pos, pos);
     });
   };
@@ -89,9 +121,21 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-divider bg-card px-3 py-2">
-        {TOKENS.map((t) => (
-          <button key={t} type="button" disabled={disabled} onClick={() => insert(t)} className={token}>
-            {t}
+        {TOKENS.map(([label, text, hint]) => (
+          <button key={label} type="button" title={hint} aria-label={hint} disabled={disabled} onClick={() => insert(text)} className={token}>
+            {label}
+          </button>
+        ))}
+        <span className="mx-0.5 h-5 w-px bg-divider-light" />
+        {COMPARISONS.map(([label, text, hint]) => (
+          <button key={label} type="button" title={hint} aria-label={hint} disabled={disabled} onClick={() => insert(text)} className={token}>
+            {label}
+          </button>
+        ))}
+        <span className="mx-0.5 h-5 w-px bg-divider-light" />
+        {FUNCTIONS.map(([label, before, after, hint]) => (
+          <button key={label} type="button" title={hint} disabled={disabled} onClick={() => insert(before, after)} className={token}>
+            {label}
           </button>
         ))}
         <button type="button" disabled={disabled} onClick={() => insert('Text')} className={token}>
@@ -101,8 +145,7 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
           Today
         </button>
         <span className="mx-0.5 h-5 w-px bg-divider-light" />
-        {[['SUM', 'Sum', 'Add up / average / min / max a column across the group — every row, or only where a header has a value (SUMIF)'],
-          ['COUNT', 'Count', "Count a column's values across the group — all of them, or only where a header has a value"]].map(([fn, label, hint]) => (
+        {AGGREGATES.map(([fn, label, hint]) => (
           <button
             key={fn}
             type="button"
@@ -138,8 +181,10 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
       />
 
       <p className="text-[11.5px] leading-relaxed text-muted">
-        Reference other columns by name in brackets. Supports <code>+ - * /</code>, <code>^</code> (or the word “power”),
-        parentheses, and <code>SUM</code> / <code>COUNT</code> / <code>AVG</code> / <code>MIN</code> / <code>MAX</code> / <code>VALUE([..])</code> across the group —{' '}
+        Reference other columns by name in brackets. Supports <code>+ - * /</code>, <code>^</code> (or the word “power”), <code>%</code>,
+        parentheses, comparisons <code>&gt; &lt; &gt;= &lt;= = &lt;&gt;</code> (1 when true, 0 when not),{' '}
+        <code>IF(condition, then, else)</code>, <code>ROUND(x, 2)</code>, <code>ABS</code> / <code>CEIL</code> / <code>FLOOR</code> / <code>SQRT(x)</code>,
+        and <code>SUM</code> / <code>COUNT</code> / <code>AVG</code> / <code>MIN</code> / <code>MAX</code> / <code>VALUE([..])</code> across the group —{' '}
         <code>COUNT([Status], &quot;Delivered&quot;)</code> counts only that value; <code>SUM([Settlement], [Status], &quot;Delivered&quot;)</code> adds Settlement only where Status is Delivered.
         Dates: one Date header minus another gives days, <code>TODAY() - [Order Date]</code> is days since, <code>[Order Date] + 7</code> is a date.
         {calls.map((c, i) => (
