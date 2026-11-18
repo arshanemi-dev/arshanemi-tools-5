@@ -4,9 +4,12 @@ import { verifyToken } from '@/lib/auth'
 import { getUserByEmail, getUserByMobile, updateUserPassword } from '@/lib/db'
 import { validatePassword } from '@/lib/validation'
 import { IS_CONNECT, proxyAuthCall } from '@/lib/connect'
+import { tooManyAttempts, MINUTES } from '@/lib/rateLimit'
 
 export async function POST(req) {
   const { token, password } = await req.json()
+  const limited = tooManyAttempts(req, 'reset-password', { limit: 10, windowMs: 10 * MINUTES })
+  if (limited) return limited
 
   if (!token || !password) {
     return NextResponse.json({ error: 'Token and new password are required' }, { status: 400 })

@@ -130,7 +130,10 @@ export async function proxy(req) {
   }
 
   try {
-    const { payload } = await jwtVerify(token, SECRET)
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ['HS256'] })
+    // A purpose token (e.g. the hub's 5-minute password-reset token, same
+    // secret) is not a login session.
+    if (payload.purpose) throw new Error('not a session token')
     const res = NextResponse.next()
     // Percent-encoded: a header value can only hold Latin-1, so a name in Hindi / Gujarati / any
     // other script made this line throw — and the catch below turned a valid session into a 401

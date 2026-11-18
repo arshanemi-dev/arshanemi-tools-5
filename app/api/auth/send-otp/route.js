@@ -1,15 +1,19 @@
+import { randomInt } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getUserByEmail, getUserByMobile, createOTP } from '@/lib/db'
 import { sendOtpEmail } from '@/lib/mailer'
 import { sendSmsOtp } from '@/lib/sms'
 import { IS_CONNECT, proxyAuthCall } from '@/lib/connect'
+import { tooManyAttempts, MINUTES } from '@/lib/rateLimit'
 
 function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  return String(randomInt(100000, 1000000)) // CSPRNG — Math.random() is predictable
 }
 
 export async function POST(req) {
   const { identifier, type } = await req.json()
+  const limited = tooManyAttempts(req, 'send-otp', { limit: 15, windowMs: 10 * MINUTES, subject: identifier, subjectLimit: 5 })
+  if (limited) return limited
 
   if (IS_CONNECT) {
     const { status, data } = await proxyAuthCall('/api/auth/send-otp', { body: { identifier, type } })

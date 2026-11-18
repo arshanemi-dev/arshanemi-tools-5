@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/auth'
 import { getUserByEmail, getUserByMobile, createOTP } from '@/lib/db'
@@ -6,7 +7,7 @@ import { sendSmsOtp } from '@/lib/sms'
 import { IS_CONNECT, proxyAuthCall, authHeaderFrom } from '@/lib/connect'
 
 function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  return String(randomInt(100000, 1000000)) // CSPRNG — Math.random() is predictable
 }
 
 // Sends a verification OTP to a NEW email/mobile the logged-in user wants to

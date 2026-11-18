@@ -164,29 +164,44 @@ test('first-page failure and count mismatch are incomplete restores', async () =
 });
 
 test('Excel export produces worksheets containing complete calculation results', async (t) => {
-  const { downloadMultiTabXlsx } = await import('../lib/profitLoss/exportTemplate.js');
+  const { downloadTab } = await import('../lib/profitLoss/exportTemplate.js');
   const { default: ExcelJS } = await import('exceljs');
   const { full } = await runCalculationTask('export', { config, rows, skuCosts, options: { ...options, dateFrom: null, dateTo: null } });
   let blob;
-  let clicked = false;
+  let clicks = 0;
   const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
     body: { appendChild() {} },
-    createElement: () => ({ click() { clicked = true; }, remove() {} }),
+    createElement: () => ({ click() { clicks += 1; }, remove() {} }),
   } });
   t.mock.method(URL, 'createObjectURL', (value) => { blob = value; return 'blob:test'; });
-  try {
-    const tabs = [
-      { tabName: 'Details', table: { columns: ['SKU', 'Orders'], rows: full.tableRows.map((row) => [row.key, row.cells.hdr_total_order.raw]) } },
-      ...Object.entries(full.overviews).map(([id, overview]) => ({ tabName: id, table: { columns: ['Key'], rows: overview.flatRows.map((row) => [row.key]) } })),
-    ];
-    await downloadMultiTabXlsx({ label: 'Regression', tabs });
-    assert.ok(clicked);
+  t.mock.method(URL, 'revokeObjectURL', () => {});
+  const readBook = async () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await blob.arrayBuffer());
-    assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Details', 'overview', 'otherOverview']);
+    return workbook;
+  };
+  try {
+    // A normal tab: one sheet, every row.
+    await downloadTab('xlsx', { label: 'Regression', tab: {
+      tabName: 'Details',
+      table: { columns: ['SKU', 'Orders'], rows: full.tableRows.map((row) => [row.key, row.cells.hdr_total_order.raw]) },
+    } });
+    let workbook = await readBook();
+    assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Details']);
     assert.equal(workbook.getWorksheet('Details').rowCount, full.tableRows.length + 1);
-    assert.equal(workbook.getWorksheet('otherOverview').rowCount, full.overviews.otherOverview.flatRows.length + 1);
+
+    // An Overview tab: a sheet per hierarchy level.
+    const flat = full.overviews.otherOverview.flatRows;
+    await downloadTab('xlsx', { label: 'Regression', tab: {
+      tabName: 'otherOverview',
+      table: { columns: ['Key'], rows: flat.map((row) => [row.key]) },
+      levelTables: [{ name: 'All', columns: ['Key'], rows: flat.map((row) => [row.key]) }],
+    } });
+    workbook = await readBook();
+    assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['All']);
+    assert.equal(workbook.getWorksheet('All').rowCount, flat.length + 1);
+    assert.equal(clicks, 2);
   } finally {
     if (oldDocument) Object.defineProperty(globalThis, 'document', oldDocument);
     else delete globalThis.document;

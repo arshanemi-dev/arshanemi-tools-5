@@ -1,12 +1,14 @@
+import { randomInt } from 'crypto'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { signToken, signRefreshToken, makeAuthCookie, clearAuthCookie, ADMIN_COOKIE } from '@/lib/auth'
 import { getUserByEmail, getUserByMobile, createOTP, verifyOTP } from '@/lib/db'
 import { sendLoginOtpEmail } from '@/lib/mailer'
 import { IS_CONNECT, proxyAuthCall } from '@/lib/connect'
+import { tooManyAttempts, MINUTES } from '@/lib/rateLimit'
 
 function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString()
+  return String(randomInt(100000, 1000000)) // CSPRNG — Math.random() is predictable
 }
 
 const OTP_DISABLED = process.env.NEXT_PUBLIC_IS_OTP_Verifications_Disable === 'true'
@@ -16,6 +18,8 @@ export async function POST(req) {
 
   // Support legacy admin login (username field) for backward compatibility
   const id = identifier || username
+  const limited = tooManyAttempts(req, 'login', { limit: 30, windowMs: 5 * MINUTES, subject: id, subjectLimit: 10 })
+  if (limited) return limited
 
   if (!id || (!password && !otpCode)) {
     return NextResponse.json({ error: 'Identifier and password required' }, { status: 400 })

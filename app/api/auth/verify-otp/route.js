@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server'
 import { verifyOTP } from '@/lib/db'
 import { signToken } from '@/lib/auth'
 import { IS_CONNECT, proxyAuthCall } from '@/lib/connect'
+import { tooManyAttempts, MINUTES } from '@/lib/rateLimit'
 
 export async function POST(req) {
   const { identifier, otpCode } = await req.json()
+  const limited = tooManyAttempts(req, 'verify-otp', { limit: 30, windowMs: 10 * MINUTES, subject: identifier, subjectLimit: 8 })
+  if (limited) return limited
 
   if (IS_CONNECT) {
     const { status, data } = await proxyAuthCall('/api/auth/verify-otp', { body: { identifier, otpCode } })
