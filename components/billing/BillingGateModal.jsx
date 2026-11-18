@@ -31,7 +31,7 @@ export default function BillingGateModal({ gate, onClose, onRetry }) {
       <AccessUnauthorizedModal
         open
         onClose={onClose}
-        message={`${data?.featureTitle ?? 'Listing exports'} aren't activated for your account yet. Contact your admin to enable this feature.`}
+        message={`${data?.featureTitle ?? 'Profit & Loss uploads'} need a one-time activation before coins can be used${data?.fixFeeCoins ? ` (activation fee: ${data.fixFeeCoins} coins)` : ''}. Open your Plan page → Feature Activations, turn it on, then upload again.`}
       />
     )
   }
