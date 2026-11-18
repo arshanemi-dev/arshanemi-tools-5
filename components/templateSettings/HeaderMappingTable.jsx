@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check as CheckIcon, Lock, Pencil, Trash2, X } from 'lucide-react';
 import ColumnFilterButton from '@/components/dashboard/ColumnFilterButton';
 import { isColumnMapped, mappedColumnsByHeader, marketplaceColumns } from '@/lib/profitLoss/marketplaceHeaders';
@@ -120,7 +120,7 @@ function Check({ checked, onChange, label, disabled }) {
 // height to the other (the column heads and their filters always stay).
 // `full` — the section is in Full Page: with both blocks on, each takes a
 // share of the screen height instead of a fixed box.
-export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, oursColumns = null, shownMarketplaceIds = null, showMapped = true, showUnmapped = true, full = false, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
+export default function HeaderMappingTable({ headers, marketplaces, activeId, onSelect, checked, onToggleCheck, onUnmap, onRename, onDelete, busy = false, ourQuery, ourSort = DEFAULT_LIST_SORT, onOurSort = () => {}, groupFilter = null, oursColumns = null, shownMarketplaceIds = null, showMapped = true, showUnmapped = true, onViewMapped = null, full = false, groupTag = () => '', isHiddenOf = null, onToggleHidden = null }) {
   const [colSort, setColSort] = useState(null); // { id, dir } — the marketplace column the table is sorted on
   const [oursSorts, setOursSorts] = useState({}); // { [ours column key]: 'asc' | 'desc' } — each Our Headers column's own list
   const [filters, setFilters] = useState({}); // { [column]: { values: [header name, ...] } | null }
@@ -148,7 +148,8 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
   );
 
   const fromOurs = (h) => (h.fromHeaders || []).map((id) => headers.find((x) => x.id === id)).filter(Boolean);
-  const isMerged = (h) => fromOurs(h).length > 0 || allColumns.some((c) => (c.mapped.get(h.id) || []).length);
+  // Mapped ANYWHERE — every marketplace and group, shown or not.
+  const isMergedAnywhere = (h) => fromOurs(h).length > 0 || allColumns.some((c) => (c.mapped.get(h.id) || []).length);
   const ourAllowed = allowed(OUR_COL);
   // The search box looks in EVERY column: a Mapped row shows when its Our
   // Header, an Our Header merged into it, or any marketplace column mapped
@@ -166,6 +167,30 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
     label: oc.name ? `Our Headers (${oc.name})` : 'Our Headers',
     has: (h) => !oc.ids || oc.ids.has(h.id),
   }));
+  // Mapped IN THIS VIEW — something in one of the columns on screen: an Our
+  // Header of a ticked group merged into it, or a header of a shown Market
+  // Place. With the Categories / Market Places narrowed, a header whose
+  // mappings are all in hidden columns would be a row of blank cells — it
+  // counts as Unmapped instead (tagged "mapped elsewhere"), back under Mapped
+  // as soon as its columns are shown again.
+  const isMerged = (h) => fromOurs(h).some((src) => oursCols.some((oc) => oc.has(src)))
+    || columns.some((c) => (c.mapped.get(h.id) || []).length);
+  const mappedElsewhere = (h) => !isMerged(h) && isMergedAnywhere(h);
+  const elsewhereTitle = (h) => {
+    const where = [
+      ...allColumns.filter((c) => !columns.includes(c) && (c.mapped.get(h.id) || []).length).map((c) => c.name),
+      ...(fromOurs(h).length ? ['a hidden category'] : []),
+    ];
+    return `Mapped in ${where.join(', ')} — not shown now. It moves back to Mapped when that column is shown.`;
+  };
+  // The Mapped / Unmapped counts above the table follow this view: the Our
+  // Headers of the ticked Categories, Mapped by the columns on screen.
+  const inGroupList = headers.filter((h) => !groupFilter || groupFilter.has(h.id));
+  const viewMappedCount = inGroupList.filter(isMerged).length;
+  const viewTotal = inGroupList.length;
+  useEffect(() => {
+    onViewMapped?.({ mapped: viewMappedCount, total: viewTotal });
+  }, [onViewMapped, viewMappedCount, viewTotal]);
   const sortCol = colSort ? columns.find((c) => c.id === colSort.id) : null;
   const sign = colSort?.dir === 'desc' ? -1 : 1;
   const byText = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
@@ -250,6 +275,11 @@ export default function HeaderMappingTable({ headers, marketplaces, activeId, on
                   </span>
                 )}
                 {isHiddenOf?.(h.id) && <span className="ml-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-subtle">hidden</span>}
+                {inList && mappedElsewhere(h) && (
+                  <span title={elsewhereTitle(h)} className="ml-1.5 rounded-full border border-divider-light px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide text-link">
+                    mapped elsewhere
+                  </span>
+                )}
               </span>
             </label>
             {isHiddenOf && onToggleHidden && <ShowSwitch hidden={isHiddenOf(h.id)} onToggle={() => onToggleHidden(h.id)} name={h.name} />}

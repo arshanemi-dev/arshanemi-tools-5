@@ -160,7 +160,12 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
   }, [full, popupOpen]);
 
   const isMappedHeader = (h) => (h.fromHeaders || []).length > 0 || mappedIds.has(h.id);
-  const mappedCount = headers.filter(isMappedHeader).length;
+  // The table reports how many are Mapped in what is on screen now (shown
+  // Categories / Market Places — HeaderMappingTable onViewMapped); until it
+  // has, every mapping counts.
+  const [viewMapped, setViewMapped] = useState(null); // { mapped, total } | null
+  const mappedCount = viewMapped ? viewMapped.mapped : headers.filter(isMappedHeader).length;
+  const countTotal = viewMapped ? viewMapped.total : headers.length;
   const deleteTarget = headers.find((h) => h.id === deleteId) || null;
   const deleteUsages = deleteTarget ? headerUsages(config, deleteTarget) : [];
   // A header a formula still names isn't deleted: the confirm says which
@@ -411,7 +416,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
               <>
                 <span className="text-[12.5px] font-semibold text-foreground">Show</span>
                 <Chip active={view.mapped} onClick={() => toggleView('mapped')} count={mappedCount}>Mapped</Chip>
-                <Chip active={view.unmapped} onClick={() => toggleView('unmapped')} count={headers.length - mappedCount}>Unmapped</Chip>
+                <Chip active={view.unmapped} onClick={() => toggleView('unmapped')} count={countTotal - mappedCount}>Unmapped</Chip>
               </>
             )}
           />
@@ -436,6 +441,7 @@ export default function HeaderSection({ draft, activeId: activeIdProp, onActiveI
           shownMarketplaceIds={shownMarketplaceIds}
           showMapped={view.mapped}
           showUnmapped={view.unmapped}
+          onViewMapped={setViewMapped}
           full={full}
           groupTag={groupTag}
           isHiddenOf={groupsReady ? headerGroups.isHidden : null}
