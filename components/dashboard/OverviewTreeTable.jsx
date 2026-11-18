@@ -13,7 +13,7 @@ import useFillHeight from './useFillHeight';
 import useHeldOrder from './useHeldOrder';
 import { levelStyle } from './overviewLevelStyles';
 import { HL_CELL, HL_HEAD, isHighlighted, usePreviewHighlight } from './previewHighlight';
-import { BLANK_VALUE, OVERVIEW_LEVEL_INDENT_PX, TREE_COL, ancestorKeys, filterTree, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
+import { BLANK_VALUE, OVERVIEW_LEVEL_INDENT_PX, TREE_COL, ancestorKeys, filterTree, firstColumnSort, flattenTree, indexPathOf, sortTree } from '@/lib/profitLoss/overviewTree';
 import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnRange, isNumberHeader } from '@/lib/profitLoss/columnFilter';
 import { costCellKey, costFieldOf, costKeyParts, isRealSku, isSkuHeader, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
@@ -67,7 +67,13 @@ export default function OverviewTreeTable({
 }) {
   // "Contribution" columns: each node's (value * 100) / Total — contribution.js.
   const tree = useMemo(() => withContributionsTree(headers || columns, columns, treeIn, totalRules), [headers, columns, treeIn, totalRules]);
-  const [sort, setSort] = useState(null);
+  const [pickedSort, setSort] = useState(null);
+  // None chosen (or its column is gone) → the first column (the hierarchy), A→Z.
+  const sort = pickedSort?.key && (pickedSort.key === TREE_COL || columns.some((h) => h.id === pickedSort.key))
+    ? pickedSort
+    : firstColumnSort(TREE_COL);
+  const sortKey = sort.key;
+  const sortDir = sort.dir;
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -91,8 +97,8 @@ export default function OverviewTreeTable({
   const filtering = applied.length > 0;
   const fresh = useMemo(() => {
     const kept = applied.length ? filterTree(tree, (n) => applied.every(([k, f]) => cellPasses(f, nodeCell(n, k)))) : tree;
-    return sortTree(kept, sort);
-  }, [tree, applied, sort]);
+    return sortTree(kept, { key: sortKey, dir: sortDir });
+  }, [tree, applied, sortKey, sortDir]);
   const order = useHeldOrder(tree, fresh, true);
   const view = order.view;
   const startFill = useCostFill(onCostFill && ((field, skus, text) => { order.hold(); onCostFill(field, skus, text); })); // Excel's fill handle on the SKU rows' cost boxes — parent rows are skipped

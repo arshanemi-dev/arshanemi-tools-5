@@ -16,6 +16,7 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 import { costCellKey, costFieldOf, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributions } from '@/lib/profitLoss/contribution';
+import { compareCellValues, firstColumnSort } from '@/lib/profitLoss/overviewTree';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
@@ -170,7 +171,11 @@ export default function DetailsTable({
     if (c.isSku && showCost) displayCols.push({ id: '__cost__', key: '__cost__', kind: 'cost' });
   }
 
-  const [sort, setSort] = useState(null); // { key, dir }
+  const [pickedSort, setSort] = useState(null); // { key, dir } the user chose
+  // None chosen (or its column is gone) → the first column, A→Z.
+  const sort = pickedSort?.key && columns.some((h) => h.id === pickedSort.key) ? pickedSort : firstColumnSort(columns[0]?.id);
+  const sortKey = sort?.key ?? null;
+  const sortDir = sort?.dir ?? null;
   const [filters, setFilters] = useState({}); // { [columnKey]: { values, min, max } | null }
   const [filterOpen, setFilterOpen] = useState(false); // a filter menu is open — the table makes room for it
   const [page, setPage] = useState(1);
@@ -194,17 +199,12 @@ export default function DetailsTable({
     let out = applied.length
       ? rows.filter((r) => applied.every(([key, f]) => cellPasses(f, r.cells[key])))
       : rows;
-    if (sort?.key) {
-      const dir = sort.dir === 'asc' ? 1 : -1;
-      out = [...out].sort((a, b) => {
-        const av = a.cells[sort.key]?.raw;
-        const bv = b.cells[sort.key]?.raw;
-        if (typeof av === 'string' || typeof bv === 'string') return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
-        return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
-      });
+    if (sortKey) {
+      const dir = sortDir === 'asc' ? 1 : -1;
+      out = [...out].sort((a, b) => compareCellValues(a.cells[sortKey]?.raw, b.cells[sortKey]?.raw, dir));
     }
     return out;
-  }, [rows, applied, sort]);
+  }, [rows, applied, sortKey, sortDir]);
   const order = useHeldOrder(rows, fresh);
   const view = order.view;
   // A sort or filter the user picks is a new order — the held one goes.
@@ -238,7 +238,7 @@ export default function DetailsTable({
   // Reset to page 1 whenever the filtered/sorted set changes shape, so a
   // filter that shrinks the result set can't strand the view on an
   // out-of-range page.
-  useEffect(() => { (() => setPage(1))(); }, [order.rowSet, filters, sort, pageSize]);
+  useEffect(() => { (() => setPage(1))(); }, [order.rowSet, filters, sortKey, sortDir, pageSize]);
 
   const pageCount = Math.max(1, Math.ceil(view.length / pageSize));
   const currentPage = Math.min(page, pageCount);
