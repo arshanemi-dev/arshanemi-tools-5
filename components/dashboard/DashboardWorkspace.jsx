@@ -33,7 +33,7 @@ import { SIZE_KEY, sizeReader } from '@/lib/profitLoss/rowIdentity';
 import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { ACCOUNT_NAME_KEY, REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
+import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
 import { formulaUsages } from '@/lib/profitLoss/headerUsage';
 import { applyReviewOverrides, patchTransactionRows, reviewOverrideOf, withReviewOverride } from '@/lib/profitLoss/reviewOverrides';
 import { unpackRows } from '@/lib/profitLoss/packedRows';
@@ -531,12 +531,11 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   const rowKeyKey = useMemo(() => {
     const tab = (config.tabs || []).find((t) => t.id === activeTabId);
     if (!tab) return '';
-    const shownDefs = tabShownHeaders({ tab, headers: config.headers || [], config, layout, myColumns: myColumnsFor(tab.id, tab.headerIds || []) });
-    const shown = new Set(shownDefs.map((h) => h.id));
+    // (Account Name is always part of a row's identity — rowIdentity.js.)
+    const shown = new Set(tabShownHeaders({ tab, headers: config.headers || [], config, layout, myColumns: myColumnsFor(tab.id, tab.headerIds || []) }).map((h) => h.id));
     return [
       shown.has(RESERVED_HEADER_IDS.transactionId) && 'txn',
       shown.has(RESERVED_HEADER_IDS.orderId) && 'order',
-      shownDefs.some((h) => h.fixedKey === ACCOUNT_NAME_KEY) && 'account',
     ].filter(Boolean).join(',') || 'none';
   }, [config, layout, activeTabId, myColumnsFor]);
 
