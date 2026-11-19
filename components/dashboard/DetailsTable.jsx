@@ -16,6 +16,7 @@ import { activeFilters, cellNumber, cellPasses, cellText, columnOptions, columnR
 import { costCellKey, costFieldOf, inheritedCost, isRealSku, isTextCostField, rowCostKey } from '@/lib/profitLoss/skuCosts';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributions } from '@/lib/profitLoss/contribution';
+import { withTotalRefs } from '@/lib/profitLoss/totalRefs';
 import { firstColumnSort, hierarchyComparator } from '@/lib/profitLoss/overviewTree';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
@@ -151,7 +152,8 @@ export default function DetailsTable({
   totalRules = null,
 }) {
   // "Contribution" columns: each row's (value * 100) / Total — contribution.js.
-  const rows = useMemo(() => withContributions(headers || columns, columns, rowsIn, totalRules), [headers, columns, rowsIn, totalRules]);
+  // TOTAL([Header]) formulas get the real Total row values first — totalRefs.js.
+  const rows = useMemo(() => withContributions(headers || columns, columns, withTotalRefs(headers || columns, columns, rowsIn, totalRules), totalRules), [headers, columns, rowsIn, totalRules]);
   const cols = columns.map((h, i) => ({
     id: h.id,
     key: h.id,

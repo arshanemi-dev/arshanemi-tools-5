@@ -19,6 +19,7 @@ import { costCellKey, costFieldOf, costKeyParts, inheritedCost, isRealSku, isSku
 import { SIZE_KEY } from '@/lib/profitLoss/rowIdentity';
 import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributionsTree } from '@/lib/profitLoss/contribution';
+import { withTotalRefsTree } from '@/lib/profitLoss/totalRefs';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
 
 // How far each deeper level (and its colour bar) steps in from its parent —
@@ -67,7 +68,8 @@ export default function OverviewTreeTable({
   review = null,
 }) {
   // "Contribution" columns: each node's (value * 100) / Total — contribution.js.
-  const tree = useMemo(() => withContributionsTree(headers || columns, columns, treeIn, totalRules), [headers, columns, treeIn, totalRules]);
+  // TOTAL([Header]) formulas get the real Total row values first — totalRefs.js.
+  const tree = useMemo(() => withContributionsTree(headers || columns, columns, withTotalRefsTree(headers || columns, columns, treeIn, totalRules), totalRules), [headers, columns, treeIn, totalRules]);
   const [pickedSort, setSort] = useState(null);
   // None chosen (or its column is gone) → the first column (the hierarchy), A→Z.
   const sort = pickedSort?.key && (pickedSort.key === TREE_COL || columns.some((h) => h.id === pickedSort.key))

@@ -144,6 +144,15 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
         <button type="button" title="Today's date — TODAY() - [a Date header] is how many days ago" disabled={disabled} onClick={() => insert('TODAY()')} className={token}>
           Today
         </button>
+        <button
+          type="button"
+          title="TOTAL([Header]) — that header's value on the table's TOTAL row. [Profit] / TOTAL([Profit]) * 100 is each row's share. Pick a header in the Header List first to drop it in."
+          disabled={disabled}
+          onClick={() => (pick ? insert(`TOTAL([${pick}])`) : insert('TOTAL([', '])'))}
+          className={token}
+        >
+          Total
+        </button>
         <span className="mx-0.5 h-5 w-px bg-divider-light" />
         {AGGREGATES.map(([fn, label, hint]) => (
           <button
@@ -186,7 +195,9 @@ export default function FormulaEditor({ value = '', onChange, refNames = [], lis
         <code>IF(condition, then, else)</code>, <code>ROUND(x, 2)</code>, <code>ABS</code> / <code>CEIL</code> / <code>FLOOR</code> / <code>SQRT(x)</code>,
         and <code>SUM</code> / <code>COUNT</code> / <code>AVG</code> / <code>MIN</code> / <code>MAX</code> / <code>VALUE([..])</code> across the group —{' '}
         <code>COUNT([Status], &quot;Delivered&quot;)</code> counts only that value; <code>SUM([Settlement], [Status], &quot;Delivered&quot;)</code> adds Settlement only where Status is Delivered.
-        Dates: one Date header minus another gives days, <code>TODAY() - [Order Date]</code> is days since, <code>[Order Date] + 7</code> is a date.
+        Dates: one Date header minus another gives days, <code>TODAY() - [Order Date]</code> is days since, <code>[Order Date] + 7</code> is a date.{' '}
+        <code>TOTAL([Profit])</code> is Profit&rsquo;s value on the table&rsquo;s TOTAL row — <code>[Profit] / TOTAL([Profit]) * 100</code> is each row&rsquo;s share
+        (the preview uses the sample value; for a SUM / COUNT, give it a header of its own and TOTAL() that header).
         {calls.map((c, i) => (
           <span key={i} className="block font-medium text-foreground">
             {calls.length > 1 ? `${i + 1}. ` : ''}{describeCall(c)}
