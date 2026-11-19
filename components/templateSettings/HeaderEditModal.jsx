@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '@/components/admin/Modal';
 import { AGGREGATE_BUILTIN_NAMES, HEADER_DESCRIPTION_MAX_CHARS, HEADER_DESCRIPTION_MAX_WORDS, capWords, makeHeader, wordCount } from '@/data/templateSchema';
-import { fixedHeaderHint, fixedHeaderType, isReviewField } from '@/data/fixedHeaders';
+import { fixedHeaderHint, fixedHeaderType } from '@/data/fixedHeaders';
 import { isOurHeader } from '@/lib/profitLoss/headerUsage';
 import TypeToggle from './TypeToggle';
 import FormulaEditor from './FormulaEditor';
@@ -28,9 +28,10 @@ export default function HeaderEditModal({ open, header = null, headers = [], usa
   const canSave = form.name.trim().length > 0;
   // A built-in header (Master SKU, the costs, Account Name) can be worked out
   // by a formula instead of filled by the dashboard — its name stays locked.
-  // Not Review / Reason: those are picked by hand on the dashboard.
+  // Review / Reason too: with a formula they show its result instead of the
+  // dashboard's Yes / No pick and reason box.
   const builtInType = fixedHeaderType(form);
-  const canUseFormula = !!builtInType && !isReviewField(form);
+  const canUseFormula = !!builtInType;
   const usesFormula = form.type === 'formula';
   const setUsesFormula = (on) => set(on
     ? { type: 'formula', format: builtInType === 'text' ? 'text' : form.format || 'money' }

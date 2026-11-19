@@ -35,7 +35,7 @@ import { SIZE_KEY, sizeReader } from '@/lib/profitLoss/rowIdentity';
 import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
 import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
-import { REVIEW_KEY, REVIEW_REASON_KEY } from '@/data/fixedHeaders';
+import { REVIEW_KEY, REVIEW_REASON_KEY, isReviewField } from '@/data/fixedHeaders';
 import { formulaUsages } from '@/lib/profitLoss/headerUsage';
 import { applyReviewOverrides, patchTransactionRows, reviewOverrideOf, withReviewOverride } from '@/lib/profitLoss/reviewOverrides';
 import { unpackRows } from '@/lib/profitLoss/packedRows';
@@ -302,8 +302,9 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     [canonicalRows, reviewOverrides, orderIdHeader, transactionIdHeader],
   );
   const reviewHeaders = useMemo(() => ({
-    review: (config.headers || []).find((h) => h.fixedKey === REVIEW_KEY) || null,
-    reason: (config.headers || []).find((h) => h.fixedKey === REVIEW_REASON_KEY) || null,
+    // One switched to a formula shows the formula's result — no pick to patch in.
+    review: (config.headers || []).find((h) => h.fixedKey === REVIEW_KEY && isReviewField(h)) || null,
+    reason: (config.headers || []).find((h) => h.fixedKey === REVIEW_REASON_KEY && isReviewField(h)) || null,
   }), [config]);
   // A formula that reads Review / Reason has to be worked out again on a
   // pick, even on the Transactions page.

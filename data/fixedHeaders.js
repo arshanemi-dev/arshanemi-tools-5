@@ -92,7 +92,13 @@ export const FIXED_HEADERS = [
   },
 ];
 
-export const isReviewField = (h) => h?.fixedKey === REVIEW_KEY || h?.fixedKey === REVIEW_REASON_KEY;
+// A header with a saved formula of its own: its value is the formula's,
+// never one the dashboard fills in or picks by hand.
+export const hasOwnFormula = (h) => h?.type === 'formula' && String(h.formula || '').trim() !== '';
+
+// Review / Reason picked by hand on the dashboard — unless switched to a
+// formula, which then shows its own result like any other Formula header.
+export const isReviewField = (h) => (h?.fixedKey === REVIEW_KEY || h?.fixedKey === REVIEW_REASON_KEY) && !hasOwnFormula(h);
 
 // The two required headers' names (data/templateSchema.js makes them), by
 // their fixed ids — kept here so withFixedHeaders can bring a config saved
