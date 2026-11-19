@@ -18,6 +18,7 @@ import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributions } from '@/lib/profitLoss/contribution';
 import { firstColumnSort, hierarchyComparator } from '@/lib/profitLoss/overviewTree';
 import { REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 
 // The Total row's cells — black on light green, right under the blue header row, pinned with it.
 const TOTAL_CELL = 'bg-[#dcfce7] px-3 py-2 font-semibold text-black whitespace-nowrap';
@@ -86,6 +87,15 @@ const TOTAL_VALUE = 'bg-[#dcfce7] px-3 py-2 font-semibold whitespace-nowrap'; //
 // otherwise move the edited row away, or drop it. The rows stay in that
 // order until the user sorts, filters, or presses "Sort rows again" — which
 // shows once the order is out of date.
+
+// The uniqueness hierarchy's parts a row carries itself (resolveTemplate
+// everyRow rows: `company`, `sku`, `size`) — sort keys that work whether or
+// not their column is shown.
+const ACCOUNT_KEY = '\u0000account';
+const SKU_KEY = '\u0000sku';
+const SIZE_SORT_KEY = '\u0000size';
+const ID_COLUMNS = [RESERVED_HEADER_IDS.transactionId, RESERVED_HEADER_IDS.orderId];
+const identityValue = (r, k) => (k === ACCOUNT_KEY ? r.company : k === SKU_KEY ? r.sku : k === SIZE_SORT_KEY ? r.size : r.cells[k]?.raw);
 
 // "first value +N more" — a column whose orders differ in this row.
 const MORE_RE = /\s\+\d+ more$/;
@@ -199,10 +209,15 @@ export default function DetailsTable({
     let out = applied.length
       ? rows.filter((r) => applied.every(([key, f]) => cellPasses(f, r.cells[key])))
       : rows;
-    // Column by column: the sorted one, then every other in table order —
-    // rows tied on one column are ordered by the next (hierarchyComparator).
+    // Column by column (hierarchyComparator): the sorted one, then the
+    // uniqueness hierarchy (rowIdentity.js) — Account Name → SKU → Size →
+    // Transaction-Id → Order-Id, read off the row itself even when that
+    // column isn't shown — then every other column in table order.
     if (sortKey) {
-      const cmp = hierarchyComparator({ key: sortKey, dir: sortDir }, colKeys.split('\u0000'), (r, k) => r.cells[k]?.raw);
+      const ids = colKeys.split('\u0000');
+      const chain = [ACCOUNT_KEY, SKU_KEY, SIZE_SORT_KEY, ...ID_COLUMNS.filter((id) => ids.includes(id))];
+      const keys = [ids[0], ...chain, ...ids.slice(1)].filter(Boolean);
+      const cmp = hierarchyComparator({ key: sortKey, dir: sortDir }, [...new Set(keys)], identityValue);
       out = [...out].sort(cmp);
     }
     return out;
