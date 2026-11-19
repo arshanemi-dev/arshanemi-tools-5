@@ -30,6 +30,7 @@ import { stripSectionOf } from '@/lib/profitLoss/positionDraft';
 import { partShownIds } from '@/lib/profitLoss/tabParts';
 import { myDetailColumns, overviewShownHeaders, tabColumnDefs } from '@/lib/profitLoss/tabColumns';
 import { costKey, normalizeSkuCosts, stampSkuCosts } from '@/lib/profitLoss/skuCosts';
+import { mergeAdsLedger } from '@/lib/profitLoss/adsLedger';
 import { SIZE_KEY, sizeReader } from '@/lib/profitLoss/rowIdentity';
 import { readHeaderFromRow } from '@/lib/profitLoss/resolveTemplate';
 import { useSkuCosts } from '@/lib/profitLoss/useSkuCosts';
@@ -54,6 +55,7 @@ import NoMarketplaces from './NoMarketplaces';
 import NoTemplateTabBar from './NoTemplateTabBar';
 import TemplatesLoadError from './TemplatesLoadError';
 import UploadProgress, { SavingRowsLine } from './UploadProgress';
+import AdsLedgerNotice from './AdsLedgerNotice';
 const HistoryDrawer = dynamic(() => import('./HistoryDrawer'));
 const MergedCommonHeadersTable = dynamic(() => import('./MergedCommonHeadersTable'));
 const NextLevelSheetDebugger = dynamic(() => import('@/components/templateSettings/NextLevelSheetDebugger'));
@@ -158,6 +160,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     layout,
     dropLegacySkuCosts,
     extractedData, onExtractedDataChange,
+    adsLedger, onAdsLedgerChange,
   } = useDashboardSettings({
     ads: pending.ads,
     dateRange: pending.dateRange,
@@ -608,7 +611,10 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     company: applied.company,
     overviewHeaderIds,
     rowKeyIds: rowKeyKey ? rowKeyKey.split(',') : [],
-  }), [applied, overviewHeaderIds, rowKeyKey]);
+    // The Payment sheets' ads spend — the worker shares it onto ad orders
+    // (lib/profitLoss/adsLedger.js) before anything is filtered.
+    adsLedger,
+  }), [applied, overviewHeaderIds, rowKeyKey, adsLedger]);
   // The Title Cards / Graphs the open tab shows — its own plus any the user
   // added on Position Settings (tabParts.js) — the only ones worked out.
   // Held as a string so an unrelated layout change doesn't recompute.
@@ -625,6 +631,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
   }), [config, canonicalRows, reviewedRows, reviewInFormulas, skuCosts, viewOptions, activeTabId, viewParts, showTransactions]);
   const computed = useCalculation(calculations, 'view', viewInput, EMPTY_VIEW, !merged.pending && !merged.error);
   const { resolved } = computed.value;
+  const adsNotice = <AdsLedgerNotice info={computed.value.adsInfo || null} />;
   // The worker sends Transactions back column by column (packedRows.js).
   const transactionResolved = useMemo(() => unpackRows(computed.value.transactionResolved), [computed.value]);
   // The Transactions rows with this session's Review picks swapped in.
@@ -821,6 +828,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // already-known to this table just gets its updated_at bumped.
       if (loggedIn) saveCompany({ marketplace: marketplaceName, brand }).catch(() => {});
       const added = [];
+      const newAds = []; // the files' "Ads Cost" tab entries (adsLedger.js)
       for (const [fileIndex, file] of [...files].entries()) {
         if (fileIndex) {
           setUploadStage((s) => s && { ...s, fileIndex, fileName: file.name });
@@ -849,6 +857,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           addToast(file.name + ': missing columns: ' + res.missing.join(', '), 'error');
           continue;
         }
+        if (Array.isArray(res.adsLedger)) newAds.push(...res.adsLedger);
         const fileId = crypto.randomUUID();
         for (const part of res.parts) {
           added.push({
@@ -895,9 +904,14 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
           }),
           ...priced,
         ]);
+        // The Payment sheet's ads spend joins the account's saved ledger (a
+        // day + campaign uploaded again replaces, never doubles).
+        if (newAds.length) onAdsLedgerChange(mergeAdsLedger(adsLedger, newAds, tag.company));
         const sheets = added.length > files.length ? ` from ${added.length} sheets` : '';
         const coins = coinsUsed ? ` · ${coinsUsed} coin${coinsUsed === 1 ? '' : 's'} used` : '';
-        addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}${coins}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
+        const adsTotal = newAds.reduce((s, e) => s + (Number(e.total) || 0), 0);
+        const adsNote = newAds.length ? ` · ads cost ₹${adsTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${newAds.length} ad charge${newAds.length === 1 ? '' : 's'})` : '';
+        addToast(fresh.length ? `Loaded ${fresh.length} rows${sheets}${adsNote}${coins}` : 'File loaded but no rows matched — check the sheet', fresh.length ? 'success' : 'error');
         fitDateRangeTo(fresh);
         landed = fresh.length > 0;
       }
@@ -907,7 +921,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       // went in (every file was turned down — the toasts say why): no window.
       setUploadStage((s) => (s && landed ? { ...s, step: loggedIn ? 'saving' : 'done' } : null));
     }
-  }, [addToast, config, brand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies, sizeHeader]);
+  }, [addToast, config, brand, loggedIn, fitDateRangeTo, templatesChecked, skuCosts, resetRowSave, calculations, restoring, restoreError, merged.pending, merged.error, uploadBilled, checkUpload, canonicalRows, savedCompanies, sizeHeader, adsLedger, onAdsLedgerChange]);
 
   // The window closes by itself a moment after its last step is done — a
   // failed save keeps it open (it offers Try again), and so does one still
@@ -1244,6 +1258,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                   One row per Order-Id{transactionIdHeader ? ' + Transaction-Id' : ''} — every mapped header at its own raw value, not summed across a SKU&rsquo;s whole history.
                 </p>
                 {savedLoadingBar}
+                {adsNotice}
                 <DetailsTable
                   columns={transactionHeaders}
                   rows={transactionRows}
@@ -1268,7 +1283,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myColumns={myColumnsFor(activeOverviewTab?.id, activeOverviewTab?.headerIds || [], false)}
                 review={orderIdHeader ? { onChangeMany: onReviewManyChange } : null}
                 expandSlot={headerLeadSlot}
-                aboveTable={savedLoadingBar}
+                aboveTable={<>{savedLoadingBar}{adsNotice}</>}
                 fillHeight
               />
             ) : (
@@ -1287,7 +1302,7 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
                 myDetailsInline={false}
                 allHeaders
                 fillHeight
-                aboveTable={savedLoadingBar}
+                aboveTable={<>{savedLoadingBar}{adsNotice}</>}
                 loadChildren={loadRowChildren}
               />
             )}
