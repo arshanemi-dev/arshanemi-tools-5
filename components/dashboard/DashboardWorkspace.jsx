@@ -16,6 +16,7 @@ import { createCalculationClient } from '@/lib/profitLoss/calculationClient';
 import { useCalculation } from '@/lib/profitLoss/useCalculation';
 import { rowsFromExtractedPayload } from '@/lib/profitLoss/rowsPayload';
 import { loadAllPages } from '@/lib/profitLoss/loadAllPages';
+import { cacheUserKey, mergeChanged, readRowCache, writeRowCache } from '@/lib/profitLoss/rowCache';
 import { useRowSaver } from '@/lib/profitLoss/useRowSaver';
 import { useUploadBilling } from '@/lib/profitLoss/useUploadBilling';
 import { chargeSummary } from '@/lib/profitLoss/uploadBilling';
@@ -439,13 +440,44 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
     }
     let cancelled = false;
     const controller = new AbortController();
-    const fetchPage = async (page) => {
+    // One page as the API sends it (raw — kept as-is for the device cache).
+    const fetchRawPage = (since) => async (page) => {
       try {
-        const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE, signal: controller.signal, includeCount: page === 1 });
-        return ok ? { ...data, rows: rowsFromExtractedPayload(data.rows || []) } : null;
+        const { ok, data } = await listExtractedRows({ page, limit: RESTORE_PAGE_SIZE, signal: controller.signal, includeCount: page === 1, since });
+        return ok && Array.isArray(data?.rows) ? data : null;
       } catch {
         return null;
       }
+    };
+    // Every page (of everything, or of what changed `since`) → the raw rows,
+    // or null when a page failed. `onPart` sees each batch as it lands.
+    const downloadRaw = async (since, onPart = null) => {
+      const raw = [];
+      let totalAll = null;
+      const fetchPage = fetchRawPage(since);
+      const result = await loadAllPages({
+        fetchPage: async (page) => {
+          const data = await fetchPage(page);
+          if (data && page === 1 && Number.isInteger(data.totalAll)) totalAll = data.totalAll;
+          return data;
+        },
+        onRows: (rows) => { for (const r of rows) raw.push(r); onPart?.(rows); },
+        onProgress: since ? () => {} : setRestorePaging,
+        cancelled: () => cancelled,
+        concurrency: RESTORE_CONCURRENCY,
+      });
+      return result.complete ? { raw, totalAll } : null;
+    };
+    // The restored rows swapped for `rows` in one go (the copy shown first,
+    // then the synced list) — no blank screen in between.
+    const replaceRestored = (rows) => {
+      markRowsStored(rows);
+      restoreBuffer.current = [];
+      setRestoreBuffered(0);
+      setUploads((prev) => [
+        ...prev.filter((u) => u.slotId !== RESTORED_SLOT_ID),
+        ...(rows.length ? [{ id: 'restored', slotId: RESTORED_SLOT_ID, fileName: 'Saved from your account', platform: 'restored', rows }] : []),
+      ]);
     };
     (async () => {
       setRestoreFetching(true);
@@ -454,15 +486,44 @@ export default function DashboardWorkspace({ canManageTemplates = false }) {
       restoreBuffer.current = [];
       setRestoreBuffered(0);
       setUploads((prev) => prev.filter((upload) => upload.slotId !== RESTORED_SLOT_ID));
+      const userKey = cacheUserKey();
       try {
-        const result = await loadAllPages({
-          fetchPage,
-          onRows: addRestoredRows,
-          onProgress: setRestorePaging,
-          cancelled: () => cancelled,
-          concurrency: RESTORE_CONCURRENCY,
-        });
-        if (!cancelled && !result.complete) setRestoreError('Some saved rows could not be loaded. Retry to get complete totals and enable uploads and exports.');
+        // 1. The device copy (lib/profitLoss/rowCache.js), on screen at once.
+        const cached = await readRowCache(userKey);
+        if (cancelled) return;
+        if (cached?.rows.length && cached.syncedAt) {
+          replaceRestored(rowsFromExtractedPayload(cached.rows));
+          setRestorePaging({ page: 1, totalPages: 1, totalCount: cached.rows.length });
+          // 2. Only what was saved since — a minute's overlap so a save on
+          // another server clock isn't missed (a row seen twice is one row).
+          const since = new Date(Date.parse(cached.syncedAt) - 60_000).toISOString();
+          const changed = await downloadRaw(since);
+          if (cancelled) return;
+          if (changed) {
+            const merged = mergeChanged(cached.rows, changed.raw);
+            // Same count as the server → nothing was deleted elsewhere.
+            if (changed.totalAll == null || merged.length === changed.totalAll) {
+              if (changed.raw.length) replaceRestored(rowsFromExtractedPayload(merged));
+              setRestorePaging({ page: 1, totalPages: 1, totalCount: merged.length });
+              writeRowCache(userKey, merged);
+              return;
+            }
+          }
+          // 3. Rows deleted on another device (or the check failed): the
+          // whole list again — the copy stays on screen until it's here.
+          const full = await downloadRaw(null);
+          if (cancelled) return;
+          if (!full) { setRestoreError('Saved data could not be refreshed. Retry to get complete totals and enable uploads and exports.'); return; }
+          replaceRestored(rowsFromExtractedPayload(full.raw));
+          writeRowCache(userKey, full.raw);
+          return;
+        }
+        // No copy yet: everything, shown batch by batch as it lands, then
+        // kept on the device for the next visit.
+        const full = await downloadRaw(null, (rows) => addRestoredRows(rowsFromExtractedPayload(rows)));
+        if (cancelled) return;
+        if (!full) { setRestoreError('Some saved rows could not be loaded. Retry to get complete totals and enable uploads and exports.'); return; }
+        writeRowCache(userKey, full.raw);
       } catch {
         if (!cancelled) setRestoreError('Saved data could not be loaded. Retry before uploading or exporting.');
       } finally {

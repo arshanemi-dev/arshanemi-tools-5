@@ -14,7 +14,7 @@ export async function GET(req) {
 
   const sp = req.nextUrl.searchParams
   const qs = new URLSearchParams()
-  for (const key of ['page', 'limit', 'includeCount']) {
+  for (const key of ['page', 'limit', 'includeCount', 'since']) {
     const v = sp.get(key)
     if (v) qs.set(key, v)
   }
