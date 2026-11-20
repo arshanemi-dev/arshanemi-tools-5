@@ -391,18 +391,13 @@ export default function OverviewTreeTable({
                       <button
                         type="button"
                         onClick={() => onActivate(n.key)}
-                        title={`${levels[n.depth]?.name || `Level ${n.depth + 1}`}: ${n.value}`}
+                        title={n.item ? n.value : `${levels[n.depth]?.name || `Level ${n.depth + 1}`}: ${n.value}`}
                         className={`min-w-0 text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${isActive ? st.text : 'text-foreground'}`}
                       >
                         <TableText>{n.value}</TableText>
                       </button>
                       {hasKids && (
                         <span className={`ml-1 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${st.badge}`}>{n.children.length}</span>
-                      )}
-                      {/* A last-level row that shares its value with others: what
-                          makes it its own item (Account · SKU · Size · Order). */}
-                      {n.identity && (
-                        <span className="ml-1 min-w-0 truncate text-[11px] text-subtle" title={n.identity}>{n.identity}</span>
                       )}
                     </div>
                   </td>

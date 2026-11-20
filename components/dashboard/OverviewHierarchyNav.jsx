@@ -62,12 +62,10 @@ function NavNode({ node, ctx }) {
         <button
           type="button"
           onClick={() => ctx.onFocus(node.key)}
-          title={`${ctx.levelName(node.depth)}: ${node.value}${node.identity ? ` (${node.identity})` : ''}`}
+          title={node.item ? node.value : `${ctx.levelName(node.depth)}: ${node.value}`}
           className={`min-w-0 flex-1 truncate py-1 text-left text-[12.5px] ${active ? `font-semibold ${st.text}` : 'text-foreground/80'}`}
         >
           {node.value}
-          {/* One of several rows with this value: what makes it its own item. */}
-          {node.identity && <span className="ml-1 text-[11px] font-normal text-subtle">{node.identity}</span>}
         </button>
         {hasKids && (
           <span
@@ -124,7 +122,7 @@ export default function OverviewHierarchyNav({
     searching: !!needle,
     limits,
     showMore: (key, n) => setLimits((s) => ({ ...s, [key]: n })),
-    levelName: (d) => levels[d]?.name || `Level ${d + 1}`,
+    levelName: (d) => levels[d]?.name || (d === levels.length ? 'rows' : `Level ${d + 1}`), // under the last level: its items
   };
 
   return (
