@@ -150,18 +150,6 @@ export default function OverviewTreeTable({
       ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [focusTick, activeKey]);
 
-  // A last-level node that merged several unique rows (resolveTemplate
-  // uniqueRowsOf — Account Name + SKU + Size + Transaction / Order) opens
-  // them under it — open to begin with; its chevron folds them away.
-  const [foldedUnique, setFoldedUnique] = useState(() => new Set());
-  const hasUnique = (n) => !n.children?.length && n.unique?.length > 1;
-  const uniqueOpen = (n) => hasUnique(n) && !foldedUnique.has(n.key);
-  const toggleUnique = (key) => setFoldedUnique((prev) => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    return next;
-  });
-
   // Visible rows = this page's Level-1 nodes + every open descendant.
   const isOpen = (n) => n.children?.length > 0 && (expanded.has(n.key) || (filtering && n.openedByMatch));
   const visible = [];
@@ -170,12 +158,6 @@ export default function OverviewTreeTable({
     for (const n of nodes.slice(0, limit)) {
       visible.push({ kind: 'node', node: n });
       if (isOpen(n)) walk(n.children, n.key);
-      else if (uniqueOpen(n)) {
-        const ulimit = childLimits[n.key] || CHILD_PAGE;
-        n.unique.slice(0, ulimit).forEach((u) => visible.push({ kind: 'unique', node: n, row: u }));
-        if (n.unique.length > ulimit) visible.push({ kind: 'more', parentKey: n.key, depth: n.depth + 1, limit: ulimit, rest: n.unique.length - ulimit });
-        visible.push({ kind: 'uniqueCount', node: n });
-      }
     }
     if (nodes.length > limit) visible.push({ kind: 'more', parentKey, depth: nodes[0].depth, limit, rest: nodes.length - limit });
   };
@@ -336,48 +318,6 @@ export default function OverviewTreeTable({
               </tr>
             )}
             {visible.map((item) => {
-              // One unique row of a merged node: read-only, one step in.
-              if (item.kind === 'unique') {
-                const { node: n, row: u } = item;
-                const st = levelStyle(n.depth + 1);
-                return (
-                  <tr key={`u:${n.key}:${u.key}`} data-child="true" className="text-[12.5px]">
-                    {selectable && <td />}
-                    <td className="sticky left-0 z-[1] bg-inherit p-0">
-                      <div className={`flex items-center gap-1 border-l-4 py-1.5 pl-1 pr-2 ${st.stripe}`} style={{ marginLeft: (n.depth + 1) * LEVEL_STEP_PX }}>
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center"><span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} /></span>
-                        <span className="min-w-0 text-foreground" title={u.label}><TableText>{u.label}</TableText></span>
-                        {u.rowCount > 1 && <span className="ml-1 shrink-0 text-[10.5px] text-subtle">({u.rowCount} rows)</span>}
-                      </div>
-                    </td>
-                    {showCost && <td />}
-                    {cols.map((c) => {
-                      const cell = u.cells?.[c.key] || {};
-                      const neg = c.signed && Number(cell.raw) < 0;
-                      return (
-                        <td key={c.key} className={`px-3 py-1.5 whitespace-nowrap tabular-nums ${neg ? 'text-neg' : 'text-foreground'}`}>
-                          <TableText>{cell.display ?? ''}</TableText>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              }
-              // Under a merged node's unique rows: how many there are.
-              if (item.kind === 'uniqueCount') {
-                const n = item.node;
-                const st = levelStyle(n.depth + 1);
-                return (
-                  <tr key={`uc:${n.key}`} data-child="true">
-                    {selectable && <td />}
-                    <td colSpan={colSpan - (selectable ? 1 : 0)} className="p-0">
-                      <div className={`border-l-4 py-1 pl-7 pr-3 text-[11.5px] text-muted ${st.stripe}`} style={{ marginLeft: (n.depth + 1) * LEVEL_STEP_PX }}>
-                        {n.unique.length} unique rows · {n.rowCount} sheet rows in {n.value}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              }
               if (item.kind === 'more') {
                 const st = levelStyle(item.depth);
                 return (
@@ -399,8 +339,7 @@ export default function OverviewTreeTable({
               const n = item.node;
               const st = levelStyle(n.depth);
               const hasKids = n.children?.length > 0;
-              const merged = hasUnique(n);
-              const open = isOpen(n) || uniqueOpen(n);
+              const open = isOpen(n);
               const forced = filtering && n.openedByMatch;
               const isActive = activeKey === n.key;
               const inherited = !selected.has(n.key) && n.depth > 0 && ancestorKeys(n.key).some((k) => selected.has(k));
@@ -435,10 +374,10 @@ export default function OverviewTreeTable({
                       className={`flex items-center gap-1 border-l-4 py-2 pl-1 pr-2 ${st.stripe}`}
                       style={{ marginLeft: n.depth * LEVEL_STEP_PX }}
                     >
-                      {hasKids || merged ? (
+                      {hasKids ? (
                         <button
                           type="button"
-                          onClick={() => (merged ? toggleUnique(n.key) : onToggle(n.key))}
+                          onClick={() => onToggle(n.key)}
                           disabled={forced}
                           aria-label={`${open ? 'Collapse' : 'Expand'} ${n.value}`}
                           aria-expanded={open}
@@ -460,8 +399,10 @@ export default function OverviewTreeTable({
                       {hasKids && (
                         <span className={`ml-1 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${st.badge}`}>{n.children.length}</span>
                       )}
-                      {merged && (
-                        <span title={`${n.unique.length} unique rows merged here`} className={`ml-1 shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${st.badge}`}>{n.unique.length} rows</span>
+                      {/* A last-level row that shares its value with others: what
+                          makes it its own item (Account · SKU · Size · Order). */}
+                      {n.identity && (
+                        <span className="ml-1 min-w-0 truncate text-[11px] text-subtle" title={n.identity}>{n.identity}</span>
                       )}
                     </div>
                   </td>

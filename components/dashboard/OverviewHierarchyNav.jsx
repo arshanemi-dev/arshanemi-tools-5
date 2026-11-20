@@ -62,10 +62,12 @@ function NavNode({ node, ctx }) {
         <button
           type="button"
           onClick={() => ctx.onFocus(node.key)}
-          title={`${ctx.levelName(node.depth)}: ${node.value}`}
+          title={`${ctx.levelName(node.depth)}: ${node.value}${node.identity ? ` (${node.identity})` : ''}`}
           className={`min-w-0 flex-1 truncate py-1 text-left text-[12.5px] ${active ? `font-semibold ${st.text}` : 'text-foreground/80'}`}
         >
           {node.value}
+          {/* One of several rows with this value: what makes it its own item. */}
+          {node.identity && <span className="ml-1 text-[11px] font-normal text-subtle">{node.identity}</span>}
         </button>
         {hasKids && (
           <span
