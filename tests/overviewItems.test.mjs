@@ -36,6 +36,33 @@ test('Levels SKU → Size → dropdowns, 8 leaves', () => {
   assert.equal(leaves(ov.tree).length, 8);
 });
 
+test('Levels SKU → Order Id (Size not a level) → one SKU dropdown per account + size, each with only its own orders', () => {
+  const ov = resolveTemplate(config(['hdr_sku', RESERVED_HEADER_IDS.orderId], ['hdr_size']), { canonicalRows: rows }).overviews.ov;
+  assert.equal(ov.tree.length, 8); // 2 accounts × 4 sizes
+  for (const n of ov.tree) {
+    assert.equal(n.value, 'SKU1'); // Size column is shown → not repeated in the label
+    assert.equal(n.cells.hdr_size.raw, n.children[0].cells.hdr_size.raw); // one size per SKU row
+    assert.equal(n.children.length, 3); // that size's 3 orders
+    assert.equal(n.fields.size, n.cells.hdr_size.raw); // the price boxes' size
+    assert.ok(n.children.every((c) => c.fields.size === n.fields.size)); // inherited below
+    assert.ok(n.children.every((c) => c.children.length === 0));
+  }
+});
+
+test('Size column not shown → the SKU row names its size', () => {
+  const ov = resolveTemplate(config(['hdr_sku', RESERVED_HEADER_IDS.orderId], []), { canonicalRows: rows }).overviews.ov;
+  assert.deepEqual([...new Set(ov.tree.map((n) => n.value))], ['SKU1 · S', 'SKU1 · M', 'SKU1 · L', 'SKU1 · XL']);
+});
+
+test('Level Order Id only → each order split by SKU + Size', () => {
+  const two = [
+    { rowId: 'a', company: 'A', sku: 'SKU1', platform: 'meesho', orderDate: '2026-11-01', orderId: 'O1', meta: { Size: 'S' } },
+    { rowId: 'b', company: 'A', sku: 'SKU1', platform: 'meesho', orderDate: '2026-11-01', orderId: 'O1', meta: { Size: 'M' } },
+  ];
+  const ov = resolveTemplate(config([RESERVED_HEADER_IDS.orderId], []), { canonicalRows: two }).overviews.ov;
+  assert.deepEqual(ov.tree.map((n) => n.value), ['O1 · SKU1 · S', 'O1 · SKU1 · M']);
+});
+
 test('Order Id shown → split per order too (24 rows)', () => {
   const ov = resolveTemplate(config(['hdr_sku'], [RESERVED_HEADER_IDS.orderId]), { canonicalRows: rows }).overviews.ov;
   assert.equal(ov.tree.length, 24);

@@ -178,24 +178,29 @@ export default function OverviewTreeTable({
   // account); an Account Name node under a SKU level, that SKU in that
   // account. → { sku, key } (key = skuCosts' key — rowCostKey).
   // A Size level (the fixed Size header) above or at the node makes it that
-  // SKU + Size's price (skuCosts.js priceKeys).
+  // SKU + Size's price (skuCosts.js priceKeys) — or, when Size isn't a
+  // level, the size the node was split by (node.fields.size —
+  // resolveTemplate overviewSplits).
   const sizeLevel = levels.findIndex((h) => h.fixedKey === SIZE_KEY);
   const costTarget = (n) => {
-    if (!skuLevels.size || n.value === BLANK_VALUE) return null;
+    const own = n.path?.[n.depth] ?? n.value; // the level's value, not its "SKU1 · M" label
+    if (!skuLevels.size || own === BLANK_VALUE) return null;
     let sku = null;
     let account = '';
     const skuAbove = () => [...skuLevels].filter((i) => i < n.depth).pop();
     if (skuLevels.has(n.depth)) {
-      sku = n.value;
+      sku = own;
       account = n.company;
     } else if (levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY || n.depth === sizeLevel) {
       const at = skuAbove();
       if (at == null) return null;
       sku = n.path[at];
-      account = levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY ? n.value : n.company;
+      account = levels[n.depth]?.fixedKey === ACCOUNT_NAME_KEY ? own : n.company;
     }
     if (!sku || sku === BLANK_VALUE || !isRealSku(sku)) return null;
-    const size = sizeLevel >= 0 && sizeLevel <= n.depth && n.path[sizeLevel] !== BLANK_VALUE ? n.path[sizeLevel] : '';
+    const size = sizeLevel >= 0
+      ? (sizeLevel <= n.depth && n.path[sizeLevel] !== BLANK_VALUE ? n.path[sizeLevel] : '')
+      : n.fields?.size || '';
     return { sku, size, account, key: rowCostKey(sku, account, size) };
   };
   const costInput = (target, field, name) => {
