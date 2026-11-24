@@ -398,8 +398,11 @@ export default function OverviewTreeTable({
                         type="button"
                         onClick={() => onActivate(n.key)}
                         title={n.item ? n.value : `${levels[n.depth]?.name || `Level ${n.depth + 1}`}: ${n.value}`}
-                        className={`min-w-0 text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${
-                          n.noTxn && levels[n.depth]?.id === RESERVED_HEADER_IDS.orderId ? 'text-neg' : isActive ? st.text : 'text-foreground'
+                        className={`min-w-0 text-left ${
+                          // An Order Id with no Transaction Id: grey-blue, never bold.
+                          n.noTxn && levels[n.depth]?.id === RESERVED_HEADER_IDS.orderId
+                            ? 'font-normal text-no-txn'
+                            : `${hasKids ? 'font-semibold' : 'font-medium'} ${isActive ? st.text : 'text-foreground'}`
                         }`}
                       >
                         <TableText>{n.value}</TableText>
@@ -436,10 +439,12 @@ export default function OverviewTreeTable({
                         </td>
                       );
                     }
-                    // …and an Order Id with no Transaction Id shows red.
-                    const neg = (c.signed && Number(cell.raw) < 0) || (n.noTxn && c.key === RESERVED_HEADER_IDS.orderId);
+                    const neg = c.signed && Number(cell.raw) < 0;
+                    // An Order Id with no Transaction Id: grey-blue, never bold.
+                    const noTxn = n.noTxn && c.key === RESERVED_HEADER_IDS.orderId;
+                    const tone = noTxn ? 'font-normal text-no-txn' : `${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'}`;
                     return (
-                      <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
+                      <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${tone} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
                         <TableText>{cell.display ?? ''}</TableText>
                       </td>
                     );

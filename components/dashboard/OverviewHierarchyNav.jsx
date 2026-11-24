@@ -64,7 +64,7 @@ function NavNode({ node, ctx }) {
           type="button"
           onClick={() => ctx.onFocus(node.key)}
           title={node.item ? node.value : `${ctx.levelName(node.depth)}: ${node.value}`}
-          className={`min-w-0 flex-1 truncate py-1 text-left text-[12.5px] ${active ? 'font-semibold' : ''} ${ctx.noTxnOrder(node) ? 'text-neg' : active ? st.text : 'text-foreground/80'}`}
+          className={`min-w-0 flex-1 truncate py-1 text-left text-[12.5px] ${ctx.noTxnOrder(node) ? 'font-normal text-no-txn' : active ? `font-semibold ${st.text}` : 'text-foreground/80'}`}
         >
           {node.value}
         </button>
@@ -124,7 +124,7 @@ export default function OverviewHierarchyNav({
     limits,
     showMore: (key, n) => setLimits((s) => ({ ...s, [key]: n })),
     levelName: (d) => levels[d]?.name || (d === levels.length ? 'rows' : `Level ${d + 1}`), // under the last level: its items
-    // An Order Id with no Transaction Id shows red (node.noTxn).
+    // An Order Id with no Transaction Id: grey-blue, never bold (node.noTxn).
     noTxnOrder: (node) => !!node.noTxn && levels[node.depth]?.id === RESERVED_HEADER_IDS.orderId,
   };
 

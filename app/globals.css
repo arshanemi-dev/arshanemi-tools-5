@@ -46,6 +46,8 @@
   --color-link:          #4f46e5;
   --color-pos:           #15803d;
   --color-neg:           #dc2626;
+  /* An Order Id whose order has no Transaction Id (blank) — same in dark. */
+  --color-no-txn:        #8892a9;
   --color-th:            #f8fafc;
 
   /* Overview hierarchy — one colour per unique-value level (L1 → L6);
