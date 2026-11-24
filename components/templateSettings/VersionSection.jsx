@@ -7,8 +7,9 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog';
 import { failureMessage } from '@/lib/profitLoss/templatesApi';
 import { versionName, versionToOpen } from './useGlobalTemplateDraft';
 import SectionHead from './SectionHead';
+import { fmtAnyDate } from '@/lib/profitLoss/dates';
 
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+const fmtDate = (d) => (d ? fmtAnyDate(d) : '—'); // DD/MM/YYYY, like every date
 const label = versionName; // v94, or v93.21 for one saved with a sub-version
 
 // image 2 · Version Page — every saved version with a Live on/off switch:

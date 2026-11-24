@@ -96,6 +96,9 @@ const ACCOUNT_KEY = '\u0000account';
 const SKU_KEY = '\u0000sku';
 const SIZE_SORT_KEY = '\u0000size';
 const ID_COLUMNS = [RESERVED_HEADER_IDS.transactionId, RESERVED_HEADER_IDS.orderId];
+// An Order Id whose order has no Transaction Id (row.noTxn —
+// resolveTemplate lacksTxn) shows red.
+const noTxnOrder = (row, key) => !!row?.noTxn && key === RESERVED_HEADER_IDS.orderId;
 const identityValue = (r, k) => (k === ACCOUNT_KEY ? r.company : k === SKU_KEY ? r.sku : k === SIZE_SORT_KEY ? r.size : r.cells[k]?.raw);
 
 // "first value +N more" — a column whose orders differ in this row.
@@ -122,7 +125,7 @@ function ChildRows({ state, cols, selectable, colSpan }) {
           {cols.map((col, i) => {
             if (col.kind === 'cost') return <td key="__cost__" />;
             const cell = child.cells[col.key] || {};
-            const neg = col.signed && Number(cell.raw) < 0;
+            const neg = (col.signed && Number(cell.raw) < 0) || noTxnOrder(child, col.key);
             return (
               <td key={col.key} className={`px-3 py-1.5 whitespace-nowrap ${neg ? 'text-neg' : 'text-foreground'} ${i === 0 ? 'border-l-4 border-l-link/50 pl-5' : ''}`}>
                 <TableText>{cell.display ?? ''}</TableText>
@@ -466,7 +469,9 @@ export default function DetailsTable({
                     <td
                       key={col.key}
                       className={`px-3 py-2.5 whitespace-nowrap ${isHighlighted(hl, 'header', col.id) ? HL_CELL : ''} ${
-                        col.sticky
+                        noTxnOrder(r, col.key)
+                          ? 'font-medium text-neg'
+                          : col.sticky
                           ? 'font-medium text-link underline decoration-link/30'
                           : neg
                           ? 'text-neg'

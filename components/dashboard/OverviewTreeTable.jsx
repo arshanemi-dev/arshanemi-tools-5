@@ -21,6 +21,7 @@ import { tableTotals } from '@/lib/profitLoss/tableTotals';
 import { withContributionsTree } from '@/lib/profitLoss/contribution';
 import { withTotalRefsTree } from '@/lib/profitLoss/totalRefs';
 import { ACCOUNT_NAME_KEY, REVIEW_KEY, isReviewField } from '@/data/fixedHeaders';
+import { RESERVED_HEADER_IDS } from '@/data/templateSchema';
 
 // How far each deeper level (and its colour bar) steps in from its parent —
 // set in lib/profitLoss/overviewTree.js (OVERVIEW_LEVEL_INDENT_PX).
@@ -397,7 +398,9 @@ export default function OverviewTreeTable({
                         type="button"
                         onClick={() => onActivate(n.key)}
                         title={n.item ? n.value : `${levels[n.depth]?.name || `Level ${n.depth + 1}`}: ${n.value}`}
-                        className={`min-w-0 text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${isActive ? st.text : 'text-foreground'}`}
+                        className={`min-w-0 text-left ${hasKids ? 'font-semibold' : 'font-medium'} ${
+                          n.noTxn && levels[n.depth]?.id === RESERVED_HEADER_IDS.orderId ? 'text-neg' : isActive ? st.text : 'text-foreground'
+                        }`}
                       >
                         <TableText>{n.value}</TableText>
                       </button>
@@ -433,7 +436,8 @@ export default function OverviewTreeTable({
                         </td>
                       );
                     }
-                    const neg = c.signed && Number(cell.raw) < 0;
+                    // …and an Order Id with no Transaction Id shows red.
+                    const neg = (c.signed && Number(cell.raw) < 0) || (n.noTxn && c.key === RESERVED_HEADER_IDS.orderId);
                     return (
                       <td key={c.key} className={`px-3 py-2 whitespace-nowrap tabular-nums ${hasKids ? 'font-semibold' : ''} ${neg ? 'text-neg' : 'text-foreground'} ${isHighlighted(hl, 'header', c.id) ? HL_CELL : ''}`}>
                         <TableText>{cell.display ?? ''}</TableText>

@@ -2,16 +2,14 @@
 
 import { Megaphone } from 'lucide-react';
 import { CARRY_DAYS } from '@/lib/profitLoss/adsLedger';
+import { fmtAnyDate } from '@/lib/profitLoss/dates';
 
 // One line above the table: the Payment sheet's ads spend for the dates /
 // account on screen, how much of it landed on ad orders (lib/profitLoss/
 // adsLedger.js) and what didn't — so an unallocated amount is never silently
 // missing from Profit/Loss. `info` = summarizeAds' result (null = no ads
 // sheet uploaded for what's on screen → nothing shown).
-const day = (iso) => {
-  const d = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-};
+const day = (iso) => fmtAnyDate(iso); // DD/MM/YYYY, like every date
 const span = (from, to) => (to && to !== from ? `${day(from)}–${day(to)}` : day(from));
 // To the paisa — this line is checked against the payout, unlike a KPI card.
 const rupees = (n) => `₹${(Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

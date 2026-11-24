@@ -5,6 +5,7 @@ import { Clock, Loader2, Trash2, X } from 'lucide-react';
 import { isLoggedIn } from '@/lib/tokenStore';
 import { redirectToLogin } from '@/lib/authGate';
 import { listHistory, getRun, deleteRun } from '@/lib/profitLoss/apiClient';
+import { fmtAnyDate } from '@/lib/profitLoss/dates';
 import PlatformBadge from './PlatformBadge';
 
 // Slide-over list of saved runs. "Open" hands a full run back to the parent to
@@ -72,7 +73,7 @@ export default function HistoryDrawer({ open, onClose, onOpenRun }) {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">
-                      {run.label || new Date(run.createdAt).toLocaleDateString()}
+                      {run.label || fmtAnyDate(run.createdAt)}
                     </p>
                     <p className="mt-0.5 text-xs text-subtle">
                       {run.dateFrom || '—'} → {run.dateTo || '—'} · {run.rowCount ?? 0} rows ·{' '}

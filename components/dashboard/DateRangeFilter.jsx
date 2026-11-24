@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import Popover from './Popover';
 import { DATE_PRESETS, rangeForPreset, validateCustomRange, todayISO } from '@/lib/profitLoss/dateRanges';
+import { fmtAnyDate } from '@/lib/profitLoss/dates';
 
 // "Date ▾" — presets (7 Days / 1 Month / 6 Months / 1 Year) + Custom with
 // from/to inputs. Emits { preset, from, to }. The parent's "Apply" button is
@@ -16,7 +17,7 @@ export default function DateRangeFilter({ value, onChange }) {
 
   const summaryLabel = () => {
     if (preset !== 'custom') return DATE_PRESETS.find((p) => p.id === preset)?.label ?? 'Date';
-    if (from && to) return `${from} → ${to}`;
+    if (from && to) return `${fmtAnyDate(from)} → ${fmtAnyDate(to)}`;
     return 'Custom';
   };
 
