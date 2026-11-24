@@ -85,11 +85,20 @@ test('Deduction Date = Payment Date: the ads cost is split equally per Order Id 
   assert.deepEqual(days.find((d) => d.spendDate === '2026-07-28'), { company: 'Meesho_Freelax', spendDate: '2026-07-28', endDate: '2026-07-28', amount: 10.56, targetDate: null, orders: 0 });
 });
 
-test('one share per Order Id — an order with several rows paid that day is charged once', () => {
-  const ledger = [{ key: 'k', company: 'Meesho_Freelax', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 50 }];
+test('no uniqueness: every payment row that day is one share, even the same Order Id twice', () => {
+  const ledger = [{ key: 'k', company: 'Meesho_Freelax', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 60 }];
   const rows = [paidOrder('a', '2026-07-10', { sku: 'S1' }), paidOrder('a', '2026-07-10', { sku: 'S2' }), paidOrder('b', '2026-07-10')];
   const { rows: out } = allocateAds(rows, ledger);
-  assert.deepEqual(out.map((r) => r.adsAlloc?.cost ?? 0), [25, 0, 25]);
+  assert.deepEqual(out.map((r) => r.adsAlloc?.cost ?? 0), [20, 20, 20]);
+});
+
+test('Meesho only: another marketplace\'s payments that day get no share', () => {
+  const ledger = [{ key: 'k', company: '', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 30 }];
+  const flip = { ...paidOrder('f', '2026-07-10', { company: 'Flipkart_X' }), platform: 'flipkart' };
+  const rows = [paidOrder('a', '2026-07-10'), flip];
+  const { rows: out } = allocateAds(rows, ledger);
+  assert.equal(out[0].adsAlloc.cost, 30);
+  assert.equal(out[1].adsAlloc, undefined);
 });
 
 test('odd paise: shares still add up exactly', () => {

@@ -24,13 +24,13 @@ export default function AdsLedgerNotice({ info }) {
     >
       <Megaphone size={14} className="shrink-0" />
       <span className="font-medium">Ads cost from Payment sheet: {rupees(total)}</span>
-      <span className="opacity-80">· {rupees(allocated)} split equally over {chargedOrders.toLocaleString('en-IN')} order{chargedOrders === 1 ? '' : 's'} paid on each Deduction Date</span>
+      <span className="opacity-80">· {rupees(allocated)} split equally over {chargedOrders.toLocaleString('en-IN')} payment{chargedOrders === 1 ? '' : 's'} received on each Deduction Date</span>
       {warn && (
         <span
           className="font-medium"
           title={unallocatedDays.map((d) => `${span(d.spendDate, d.endDate)}: ${rupees(d.amount)}`).join('\n')}
         >
-          · {rupees(unallocated)} unallocated — no orders paid on {unallocatedDays.map((d) => span(d.spendDate, d.endDate)).join(', ')} (upload that Payments sheet)
+          · {rupees(unallocated)} unallocated — no payments on {unallocatedDays.map((d) => span(d.spendDate, d.endDate)).join(', ')} (upload that Payments sheet)
         </span>
       )}
     </div>
