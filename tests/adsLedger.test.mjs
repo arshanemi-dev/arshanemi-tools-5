@@ -92,8 +92,34 @@ test('no uniqueness: every payment row that day is one share, even the same Orde
   assert.deepEqual(out.map((r) => r.adsAlloc?.cost ?? 0), [20, 20, 20]);
 });
 
-test('Meesho only: another marketplace\'s payments that day get no share', () => {
+test('Account Name uniqueness: two accounts paid on the same day each split only their own ads', () => {
+  const ledger = [
+    { key: 'k1', company: 'Meesho_A', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c1', total: 100 },
+    { key: 'k2', company: 'meesho_b ', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c2', total: 30 },
+  ];
+  const rows = [
+    paidOrder('a1', '2026-07-10', { company: 'Meesho_A' }),
+    paidOrder('a2', '2026-07-10', { company: 'Meesho_A' }),
+    paidOrder('b1', '2026-07-10', { company: 'Meesho_B' }), // same account, other case / spacing
+    paidOrder('x1', '2026-07-10', { company: 'Meesho_X' }), // an account with no ads line
+  ];
+  const result = allocateAds(rows, ledger);
+  assert.deepEqual(result.rows.map((r) => r.adsAlloc?.cost ?? 0), [50, 50, 30, 0]);
+  // the notice for one account shows only that account's ads
+  assert.equal(summarizeAds(result, { company: 'Meesho_A' }).total, 100);
+  assert.equal(summarizeAds(result, { company: 'Meesho_B' }).total, 30);
+  assert.equal(summarizeAds(result, { company: 'Meesho_X' }), null);
+});
+
+test('an ads line with no account never spreads over named accounts', () => {
   const ledger = [{ key: 'k', company: '', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 30 }];
+  const { rows: out, days } = allocateAds([paidOrder('a', '2026-07-10', { company: 'Meesho_A' })], ledger);
+  assert.equal(out[0].adsAlloc, undefined);
+  assert.equal(days[0].targetDate, null);
+});
+
+test('Meesho only: another marketplace\'s payments that day get no share', () => {
+  const ledger = [{ key: 'k', company: 'Meesho_Freelax', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 30 }];
   const flip = { ...paidOrder('f', '2026-07-10', { company: 'Flipkart_X' }), platform: 'flipkart' };
   const rows = [paidOrder('a', '2026-07-10'), flip];
   const { rows: out } = allocateAds(rows, ledger);
@@ -102,7 +128,7 @@ test('Meesho only: another marketplace\'s payments that day get no share', () =>
 });
 
 test('odd paise: shares still add up exactly', () => {
-  const ledger = [{ key: 'k', company: '', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 100 }];
+  const ledger = [{ key: 'k', company: 'Meesho_Freelax', spendDate: '2026-07-08', deductDate: '2026-07-10', campaignId: 'c', total: 100 }];
   const rows = ['a', 'b', 'c'].map((id) => paidOrder(id, '2026-07-10'));
   assert.deepEqual(allocateAds(rows, ledger).rows.map((r) => r.adsAlloc.cost), [33.34, 33.33, 33.33]);
 });
