@@ -67,7 +67,9 @@ const EMPTY_ROWS = [];
 const EMPTY_VIEW = { resolved: emptyResolved, transactionResolved: { headers: [], rows: [], rowCount: 0 } };
 // The synthetic `uploads` entry a signed-in user's own previously-saved
 // rows (GET /api/profit-loss/rows) land in on load — never a real file
-// slot id, so it's easy to tell apart from an actual upload.
+// slot id, so it's easy to tell apart from an actual upload. Must equal
+// mergeRows.js RESTORED_SLOT_ID: a new upload of the same item replaces
+// these saved copies there (not imported — the merge runs in the worker).
 const RESTORED_SLOT_ID = 'restored';
 // Sentinel activeTabId for the always-available "Transactions" view (one
 // row per Order Id + Transaction Id, see resolveTransactionRows) — never a
