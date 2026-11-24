@@ -49,6 +49,18 @@ test('Levels SKU → Order Id (Size not a level) → one SKU dropdown per accoun
   }
 });
 
+test('a custom "SKU ID" header (mapped to the sheet, not the built-in SKU) as Level 1 is still split per size', () => {
+  const skuId = { id: 'hdr_sku_id', name: 'SKU ID', type: 'text' };
+  const withCol = rows.map((r) => ({ ...r, meta: { ...r.meta, 'SKU ID': r.sku } }));
+  const cfg = {
+    headers: [skuId, H.size, H.order],
+    overviewTabs: [{ id: 'ov', name: 'Ov', hierarchyHeaderIds: ['hdr_sku_id', RESERVED_HEADER_IDS.orderId], headerIds: ['hdr_size'] }],
+  };
+  const ov = resolveTemplate(cfg, { canonicalRows: withCol }).overviews.ov;
+  assert.equal(ov.tree.length, 8); // 2 accounts × 4 sizes, not one SKU row with every size
+  assert.ok(ov.tree.every((n) => n.children.length === 3 && !String(n.cells.hdr_size.raw).includes(',')));
+});
+
 test('Size column not shown → the SKU row names its size', () => {
   const ov = resolveTemplate(config(['hdr_sku', RESERVED_HEADER_IDS.orderId], []), { canonicalRows: rows }).overviews.ov;
   assert.deepEqual([...new Set(ov.tree.map((n) => n.value))], ['SKU1 · S', 'SKU1 · M', 'SKU1 · L', 'SKU1 · XL']);
